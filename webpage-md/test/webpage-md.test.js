@@ -316,6 +316,88 @@ test('CLI completes URL-to-files flow against a real HTTP server', async (t) => 
   assert.doesNotMatch(content, /Navigation only|Footer backup only/);
 });
 
+test('project skill has valid discovery metadata and a resolvable tool reference', async () => {
+  const root = path.resolve(import.meta.dirname, '..');
+  const skillDirectory = path.join(root, '.github', 'skills', 'webpage-to-markdown');
+  const skill = await readFile(path.join(skillDirectory, 'SKILL.md'), 'utf8');
+  const frontmatter = skill.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
+  assert.ok(frontmatter);
+  assert.match(frontmatter[1], /^name: webpage-to-markdown$/m);
+  const description = JSON.parse(frontmatter[1].match(/^description: (.+)$/m)[1]);
+  assert.ok(description.length > 0 && description.length <= 1024);
+  assert.match(frontmatter[1], /^user-invocable: true$/m);
+  assert.match(frontmatter[1], /^disable-model-invocation: false$/m);
+  const reference = skill.match(/\[tool documentation\]\(([^)]+)\)/)[1];
+  assert.equal(path.resolve(skillDirectory, reference), path.join(root, 'README.md'));
+  assert.match(await readFile(path.resolve(skillDirectory, reference), 'utf8'), /通过 Skill 调用/);
+});
+
+test('skill documented commands work from repository and tool directories', {
+  skip: process.platform !== 'win32',
+  timeout: 120000,
+}, async (t) => {
+  const root = path.resolve(import.meta.dirname, '..');
+  const skillDirectory = path.join(root, '.github', 'skills', 'webpage-to-markdown');
+  const skill = await readFile(path.join(skillDirectory, 'SKILL.md'), 'utf8');
+  const blocks = [...skill.matchAll(/```powershell\r?\n([\s\S]*?)```/g)].map((match) => match[1]);
+  const [setup, commands, listCommand, transport] = blocks;
+  assert.ok(setup && commands && listCommand && transport);
+  const output = await temporaryDirectory(t);
+  const base = await server(t, (_request, response) => {
+    response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      .end(html.replace('<article id="article">', '<article id="article" data-title="hello world">'));
+  });
+  const quote = (value) => `'${value.replaceAll("'", "''")}'`;
+  const run = (command, cwd) => {
+    const script = `$ErrorActionPreference = 'Stop'; $skillDirectory = ${quote(skillDirectory)};\n${setup}\n${command}`;
+    return exec('powershell.exe', [
+      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand',
+      Buffer.from(script, 'utf16le').toString('base64'),
+    ], { cwd, timeout: 60000 });
+  };
+  for (const cwd of [path.dirname(root), root]) {
+    const invocation = commands.replaceAll('https://example.com', base)
+      .trim().split(/\r?\n/)
+      .map((line) => `${line} --selector "#article" --output ${quote(output)}\n`
+        + 'if ($LASTEXITCODE -ne 0) { throw "Conversion failed." }')
+      .join('\n');
+    const result = await run(invocation, cwd);
+    assert.equal((result.stdout.match(/Saved:/g) || []).length, 3);
+  }
+  const list = path.join(output, 'urls.txt');
+  await writeFile(list, `${base}/listed\n`, 'utf8');
+  const listed = await run(listCommand.replace("'.\\urls.txt'", quote(list)).trim()
+    + ` --output ${quote(output)} --selector "#article"\n`
+    + 'if ($LASTEXITCODE -ne 0) { throw "Batch failed." }', output);
+  assert.match(listed.stdout, /Summary: total=1, succeeded=1, failed=0/);
+  const transported = await run(transport.replace('https://example.com', base)
+    .replace("'--selector',", `'--output', ${quote(output)}, '--selector',`), path.dirname(root));
+  assert.match(transported.stdout, /Saved:/);
+  await assert.rejects(run(
+    `$toolRoot = ${quote(output)};\n${setup.slice(setup.indexOf('foreach'))}`, root,
+  ), (error) => error.code === 1 && /Missing tool entry/.test(error.stderr));
+  await assert.rejects(run(
+    transport.replace('https://example.com/article', `${base}/article`)
+      .replace('[data-title="hello world"]', '#missing'), root,
+  ), (error) => error.code === 1 && /Webpage conversion failed/.test(error.stderr));
+  const directories = (await readdir(output, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory());
+  assert.equal(directories.length, 8);
+  for (const directory of directories) {
+    const folder = path.join(output, directory.name);
+    const content = await readFile(path.join(folder, 'content.md'), 'utf8');
+    const extras = await readFile(path.join(folder, 'extras.md'), 'utf8');
+    const metadata = JSON.parse(await readFile(path.join(folder, 'metadata.json'), 'utf8'));
+    assert.equal(content.split('\n')[0], `# [Example article](<${metadata.requestedUrl}>)`);
+    assert.match(content, /This original test article/);
+    assert.doesNotMatch(content, /Navigation only|Footer backup only/);
+    assert.match(extras, /Navigation only/);
+    assert.match(extras, /Footer backup only/);
+    assert.equal(metadata.url, metadata.requestedUrl);
+    assert.deepEqual(metadata.warnings, []);
+  }
+});
+
 test('Windows batch wrapper handles lists, direct URLs and continued failures', {
   skip: process.platform !== 'win32',
   timeout: 180000,

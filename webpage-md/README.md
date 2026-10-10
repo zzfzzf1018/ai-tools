@@ -4,6 +4,21 @@
 
 默认使用 Mozilla Readability 自动识别正文，再转换为 Markdown。支持标题、段落、列表、引用、代码块、带表头的表格、删除线、链接和图片引用。相对链接和图片地址会转换为绝对地址。
 
+## 通过 Skill 调用
+
+项目 Skill 位于 [.github/skills/webpage-to-markdown/SKILL.md](./.github/skills/webpage-to-markdown/SKILL.md)。在支持项目 Skill 的 Copilot 环境中打开本工具目录，输入：
+
+```text
+/webpage-to-markdown 抓取 https://example.com/article，正文保存为 Markdown，其他内容单独保存
+/webpage-to-markdown 批量处理 urls.txt，输出到当前工作区的 my-docs 目录
+```
+
+Skill 是调用现有工具的工作流，不是独立的转换程序或全局安装。若命令未出现，请检查宿主的 Skill 发现配置，确保本工具目录中的 `.github\skills` 已被发现；打开上层仓库时，不保证宿主会自动发现嵌套目录中的 Skill。
+
+Agent 应根据已加载 Skill 的绝对位置定位工具，不依赖终端当前目录；使用 Windows 包装脚本自动准备依赖，并在执行后读取三份输出、核对原网址和正文、报告警告与失败。需要 Node.js 22+，首次安装依赖需要联网。
+
+Skill 调用时，用户指定的相对输出路径应按用户明确的工作区目录转换成绝对路径后传入；这不改变底层脚本的规则：脚本的相对输出路径按工具目录解析，网址清单相对路径按启动目录解析。Skill 仍受下文抓取范围与访问限制约束。
+
 ## Windows 一键运行
 
 安装 **Node.js 22 或更新版本**后，无需手动执行 `npm install`：
