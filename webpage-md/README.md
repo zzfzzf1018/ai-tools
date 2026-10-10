@@ -27,6 +27,8 @@
 
 脚本可以从其他工作目录调用，默认输出及相对 `--output` 路径均相对于工具目录。不自动修改系统环境或安装 Node.js；缺少 Node.js 时会给出安装提示。
 
+脚本内部通过 JSON 传递参数，避免 Windows PowerShell 再次解析选择器中的引号或输出路径末尾的反斜杠。命令行入口仍需按所用终端规则引用参数；例如在 PowerShell 中可以直接运行 `.\run.ps1 "https://example.com/article" --selector '[data-title="hello world"]'`。若执行策略阻止直接运行，请使用已有的 CMD 入口或上述 PowerShell 启动方式。
+
 如果希望直接使用 PowerShell：
 
 ```powershell
@@ -34,6 +36,48 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run.ps1 "https://examp
 ```
 
 `run.cmd` 同样仅为本次 PowerShell 进程设置执行策略，不修改系统执行策略。
+
+## 批量处理多个网页
+
+批量入口 `batch.cmd` 逐个调用现有 `run.ps1`，复用单页抓取、依赖安装和浏览器准备逻辑，无需另装依赖。
+
+### 命令行传入多个网址
+
+```powershell
+.\batch.cmd "https://example.com/article-1" "https://example.com/article-2"
+```
+
+### 从网址清单读取
+
+准备 UTF-8 文本文件 `urls.txt`，每行一个完整网址，支持空行和以 `#` 开头的整行注释：
+
+```text
+# 要抓取的文章
+https://example.com/article-1
+https://example.com/article-2
+```
+
+```powershell
+.\batch.cmd --file ".\urls.txt"
+```
+
+也可以双击 `batch.cmd`，按提示输入清单文件路径。双击运行结束后会暂停，以便查看汇总信息。
+
+两种输入可以混用，也可以传入多个 `--file`；按参数顺序及文件行顺序处理，不自动去重：
+
+```powershell
+.\batch.cmd --file ".\urls.txt" "https://example.com/extra" -o ".\my-docs" --timeout 60000
+```
+
+`--output` / `-o`、`--selector`、`--render`、`--wait-for`、`--timeout` 对本批次所有网址生效。参数名称和值请分开传入，例如 `--timeout 60000`，而不是 `--timeout=60000`。各站点正文选择器不同时，应分成不同批次，或使用默认自动识别。
+
+批次开始前检查所有网址和公共参数：仅接受不含用户名/密码的完整 HTTP/HTTPS 网址；超时必须为 `1` 至 `2147483647` 的整数，`--wait-for` 必须与 `--render` 配合，缺失参数值会报错。清单中的 `--help` 等字符串不会被当成子脚本选项或计为成功。清单仅支持 UTF-8（可带 BOM），不接受 UTF-16 或损坏的 UTF-8。CSS 选择器的语法、匹配数量和网页加载状态在各页处理时验证，相关错误按该页失败汇总。
+
+参数值若以 `-` 开头会被视为缺值；此类文件或目录请加相对路径前缀，例如 `.\-my-docs`。
+
+清单文件的相对路径相对于启动时的工作目录；输出的相对路径仍相对于工具目录。每个网址独立生成原有的三份文件，不覆盖其他网址的结果。
+
+批量处理为**串行执行**，不自动重试。单个网址抓取失败后仍继续处理后续网址，末尾输出成功数、失败数和失败网址清单。全部成功返回退出码 `0`，存在失败返回 `1`；清单缺失、空清单或批量参数错误会在开始抓取前停止并报告错误。可用 `.\batch.cmd --help` 查看帮助。
 
 ## 手动安装
 
@@ -141,7 +185,7 @@ node .\src\cli.js "https://example.com/article" -o ".\my-docs"
 
 ## 范围与限制
 
-- 一次处理一个网址，不自动抓取全站、整本书或下一章。
+- 单页入口一次处理一个网址；批量入口处理显式提供的网址清单，不自动发现全站、整本书或下一章。
 - 不绕过登录、付费墙、验证码、反爬限制或站点访问控制；没有有效登录会话的页面可能只能提取登录提示。
 - 默认抓取只依据 HTML，无法判断依赖外部 CSS 的全部可见性；CSS 隐藏的辅助阅读副本可能留在备用文档中。
 - 备用文档是其他**可读 HTML 内容**的 Markdown，不是完整 HTML、脚本或资源归档。
@@ -156,7 +200,7 @@ npx playwright install chromium
 npm test
 ```
 
-测试使用原创 HTML 和本机 HTTP 服务，覆盖正文/备用内容分离、重组段落来源追踪、独立重复文字与同名标题保留、懒加载图片恢复、Markdown 结构、链接与图片地址、字符编码、重定向、标题原网址链接、错误、超时、重复输出、CLI 端到端流程，以及 JavaScript 动态正文。渲染测试需要上述 Chromium 安装。Windows 下还会在临时目录验证一键脚本的首次依赖安装、复用和参数透传，因此需要访问 npm 软件包源。
+测试使用原创 HTML 和本机 HTTP 服务，覆盖正文/备用内容分离、重组段落来源追踪、独立重复文字与同名标题保留、懒加载图片恢复、Markdown 结构、链接与图片地址、字符编码、重定向、标题原网址链接、错误、超时、重复输出、CLI 端到端流程，以及 JavaScript 动态正文。渲染测试需要上述 Chromium 安装。Windows 下还会在临时目录验证一键脚本的首次依赖安装、复用和参数透传，以及批量清单、多个网址、错误继续执行和汇总，因此需要访问 npm 软件包源。
 
 代码分工：
 
@@ -165,3 +209,5 @@ npm test
 - `src\cli.js`：参数校验、文件输出和终端错误报告。
 - `test\webpage-md.test.js`：自动化回归测试。
 - `run.cmd` / `run.ps1`：Windows 一键启动和依赖准备。
+- `batch.cmd` / `batch.ps1`：批量读取网址并逐个调用单页入口。
+- `script-helpers.ps1`：脚本共用的网址/参数校验和 JSON 子进程参数传递。

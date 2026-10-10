@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { cp, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
@@ -262,11 +262,12 @@ test('Windows wrapper installs dependencies, reuses them and forwards CLI argume
 }, async (t) => {
   const workspace = await temporaryDirectory(t);
   const root = path.resolve(import.meta.dirname, '..');
-  for (const file of ['package.json', 'package-lock.json', 'run.ps1', 'run.cmd', 'src']) {
+  for (const file of ['package.json', 'package-lock.json', 'run.ps1', 'run.cmd', 'script-helpers.ps1', 'src']) {
     await cp(path.join(root, file), path.join(workspace, file), { recursive: true });
   }
   const base = await server(t, (_request, response) => {
-    response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(html);
+    response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      .end(html.replace('<article id="article">', '<article id="article" data-title="hello world">'));
   });
   const output = path.join(workspace, 'custom output');
   const args = [
@@ -290,6 +291,9 @@ test('Windows wrapper installs dependencies, reuses them and forwards CLI argume
   const repaired = await exec('powershell.exe', args, { timeout: 120000 });
   assert.match(repaired.stdout, /Installing project dependencies/);
   assert.match(repaired.stdout, /Saved:/);
+  const helpWithUrl = await exec('powershell.exe', [...args, '--help'], { timeout: 30000 });
+  assert.match(helpWithUrl.stdout, /Usage:/);
+  assert.doesNotMatch(helpWithUrl.stdout, /Saved:/);
   await assert.rejects(exec('powershell.exe', [
     ...args, '--timeout', '0',
   ], { timeout: 30000 }), (error) => error.code === 1 && /Error:/.test(error.stderr));
@@ -300,7 +304,6 @@ test('CLI completes URL-to-files flow against a real HTTP server', async (t) => 
   const base = await server(t, (_request, response) => {
     response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(html);
   });
-
   const { stdout, stderr } = await exec(process.execPath, [
     cli, `${base}/article`, '--output', output, '--selector', '#article',
   ], { timeout: 15000 });
@@ -311,6 +314,171 @@ test('CLI completes URL-to-files flow against a real HTTP server', async (t) => 
   const content = await readFile(path.join(output, directories[0], 'content.md'), 'utf8');
   assert.match(content, /This original test article/);
   assert.doesNotMatch(content, /Navigation only|Footer backup only/);
+});
+
+test('Windows batch wrapper handles lists, direct URLs and continued failures', {
+  skip: process.platform !== 'win32',
+  timeout: 180000,
+}, async (t) => {
+  const workspace = await temporaryDirectory(t);
+  const root = path.resolve(import.meta.dirname, '..');
+  for (const file of [
+    'package.json', 'package-lock.json', 'run.ps1', 'batch.ps1', 'batch.cmd', 'script-helpers.ps1', 'src',
+  ]) {
+    await cp(path.join(root, file), path.join(workspace, file), { recursive: true });
+  }
+  const requests = [];
+  const base = await server(t, (request, response) => {
+    requests.push(request.url);
+    if (request.url === '/failure') {
+      response.writeHead(403).end('Forbidden');
+    } else {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        .end(html.replace('<article id="article">', '<article id="article" data-title="hello world">'));
+    }
+  });
+  const list = path.join(workspace, 'url list.txt');
+  await writeFile(list, `\ufeff# Original test fixtures\r\n\r\n${base}/first\r\n${base}/failure\r\n`, 'utf8');
+  const output = path.join(workspace, 'batch output');
+  const args = [
+    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(workspace, 'batch.ps1'),
+    '--file', list, `${base}/last?one=1&two=2`, '--output', output, '--selector', '#article',
+  ];
+  await assert.rejects(exec('powershell.exe', args, {
+    cwd: os.tmpdir(), timeout: 120000,
+  }), (error) => {
+    assert.equal(error.code, 1);
+    assert.match(error.stdout, /Summary: total=3, succeeded=2, failed=1/, error.stderr);
+    assert.match(error.stdout, /Failed URLs:/);
+    assert.ok(error.stdout.includes(`${base}/failure`));
+    assert.match(error.stderr, /HTTP 403/);
+    assert.equal((error.stdout.match(/Installing project dependencies/g) || []).length, 1);
+    return true;
+  });
+  assert.deepEqual(requests, ['/first', '/failure', '/last?one=1&two=2']);
+  assert.equal((await readdir(output)).length, 2);
+  const success = await exec(process.env.ComSpec || 'cmd.exe', [
+    '/d', '/s', '/c',
+    `""${path.join(workspace, 'batch.cmd')}" "${base}/one" "${base}/two" --output "${output}" --selector "#article""`,
+  ], { cwd: os.tmpdir(), timeout: 30000, windowsVerbatimArguments: true });
+  assert.match(success.stdout, /Summary: total=2, succeeded=2, failed=0/);
+  assert.equal((await readdir(output)).length, 4);
+  await writeFile(list, `# File-only batch\n${base}/file-only\n`, 'utf8');
+  const fileOnly = await exec('powershell.exe', [
+    ...args.slice(0, 5), '--file', list, '--output', output,
+  ], { timeout: 30000 });
+  assert.match(fileOnly.stdout, /Summary: total=1, succeeded=1, failed=0/);
+  assert.equal((await readdir(output)).length, 5);
+  const quotedOutput = `${path.join(workspace, 'quoted output')}\\`;
+  const psQuote = (value) => `'${value.replace(/'/g, "''")}'`;
+  async function invokeQuoted(script, parameters) {
+    const command = `& ${psQuote(path.join(workspace, script))} ${parameters.map(psQuote).join(' ')}; exit $LASTEXITCODE`;
+    return exec('powershell.exe', [
+      '-NoProfile', '-OutputFormat', 'Text', '-EncodedCommand',
+      Buffer.from(command, 'utf16le').toString('base64'),
+    ], { timeout: 30000 });
+  }
+  const quoted = await invokeQuoted('batch.ps1', [
+    `${base}/quoted-one`, `${base}/quoted-two`, '--selector', '[data-title="hello world"]',
+    '--output', quotedOutput,
+  ]);
+  assert.match(quoted.stdout, /Summary: total=2, succeeded=2, failed=0/);
+  assert.equal((await readdir(quotedOutput)).length, 2);
+  const single = await invokeQuoted('run.ps1', [
+    `${base}/quoted-single`, '--selector', '[data-title="hello world"]', '--output', quotedOutput,
+  ]);
+  assert.match(single.stdout, /Saved:/);
+  assert.equal((await readdir(quotedOutput)).length, 3);
+  const secondList = path.join(workspace, 'second list.txt');
+  await writeFile(secondList, `# Unicode comment: 测试\n${base}/second-list\n`, 'utf8');
+  const multipleFiles = await exec('powershell.exe', [
+    ...args.slice(0, 5), '--file', list, '--file', secondList, '--output', output,
+  ], { timeout: 30000 });
+  assert.match(multipleFiles.stdout, /Summary: total=2, succeeded=2, failed=0/);
+  assert.deepEqual(requests.slice(-2), ['/file-only', '/second-list']);
+  const interactive = exec('powershell.exe', args.slice(0, 5), { timeout: 30000 });
+  interactive.child.stdin.end(`${list}\r\n`);
+  assert.match((await interactive).stdout, /Summary: total=1, succeeded=1, failed=0/);
+  const requestsBeforeInvalidInput = requests.length;
+  const help = await exec('powershell.exe', [
+    ...args.slice(0, 5), '--help',
+  ], { timeout: 10000 });
+  assert.match(help.stdout, /Usage:/);
+  await writeFile(list, '# Empty URL list\n\n', 'utf8');
+  for (const invalid of [
+    ['--file', list], ['--file', path.join(workspace, 'missing.txt')],
+    ['--file'], ['--unknown'], ['--output'], [base, '--output', '-o'],
+    [base, '--selector', '--help'],
+    [base, '--timeout', '0'], [base, '--timeout', '2147483648'],
+    [base, '--timeout', '1.5'], [base, '--wait-for', 'article'],
+    [base, '--render', '--wait-for', '--timeout', '30000'],
+    [base, 'not-a-url'], ['file:///local.html'],
+  ]) {
+    await assert.rejects(exec('powershell.exe', [
+      ...args.slice(0, 5), ...invalid,
+    ], { timeout: 10000 }), (error) => error.code === 1 && /Error:/.test(error.stderr));
+  }
+  for (const invalidList of [
+    `${base}/never-requested\n--help\n`,
+    `${base}/never-requested\nnot-a-url\n`,
+  ]) {
+    await writeFile(list, invalidList, 'utf8');
+    await assert.rejects(exec('powershell.exe', [
+      ...args.slice(0, 5), '--file', list,
+    ], { timeout: 10000 }), (error) => error.code === 1 && /Invalid HTTP/.test(error.stderr));
+  }
+  for (const invalidBytes of [
+    Buffer.from([0xff, 0xfe, 0x61, 0x00]), Buffer.from([0xc3, 0x28]),
+  ]) {
+    await writeFile(list, invalidBytes);
+    await assert.rejects(exec('powershell.exe', [
+      ...args.slice(0, 5), '--file', list,
+    ], { timeout: 10000 }), (error) => error.code === 1 && /Error:/.test(error.stderr));
+  }
+  for (const encoded of ['null', '"--help"', '[]', '[1]', '{broken']) {
+    await assert.rejects(exec('powershell.exe', [
+      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(workspace, 'run.ps1'),
+      '--encoded-arguments',
+    ], {
+      timeout: 10000,
+      env: { ...process.env, WEBPAGE_MD_ARGUMENTS_JSON: encoded },
+    }), (error) => {
+      assert.equal(error.code, 1);
+      assert.match(error.stderr, /Error:/);
+      assert.doesNotMatch(error.stdout, /Installing|Preparing|Saved:/);
+      return true;
+    });
+  }
+  assert.equal(requests.length, requestsBeforeInvalidInput);
+});
+
+test('Windows child transport preserves argument values and restores environment after failure', {
+  skip: process.platform !== 'win32',
+}, async (t) => {
+  const workspace = await temporaryDirectory(t);
+  const probe = path.join(workspace, 'child.ps1');
+  await writeFile(probe, `
+Write-Output ('CHILD_JSON:' + $env:WEBPAGE_MD_ARGUMENTS_JSON)
+[Console]::Error.WriteLine('Expected child failure')
+exit 7
+`, 'utf8');
+  const psQuote = (value) => `'${value.replace(/'/g, "''")}'`;
+  const values = ['https://example.org/a?one=1&two=2', '[data-title="hello world"]', 'C:\\some folder\\', '中文'];
+  const command = `
+$ErrorActionPreference = 'Stop'
+. ${psQuote(path.resolve(import.meta.dirname, '..', 'script-helpers.ps1'))}
+$env:WEBPAGE_MD_ARGUMENTS_JSON = 'original-value'
+$code = Invoke-WebpageRun -ScriptPath ${psQuote(probe)} -Arguments @(${values.map(psQuote).join(',')})
+Write-Output ('RESULT:' + $code + ':' + $env:WEBPAGE_MD_ARGUMENTS_JSON + ':' + $ErrorActionPreference)
+`;
+  const result = await exec('powershell.exe', [
+    '-NoProfile', '-OutputFormat', 'Text', '-EncodedCommand',
+    Buffer.from(command, 'utf16le').toString('base64'),
+  ], { timeout: 10000 });
+  assert.match(result.stdout, /RESULT:7:original-value:Stop/);
+  const json = result.stdout.match(/CHILD_JSON:(.+)/)[1];
+  assert.deepEqual(JSON.parse(json), values);
+  assert.match(result.stderr, /Expected child failure/);
 });
 
 test('rendering waits for dynamically inserted content', async (t) => {

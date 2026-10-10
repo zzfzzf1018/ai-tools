@@ -68,8 +68,9 @@ export async function savePage(result, { output, requestedUrl, fetchedAt, render
   }
 }
 
-async function main() {
+async function main(args) {
   const { values, positionals } = parseArgs({
+    args,
     allowPositionals: true,
     options: {
       output: { type: 'string', short: 'o', default: 'output' },
@@ -111,13 +112,19 @@ async function main() {
   console.log('  metadata.json Source and extraction metadata');
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
-  main().catch((error) => {
+export async function runCli(args = process.argv.slice(2)) {
+  try {
+    await main(args);
+  } catch (error) {
     console.error(`Error: ${error.message}`);
     if (error.cause?.message) console.error(`Cause: ${error.cause.message}`);
     if (/Executable doesn't exist/.test(error.message)) {
       console.error('Install the rendering browser with: npx playwright install chromium');
     }
     process.exitCode = 1;
-  });
+  }
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
+  await runCli();
 }

@@ -2,6 +2,18 @@ $ErrorActionPreference = 'Stop'
 $cliArguments = @($args)
 
 try {
+    . (Join-Path $PSScriptRoot 'script-helpers.ps1')
+    if ($cliArguments.Count -eq 1 -and $cliArguments[0] -eq '--encoded-arguments') {
+        if ([string]::IsNullOrWhiteSpace($env:WEBPAGE_MD_ARGUMENTS_JSON)) {
+            throw 'Missing encoded CLI arguments.'
+        }
+        $decoded = ConvertFrom-Json -InputObject $env:WEBPAGE_MD_ARGUMENTS_JSON
+        if ($decoded -isnot [array] -or $decoded.Count -eq 0 -or
+            @($decoded | Where-Object { $_ -isnot [string] }).Count -gt 0) {
+            throw 'Encoded CLI arguments must be a non-empty array of strings.'
+        }
+        $cliArguments = @($decoded)
+    }
     if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
         throw 'Node.js 22 or newer is required. Install it from https://nodejs.org/ and run again.'
     }
@@ -19,6 +31,10 @@ try {
             throw 'A webpage URL is required.'
         }
         $cliArguments = @($url.Trim())
+    }
+    if (-not ($cliArguments.Count -eq 1 -and $cliArguments[0] -in @('--help', '-h'))) {
+        Assert-WebpageUrl ([string]$cliArguments[0])
+        Assert-WebpageOptions -Options @($cliArguments | Select-Object -Skip 1)
     }
 
     Push-Location $PSScriptRoot
@@ -60,8 +76,14 @@ try {
             }
         }
 
-        & node (Join-Path $PSScriptRoot 'src\cli.js') @cliArguments
-        $exitCode = $LASTEXITCODE
+        $previousArguments = $env:WEBPAGE_MD_ARGUMENTS_JSON
+        try {
+            $env:WEBPAGE_MD_ARGUMENTS_JSON = ConvertTo-Json -InputObject @($cliArguments) -Compress
+            & node --input-type=module -e "import {runCli} from './src/cli.js'; const args = JSON.parse(process.env.WEBPAGE_MD_ARGUMENTS_JSON); delete process.env.WEBPAGE_MD_ARGUMENTS_JSON; await runCli(args);"
+            $exitCode = $LASTEXITCODE
+        } finally {
+            $env:WEBPAGE_MD_ARGUMENTS_JSON = $previousArguments
+        }
     } finally {
         Pop-Location
     }
