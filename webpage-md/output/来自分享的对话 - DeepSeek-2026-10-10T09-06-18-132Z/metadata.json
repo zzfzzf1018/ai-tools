@@ -1,0 +1,16 @@
+{
+  "title": "来自分享的对话 - DeepSeek",
+  "url": "https://chat.deepseek.com/share/9loiylrshziiidl70l",
+  "author": null,
+  "description": "本地部署语音合成（TTS）与声音克隆系统，目前有多个成熟的开源方案可供选择。下面我将从**工具选型、硬件要求、核心部署流程**以及**通用技巧**几个方面，为你梳理一份清晰的本地部署指南。 ### 🛠️ 主流开源工具选型 当前社区活跃、部署资料丰富的方案主要有以下几种，你可以根据需求选择： | 工具 | 核心特点 | 推荐场景 | | :--- | :--- | :--- | | **GPT-SoVITS** | 低资源需求，少量语音数据（5-20分钟）即可微调，效果自然，社区教程极多[referen...",
+  "siteName": "deepseek",
+  "language": "en-GB",
+  "extraction": "readability",
+  "selector": null,
+  "textLength": 2375,
+  "requestedUrl": "https://chat.deepseek.com/share/9loiylrshziiidl70l",
+  "fetchedAt": "2026-10-10T09:06:18.132Z",
+  "rendered": true,
+  "contentType": "text/html; charset=utf-8",
+  "warnings": []
+}
