@@ -332,6 +332,41 @@ test('project skill has valid discovery metadata and a resolvable tool reference
   assert.match(await readFile(path.resolve(skillDirectory, reference), 'utf8'), /通过 Skill 调用/);
 });
 
+test('project agent references the local Skill and defines a result review contract', async () => {
+  const root = path.resolve(import.meta.dirname, '..');
+  const agentDirectory = path.join(root, '.github', 'agents');
+  const agent = await readFile(path.join(agentDirectory, 'webpage-to-markdown.agent.md'), 'utf8');
+  const frontmatter = agent.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
+  assert.ok(frontmatter);
+  assert.equal(JSON.parse(frontmatter[1].match(/^name: (.+)$/m)[1]), 'Webpage Markdown Agent');
+  assert.match(JSON.parse(frontmatter[1].match(/^description: (.+)$/m)[1]), /webpage-to-markdown Skill/);
+  assert.match(frontmatter[1], /^user-invocable: true$/m);
+  assert.match(frontmatter[1], /^agents: \[\]$/m);
+  assert.doesNotMatch(frontmatter[1], /^(?:model|tools):/m);
+  const references = [...agent.matchAll(/\]\((\.\.[^)]+)\)/g)].map((match) => match[1]);
+  assert.deepEqual(references, ['../skills/webpage-to-markdown/SKILL.md', '../../README.md']);
+  for (const reference of references) {
+    assert.ok((await readFile(path.resolve(agentDirectory, reference), 'utf8')).length > 0);
+  }
+  assert.match(agent, /必须加载 `webpage-to-markdown` Skill/);
+  assert.match(agent, /`content\.md`、`extras\.md` 和 `metadata\.json`/);
+  assert.match(agent, /正文与页面对照/);
+  assert.match(agent, /最多额外重试 2 次/);
+  assert.match(agent, /通过 \/ 存在问题 \/ 待确认 \/ 抓取失败/);
+  assert.match(agent, /不覆盖、删除旧结果/);
+  assert.match(agent, /不把退出码 0 当作质量通过/);
+  assert.match(agent, /不能标为“待确认”/);
+  assert.match(agent, /已经证实的缺陷仍优先归此类/);
+  assert.match(agent, /重试失败不抹掉此前有效结果/);
+  assert.match(agent, /抓取成功数 = 复核通过数 \+ 存在问题数 \+ 待确认数/);
+  assert.match(agent, /输入数 = 抓取成功数 \+ 抓取失败数/);
+  assert.match(agent, /实际绝对文件路径作为目标/);
+  assert.match(agent, /\[正文\]\(<C:\/docs\/Article Result\/content\.md>\)/);
+  const readme = await readFile(path.join(root, 'README.md'), 'utf8');
+  assert.match(readme, /Agent 选择器/);
+  assert.match(readme, /\.\/\.github\/agents\/webpage-to-markdown\.agent\.md/);
+});
+
 test('skill documented commands work from repository and tool directories', {
   skip: process.platform !== 'win32',
   timeout: 120000,

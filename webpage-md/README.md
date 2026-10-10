@@ -4,6 +4,23 @@
 
 默认使用 Mozilla Readability 自动识别正文，再转换为 Markdown。支持标题、段落、列表、引用、代码块、带表头的表格、删除线、链接和图片引用。相对链接和图片地址会转换为绝对地址。
 
+## 通过 Agent 使用（抓取后自动复核）
+
+在支持自定义 Agent 的 Copilot 环境中打开本工具目录，在聊天的 **Agent 选择器**中选择 **Webpage Markdown Agent**，然后直接粘贴网址即可，也可描述批量和输出要求：
+
+```text
+https://example.com/article
+处理 urls.txt，输出到当前工作区的 my-docs，并检查正文是否遗漏
+```
+
+配置文件：[.github/agents/webpage-to-markdown.agent.md](./.github/agents/webpage-to-markdown.agent.md)。Agent 会先加载现有 Skill，运行工具，再逐页读取正文、备用内容及元数据，并对照原页面检查来源链接、完整性、乱码和内容分离。
+
+发现问题时根据页面证据调整选择器或可信页面的渲染方式，每个输入默认最多额外重试两次，保留旧结果并报告采用的结果。最终回复给出逐页复核状态、实际文件链接、警告和未解决问题；抓取成功不等于复核通过。无法可靠对照原页面时标记“待确认”，不保证任意站点的完整保真。
+
+没有完整、可读的三份输出属于“抓取失败”，不计入成功；已有有效输出但有未修复缺陷属于“存在问题”，没有已知缺陷却无法完成页面对照属于“待确认”。每个输入按最终结果计一次，重试不重复计数。
+
+Agent 与 Skill 都是本项目配置；如果选择器中没有该 Agent，请检查宿主是否发现本工具目录的 `.github\agents`。Agent 不使用 `/webpage-to-markdown` 作为切换命令，该斜杠命令对应下文的 Skill。需要宿主允许读取文件、执行工具及查看原页面；配置说明是 Agent 的工作流程，不是独立的确定性内容校验程序。
+
 ## 通过 Skill 调用
 
 项目 Skill 位于 [.github/skills/webpage-to-markdown/SKILL.md](./.github/skills/webpage-to-markdown/SKILL.md)。在支持项目 Skill 的 Copilot 环境中打开本工具目录，输入：
