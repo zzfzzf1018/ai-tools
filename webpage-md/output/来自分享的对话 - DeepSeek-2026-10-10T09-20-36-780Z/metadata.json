@@ -1,0 +1,16 @@
+{
+  "title": "来自分享的对话 - DeepSeek",
+  "url": "https://chat.deepseek.com/share/c8shg3v6eqncqhnned",
+  "author": null,
+  "description": "`openai/whisper` 是 OpenAI 开源的一个**通用语音识别模型**，主要用于**将语音转换为文本**。它被设计成一个多任务模型，能在一个统一框架下处理多种语音任务，而非仅仅是一个简单的转录工具[reference:0]。 ### 🎯 核心功能 Whisper 的核心能力包括[reference:1][!reference:2]： * **多语言语音识别**：支持多种语言的语音转文字。 * **语音翻译**：能将非英语语音直接翻译成英语文本。 * **语种识别**：自动判...",
+  "siteName": "deepseek",
+  "language": "en-GB",
+  "extraction": "readability",
+  "selector": null,
+  "textLength": 2117,
+  "requestedUrl": "https://chat.deepseek.com/share/c8shg3v6eqncqhnned",
+  "fetchedAt": "2026-10-10T09:20:36.780Z",
+  "rendered": true,
+  "contentType": "text/html; charset=utf-8",
+  "warnings": []
+}
