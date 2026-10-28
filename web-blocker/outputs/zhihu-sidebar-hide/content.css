@@ -1,0 +1,4 @@
+/* 被判定为左侧栏的元素统一走这条规则，撤销时只需移除属性 */
+[data-zsh-hide] {
+  display: none !important;
+}

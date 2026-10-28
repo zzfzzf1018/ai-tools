@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>网页屏蔽器</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --fg: #1f2329;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --accent: #d94040;
+      --chip: #f3f4f6;
+      --warn: #d93025;
+      --ok: #1a7f37;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1c1f24;
+        --fg: #e8eaed;
+        --muted: #9aa0a6;
+        --line: #33383f;
+        --accent: #e35d5d;
+        --chip: #262a30;
+        --warn: #f28b82;
+        --ok: #6bd490;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      width: 400px;
+      margin: 0;
+      padding: 14px;
+      background: var(--bg);
+      color: var(--fg);
+      font: 13px/1.55 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    }
+    h1 { margin: 0; font-size: 14px; font-weight: 600; }
+    .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .head img { width: 36px; height: 36px; border-radius: 9px; flex: none; }
+    .head .sub { margin: 2px 0 0; }
+    .sub { color: var(--muted); font-size: 11px; margin: 2px 0 10px; }
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .hint { color: var(--muted); font-size: 11px; }
+    .switch { position: relative; width: 38px; height: 20px; flex: none; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; inset: 0; background: var(--line); border-radius: 20px; transition: background .15s; }
+    .slider::before {
+      content: ""; position: absolute; left: 2px; top: 2px; width: 16px; height: 16px;
+      border-radius: 50%; background: var(--bg);
+    }
+    .switch input:checked + .slider { background: var(--accent); }
+    .switch input:checked + .slider::before { transform: translateX(18px); }
+    .btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    button {
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--chip);
+      color: var(--fg);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); color: var(--accent); }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+    button.primary:hover { color: #fff; opacity: .9; }
+    button.danger { color: var(--warn); }
+    #status { margin-top: 10px; min-height: 16px; color: var(--muted); font-size: 11px; white-space: pre-wrap; }
+    #status.err { color: var(--warn); }
+    #status.ok { color: var(--ok); }
+    .rule {
+      margin-top: 8px;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--chip);
+    }
+    .rule .top { display: flex; align-items: center; gap: 8px; }
+    .rule .name { flex: 1; font-weight: 600; font-size: 12px; word-break: break-all; }
+    .badge {
+      flex: none; padding: 1px 6px; border-radius: 4px; font-size: 10px;
+      background: var(--bg); color: var(--muted); border: 1px solid var(--line);
+    }
+    .sel { margin-top: 4px; font: 11px/1.5 Consolas, Menlo, monospace; color: var(--muted); word-break: break-all; }
+    .acts { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 11px; }
+    .acts select { font-size: 11px; padding: 2px 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg); }
+    .hit { color: var(--muted); }
+    .hit.zero { color: var(--warn); }
+    textarea {
+      width: 100%; min-height: 70px; margin-top: 8px; padding: 6px 8px;
+      border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg);
+      font: 11px/1.5 Consolas, Menlo, monospace; resize: vertical;
+    }
+    .empty { margin-top: 12px; color: var(--muted); font-size: 12px; }
+    details { margin-top: 10px; }
+    summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="head">
+    <img src="icons/icon-48.png" alt="" />
+    <div>
+      <h1>网页屏蔽器</h1>
+      <div class="sub" id="ver">—</div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div>
+      全局启用
+      <div class="hint">关掉后所有规则立即失效并还原页面</div>
+    </div>
+    <span class="switch"><input type="checkbox" id="master" /><span class="slider"></span></span>
+  </div>
+
+  <div class="row">
+    <div>
+      当前页面：<span id="pauseState">—</span>
+      <div class="hint">快捷键 Alt+Shift+B 暂停本页 · Alt+Shift+S 暂停本站</div>
+    </div>
+    <div class="btns" style="margin-top:0">
+      <button id="pauseTab">暂停本页</button>
+      <button id="pauseSite">暂停本站</button>
+    </div>
+  </div>
+
+  <div class="hint" id="pausedSites" style="display:none;margin-top:6px"></div>
+
+  <div class="btns">
+    <button id="pick" class="primary">在此页面上点选屏蔽</button>
+    <button id="reapply">重新应用</button>
+    <button id="toggleAll">显示全部规则</button>
+  </div>
+
+  <div id="list"></div>
+
+  <details>
+    <summary>导入 / 导出规则</summary>
+    <textarea id="io" placeholder="导出：点下面的按钮把 JSON 填到这里；导入：把 JSON 粘进来再点「导入」"></textarea>
+    <div class="btns">
+      <button id="export">导出到文本框</button>
+      <button id="copy">复制</button>
+      <button id="import">从文本框导入</button>
+      <button id="clearSite" class="danger">清空本站规则</button>
+    </div>
+  </details>
+
+  <div id="status"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

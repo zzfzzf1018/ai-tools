@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "知乎侧边栏隐藏",
+  "version": "1.1.0",
+  "description": "隐藏知乎网页版新增的左侧图标栏，并让主内容自动补位。支持点选锁定侧栏。",
+  "permissions": ["storage"],
+  "content_scripts": [
+    {
+      "matches": ["*://*.zhihu.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "知乎侧边栏隐藏"
+  }
+}
