@@ -68,6 +68,13 @@ describe('shared typing engine', () => {
     expect(session.elapsed).toBe(60000);
     expect(typeKey(session, { key: 'j' }, 160000)).toBe(session);
   });
+  it('finishes at the deadline when pause arrives before the timer refresh', () => {
+    const active = typeKey(createSession('fjfj'), { key: 'f' }, 1000);
+    const expired = pause(active, 61001, 60);
+    expect(expired.status).toBe('done');
+    expect(expired.elapsed).toBe(60000);
+    expect(resume(expired, 90000)).toBe(expired);
+  });
   it.each([
     [84.99, 0],
     [85, 1],

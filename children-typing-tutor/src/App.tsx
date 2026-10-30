@@ -151,6 +151,11 @@ export function App() {
     };
   }, [settings]);
 
+  useEffect(() => {
+    if (settings && !settingsPanel.current?.contains(document.activeElement))
+      settingsPanel.current?.querySelector<HTMLButtonElement>('button')?.focus();
+  }, [settings, reset]);
+
   function navigate(target: View) {
     if (unfinished && !window.confirm('离开后，这次未完成的练习将重新开始。确定离开吗？')) return;
     setActivity(null);

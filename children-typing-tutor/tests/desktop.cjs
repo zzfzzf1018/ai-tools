@@ -113,10 +113,51 @@ async function run() {
     application = await launch();
     page = await application.firstWindow();
     await expect(page.getByRole('button', { name: /左手的小伙伴/ })).toBeEnabled();
+    if (!portable) {
+      await page.getByRole('button', { name: '自由练习', exact: true }).click();
+      await page.getByRole('button', { name: '开始练习', exact: true }).click();
+      await page.getByRole('group', { name: '打字练习区' }).focus();
+      await page.keyboard.type('a');
+      await application.evaluate(({ BrowserWindow, dialog }) => {
+        globalThis.closePrompt = { calls: 0, choice: 1 };
+        dialog.showMessageBoxSync = (_window, options) => {
+          globalThis.closePrompt.calls++;
+          globalThis.closePrompt.options = options;
+          return globalThis.closePrompt.choice;
+        };
+        BrowserWindow.getAllWindows()[0].close();
+      });
+      await expect.poll(() => application.evaluate(() => globalThis.closePrompt.calls)).toBe(1);
+      expect(
+        await application.evaluate(({ BrowserWindow }) => ({
+          count: BrowserWindow.getAllWindows().length,
+          defaultId: globalThis.closePrompt.options.defaultId,
+          cancelId: globalThis.closePrompt.options.cancelId,
+        })),
+      ).toEqual({ count: 1, defaultId: 1, cancelId: 1 });
+      await expect(page.getByRole('group', { name: '打字练习区' })).toBeVisible();
+      const closed = application.waitForEvent('close');
+      await application.evaluate(({ BrowserWindow }) => {
+        globalThis.closePrompt.choice = 0;
+        BrowserWindow.getAllWindows()[0].close();
+      });
+      await closed;
+      application = null;
+    }
     console.log(
       'PASS desktop: bundled local assets, course completion, secure preferences, restart persistence',
     );
   } finally {
+    if (application && !portable) {
+      await application
+        .evaluate(({ BrowserWindow }) => {
+          for (const window of BrowserWindow.getAllWindows()) {
+            window.webContents.removeAllListeners('will-prevent-unload');
+            window.webContents.on('will-prevent-unload', (event) => event.preventDefault());
+          }
+        })
+        .catch(() => undefined);
+    }
     if (application) await application.close();
     await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { lessons } from '../src/data/lessons';
+import { award, defaultProgress } from '../src/lib/progress';
 
 async function onboarding(page: Page) {
   await page.getByRole('button', { name: '开始冒险', exact: true }).click();
@@ -118,6 +119,35 @@ test('practice modes, both games, settings, reset confirmation', async ({ page }
   ).toBe(0);
 });
 
+test('word balloon asks for a separator instead of claiming the game is complete', async ({
+  page,
+}) => {
+  const progress = lessons
+    .slice(0, 6)
+    .reduce(
+      (data, lesson) =>
+        award(data, { id: `seed-${lesson.id}`, lessonId: lesson.id, accuracy: 100, seconds: 1 }),
+      defaultProgress(),
+    );
+  await page.addInitScript(
+    (data) => localStorage.setItem('typing-island-v1', JSON.stringify(data)),
+    progress,
+  );
+  await page.goto('/');
+  await page.getByRole('button', { name: '趣味乐园', exact: true }).click();
+  await page.getByRole('button', { name: '一起放气球', exact: true }).click();
+  await page.getByRole('group', { name: '打字练习区' }).focus();
+  const text = (await page.locator('.target-text').getAttribute('aria-label'))!.replace(
+    '目标文本：',
+    '',
+  );
+  await page.keyboard.type(text.split(' ')[0]);
+  await expect(page.locator('.target-text .current')).toHaveText('\u2423');
+  await expect(page.locator('.game-stage .balloon-one span')).toHaveText('空格');
+  await typeTarget(page);
+  await expect(page.locator('.game-stage .balloon-one span')).toHaveText('完成');
+});
+
 test('navigation cancellation preserves session; window blur pauses it', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: '自由练习', exact: true }).click();
@@ -188,6 +218,44 @@ test('timed practice excludes breaks, ends on deadline and completed navigation 
   expect(dialogs).toEqual([]);
 });
 
+test('resume button supports Space without the exercise swallowing its keyboard event', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '自由练习', exact: true }).click();
+  await page.getByRole('button', { name: '开始练习', exact: true }).click();
+  await page.getByRole('button', { name: '暂停练习', exact: true }).click();
+  const resumeButton = page
+    .getByRole('group', { name: '打字练习区' })
+    .getByRole('button', { name: '继续练习', exact: true });
+  await resumeButton.focus();
+  await page.keyboard.press('Space');
+  await expect(page.getByRole('button', { name: '暂停练习', exact: true })).toBeVisible();
+  await expect(page.getByRole('group', { name: '打字练习区' })).toBeFocused();
+  await page.keyboard.type('a');
+  await expect(page.locator('.target-text .typed')).toHaveCount(1);
+});
+
+test('blur just after deadline finishes before a delayed timer can run', async ({ page }) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(performance, 'now', { configurable: true, value: () => 0 }),
+  );
+  await page.goto('/');
+  await page.getByRole('button', { name: '自由练习', exact: true }).click();
+  await page.getByRole('button', { name: '1 分钟', exact: true }).click();
+  await page.getByRole('button', { name: '开始练习', exact: true }).click();
+  await page.getByRole('group', { name: '打字练习区' }).focus();
+  await page.keyboard.type('a');
+  await page.evaluate(() => {
+    Object.defineProperty(performance, 'now', { configurable: true, value: () => 60001 });
+    window.dispatchEvent(new Event('blur'));
+  });
+  await expect(page.getByRole('region', { name: '练习结果' })).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v1')!).seconds))
+    .toBe(60);
+});
+
 test('settings keyboard focus stays in dialog and returns to trigger', async ({ page }) => {
   await page.goto('/');
   const trigger = page.getByRole('button', { name: '小岛设置', exact: true }).last();
@@ -197,6 +265,23 @@ test('settings keyboard focus stays in dialog and returns to trigger', async ({ 
   await expect(page.getByRole('button', { name: '重新开始整个小岛' })).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: '关闭设置' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+});
+
+test('reset confirmation preserves focus when its buttons are replaced', async ({ page }) => {
+  await page.goto('/');
+  const trigger = page.getByRole('button', { name: '小岛设置', exact: true }).last();
+  await trigger.click();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.getByRole('button', { name: '重新开始整个小岛' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('button', { name: '关闭设置' })).toBeFocused();
+  await page.getByRole('button', { name: '取消', exact: true }).click();
+  await expect(page.getByRole('button', { name: '关闭设置' })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.getByRole('button', { name: '重新开始整个小岛' })).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(trigger).toBeFocused();

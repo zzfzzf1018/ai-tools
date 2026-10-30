@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session } = require('electron');
+const { app, BrowserWindow, dialog, session } = require('electron');
 const path = require('node:path');
 
 app.setAppUserModelId('com.typingisland.app');
@@ -25,6 +25,18 @@ app.whenReady().then(() => {
     });
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     window.webContents.on('will-navigate', (event) => event.preventDefault());
+    window.webContents.on('will-prevent-unload', (event) => {
+      const choice = dialog.showMessageBoxSync(window, {
+        type: 'question',
+        title: '离开打字小岛？',
+        message: '这次练习还没有完成，退出后需要重新开始。',
+        buttons: ['退出练习', '继续学习'],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+      });
+      if (choice === 0) event.preventDefault();
+    });
     window.loadFile(path.join(__dirname, '../dist/index.html'));
   };
   createWindow();

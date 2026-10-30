@@ -62,7 +62,8 @@ export function TypingExercise({
       setNow(current);
       if (activity.limit) setSession((previous) => expire(previous, current, activity.limit));
     }, 200);
-    const suspend = () => setSession((previous) => pause(previous, performance.now()));
+    const suspend = () =>
+      setSession((previous) => pause(previous, performance.now(), activity.limit));
     const visibility = () => {
       if (document.hidden) suspend();
     };
@@ -136,7 +137,7 @@ export function TypingExercise({
               setSession((previous) =>
                 previous.status === 'paused'
                   ? resume(previous, performance.now())
-                  : pause(previous, performance.now()),
+                  : pause(previous, performance.now(), activity.limit),
               );
               area.current?.focus();
             }}
@@ -193,7 +194,8 @@ export function TypingExercise({
                 style={{ transform: `translateY(${-progress * 90}px)` }}
               >
                 <span>
-                  {session.text.slice(session.cursor).split(' ')[0]?.slice(0, 9) || '完成'}
+                  {session.text.slice(session.cursor).split(' ')[0]?.slice(0, 9) ||
+                    (done ? '完成' : '空格')}
                 </span>
               </div>
               <div
@@ -219,9 +221,10 @@ export function TypingExercise({
             aria-label="打字练习区"
             onBlur={(event) => {
               if (!event.currentTarget.contains(event.relatedTarget as Node | null))
-                setSession((previous) => pause(previous, performance.now()));
+                setSession((previous) => pause(previous, performance.now(), activity.limit));
             }}
             onKeyDown={(event) => {
+              if (event.target !== event.currentTarget) return;
               setCaps(event.getModifierState('CapsLock'));
               if (isTypingKey(event.nativeEvent)) {
                 event.preventDefault();

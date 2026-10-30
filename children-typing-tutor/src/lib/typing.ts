@@ -37,9 +37,10 @@ export function activeTime(session: Session, now: number): number {
   return session.elapsed + (session.since === null ? 0 : Math.max(0, now - session.since));
 }
 
-export function pause(session: Session, now: number): Session {
-  if (session.status === 'done' || session.status === 'paused') return session;
-  return { ...session, elapsed: activeTime(session, now), since: null, status: 'paused' };
+export function pause(session: Session, now: number, seconds = 0): Session {
+  const current = expire(session, now, seconds);
+  if (current.status === 'done' || current.status === 'paused') return current;
+  return { ...current, elapsed: activeTime(current, now), since: null, status: 'paused' };
 }
 
 export function resume(session: Session, now: number): Session {
