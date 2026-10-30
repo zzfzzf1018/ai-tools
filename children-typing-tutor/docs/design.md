@@ -1,0 +1,84 @@
+# 设计文档
+
+## 架构与取舍
+
+React + TypeScript + Vite 负责共享前端，Electron 仅提供 Windows 窗口。选择成熟桌面壳以减少双端行为差异，代价是桌面包体积较大。无后端、无 Node 渲染器权限、无自定义 IPC。
+
+```mermaid
+flowchart LR
+  Course[课程与指法数据] --> App[页面与活动调度]
+  App --> Exercise[共享练习组件]
+  Keys[焦点内键盘事件] --> Engine[纯打字引擎]
+  Engine --> Exercise
+  Exercise --> Result[完成结果]
+  Result --> Progress[奖励与本地记录]
+  Progress --> App
+  Web[Vite 网页与预缓存] --> App
+  Desktop[Electron 安全窗口] --> App
+```
+
+## 模块职责
+
+| 模块                                | 核心接口                                                                     | 职责                                         |
+| ----------------------------------- | ---------------------------------------------------------------------------- | -------------------------------------------- |
+| `src/data/lessons.ts`               | `lessons`、`fingerFor`、`knownKeys`、`practiceText`                          | 课程文本、先修键集、指法、练习素材           |
+| `src/lib/typing.ts`                 | `createSession`、`typeKey`、`pause`、`resume`、`expire`、`accuracy`、`speed` | 不依赖 React 的会话状态和计算                |
+| `src/lib/progress.ts`               | `loadProgress`、`saveProgress`、`award`、`passedCount`                       | 数据校验、解锁、最佳成绩、去重与保存         |
+| `src/components/TypingExercise.tsx` | `Activity`、`onComplete`、`onNext`                                           | 共享课堂、练习和游戏输入，计时器生命周期     |
+| `src/components/Keyboard.tsx`       | `target`                                                                     | 键盘位置与手指分工，仅作示意，不模拟成绩输入 |
+| `src/App.tsx`                       | `openLesson`、`startLesson`、`navigate`                                      | 顶层视图、教学步骤、设置、离线状态           |
+| `electron/main.cjs`                 | `BrowserWindow` 生命周期                                                     | 生产文件加载、导航/权限限制                  |
+
+页面采用显式状态切换，不依赖服务器路由，避免 `file:`、部署子目录和离线刷新产生路由差异。所有课程静态导入，不运行时 fetch 本地文件。
+
+## 输入状态机
+
+```mermaid
+stateDiagram-v2
+  [*] --> Ready
+  Ready --> Active: 第一次可打印尝试
+  Ready --> Paused: 失焦或暂停
+  Active --> Paused: 失焦或暂停
+  Paused --> Ready: 未开始时继续
+  Paused --> Active: 已开始时继续
+  Active --> Done: 文本完成或有效时间截止
+  Done --> [*]
+```
+
+输入区域独占焦点时才处理事件，不拦截其他表单或全局快捷键。采用 `event.key` 判定输出字符，忽略自动重复、组合输入、非 ASCII 和 Ctrl/Meta/Alt。Shift 影响字母大小写，但本身不计分。退格可以回退，完成态不可再修改。
+
+时间来自 `performance.now()` 的单调时钟。暂停累加有效时间并清空运行起点；继续时重设起点。`expire` 既在定时器刷新时调用，也在每次输入前调用，防止刷新间隙接受截止后的按键。完成回调由会话 ID 和组件完成标记防重。
+
+三个教学阶段：讲解 → 跟练 → 小测。重试创建新会话 ID；跟练完成只进入小测，不发课程奖励。认识键盘课为三个非计时确认步骤。
+
+## 数据模型
+
+存储键 `typing-island-v1`，版本 `1`：
+
+- `lessons`：按课 ID 保存最佳准确率与星级。
+- `settings`：声音、减少动态。
+- `rounds`、`games`、`seconds`：累计完成次数、游戏次数与有效秒数。
+- `days`：本地日历日期到完成次数的映射。
+- `recent`：最近 100 个完成会话 ID，用于重复回调去重；不保存原始按键。
+
+`passedCount` 只计算从第一课连续通过的课程。不能跳过前置课领奖。记录在完成与设置变动后保存，不按键写盘。读取时校验版本、对象类型、非负有限数、课程 ID 与星级一致性。读取异常降级默认状态并提示；写入异常保留内存学习能力并提示。
+
+数据保存在当前 origin/桌面用户配置中；没有跨端同步承诺。更改存储结构必须增加版本及显式迁移，不得直接解释旧 JSON 为新类型。
+
+## 离线和发布
+
+Vite `base: './'` 使资源适应桌面文件和网页子目录。PWA 使用 Workbox 生成预缓存，包含 HTML、JS、CSS、本地插画与字体。图标和插画只由一条缓存收集路径处理，避免同 URL 不同 revision 冲突。离线标记依赖真实入口缓存存在，而不只依赖 Worker 注册成功。
+
+网页首次加载仍需联网和安全来源；缓存可能被浏览器清理。更新采用提示模式，不在孩子练习中强制刷新。Electron `file:` 不注册 Service Worker，全部内容直接从应用包加载。
+
+桌面采用 `contextIsolation: true`、`sandbox: true`、`nodeIntegration: false`、`webSecurity: true`，拒绝页面外跳、新窗口和权限请求。生产 CSP 通过 Vite HTML 钩子注入，禁止远程脚本和对象，允许本地字体、图片及样式；局部内联样式仅用于进度和角色位置。开发服务器不注入生产 CSP，以允许 React Refresh 的开发内联脚本，且只监听本机。首版不打开外部链接，不接受网页到系统命令的桥接。
+
+## 视觉和可访问性
+
+薄荷绿、珊瑚色、暖黄和中性白并用；本地原创小岛与兔兔贯穿游戏和课程。桌面侧栏提供四个固定入口，手机改为底栏。正文采用可读中文系统字体，英文使用本地 Nunito。布局使用断点而不是按视口缩放字体。
+
+动态仅用于伙伴轻微浮动和游戏进度；尊重系统减少动态和站内设置。按键音默认关闭。错误同时用文字、边框和当前字符表示，图标按钮具备名称；设置弹窗需限制焦点并支持 Escape 关闭。触屏仅浏览，不把屏幕按键当作物理指法成绩。
+
+## 测试策略
+
+纯逻辑边界由 Vitest 快速验证；用户流程由 Playwright 在真实 Chromium 中运行；桌面通过 Playwright Electron 启动实际打包产物并检查重启恢复。截图只辅助检查布局，不能代替课程行为、离线刷新和桌面可用性断言。

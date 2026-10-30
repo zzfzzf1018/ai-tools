@@ -1,0 +1,78 @@
+{
+  "name": "typing-island",
+  "private": true,
+  "version": "1.0.0",
+  "description": "A playful, offline-first English typing tutor for children",
+  "author": "Typing Island",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "engines": {
+    "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "desktop:dev": "npm run build && electron .",
+    "desktop:build": "npm run build && electron-builder --win --dir",
+    "desktop:package": "npm run build && electron-builder --win portable nsis",
+    "test:desktop": "node tests/desktop.cjs"
+  },
+  "dependencies": {
+    "@fontsource/nunito": "^5.2.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "electron": "^45.1.0",
+    "electron-builder": "^26.0.12",
+    "eslint": "^9.39.0",
+    "globals": "^16.5.0",
+    "prettier": "^3.6.2",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.46.0",
+    "vite": "^7.3.1",
+    "vite-plugin-pwa": "^1.2.0",
+    "vitest": "^5.0.5"
+  },
+  "build": {
+    "appId": "com.typingisland.app",
+    "productName": "Typing Island",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "artifactName": "Typing-Island-${version}-${arch}-setup.${ext}",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "portable": {
+      "artifactName": "Typing-Island-${version}-${arch}-portable.${ext}"
+    }
+  }
+}

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="440" viewBox="0 0 1200 440">
+  <rect width="1200" height="440" fill="#e6f5f0"/>
+  <g fill="#fff" opacity=".8"><path d="M46 80c-6-25 24-42 42-24 14-30 57-19 55 10 24-4 34 22 17 31H45c-13-3-14-14 1-17"/><path d="M834 63c0-22 26-30 39-12 15-25 49-18 50 9 29-5 37 24 13 30H832c-17-4-17-24 2-27"/></g>
+  <circle cx="1060" cy="89" r="37" fill="#f9d775"/><g stroke="#f9d775" stroke-width="4" stroke-linecap="round"><path d="M1060 32V22m0 124v10m57-67h10M993 89h-10m31-45-8-8m102 8 8-8"/></g>
+  <path d="M0 261c126-117 221-103 339-30s175 75 313-15 276-67 548 29v195H0" fill="#c6e7d4"/>
+  <path d="M0 322c176-63 302-46 474 12s385-95 726-53v159H0" fill="#8ac6aa"/>
+  <path d="M-15 411c254-70 396 8 612-21s416-82 618-3" fill="none" stroke="#c9e6d8" stroke-width="26"/>
+  <path d="M60 440c192-108 310-61 443-115s196-18 290-68 178-61 327-4" fill="none" stroke="#fff6d8" stroke-width="30"/>
+  <path d="M60 440c192-108 310-61 443-115s196-18 290-68 178-61 327-4" fill="none" stroke="#dfcf9e" stroke-width="2" stroke-dasharray="6 10"/>
+  <g><path d="M116 321v-88m-16 32 16 15 19-25" stroke="#a58b60" stroke-width="10" stroke-linecap="round"/><circle cx="115" cy="216" r="46" fill="#439c7a"/><circle cx="91" cy="235" r="30" fill="#54ad86"/><circle cx="141" cy="233" r="30" fill="#5eb88a"/></g>
+  <g><path d="M1030 370v-88" stroke="#a58b60" stroke-width="12"/><circle cx="1033" cy="251" r="56" fill="#4a9d77"/><circle cx="996" cy="275" r="35" fill="#5eb488"/><circle cx="1074" cy="277" r="32" fill="#71bd8c"/><circle cx="1017" cy="243" r="7" fill="#f7cb75"/><circle cx="1057" cy="272" r="7" fill="#f7cb75"/></g>
+  <g transform="translate(340 278)"><path d="M0 31h72v-58L36-50 0-27" fill="#fff4d8"/><path d="m-9-23 45-36 45 36" fill="#dc8e7c"/><rect x="27" y="0" width="20" height="31" rx="9" fill="#b2c7af"/><rect x="10" y="-14" width="12" height="12" rx="2" fill="#78b4bd"/></g>
+  <g fill="#fff1b1"><path d="m590 252 4 9 10 1-8 7 2 10-8-5-9 5 2-10-8-7 10-1z"/><path d="m878 191 4 9 10 1-8 7 2 10-8-5-9 5 2-10-8-7 10-1z"/></g>
+  <g fill="#f8e9ac"><circle cx="192" cy="357" r="5"/><circle cx="933" cy="319" r="5"/><circle cx="1117" cy="371" r="5"/></g><g stroke="#f8e9ac" stroke-width="4"><path d="M192 347v20m-10-10h20M933 309v20m-10-10h20M1117 361v20m-10-10h20"/></g>
+  <g fill="#f4ada0"><circle cx="246" cy="381" r="5"/><circle cx="740" cy="374" r="5"/><circle cx="895" cy="404" r="5"/></g>
+</svg>
