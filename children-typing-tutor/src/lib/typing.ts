@@ -19,7 +19,16 @@ export interface KeyInput {
   altKey?: boolean;
 }
 
-export function createSession(text: string, id: string = crypto.randomUUID()): Session {
+export function createSessionId(): string {
+  return (
+    crypto.randomUUID?.() ??
+    Array.from(crypto.getRandomValues(new Uint8Array(16)), (value) =>
+      value.toString(16).padStart(2, '0'),
+    ).join('')
+  );
+}
+
+export function createSession(text: string, id: string = createSessionId()): Session {
   return {
     id,
     text,

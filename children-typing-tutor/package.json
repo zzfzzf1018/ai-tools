@@ -12,16 +12,21 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
+    "build:all": "node scripts/build.cjs all",
+    "build:web": "node scripts/build.cjs web",
+    "build:windows": "node scripts/build.cjs windows",
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "vitest run",
+    "test": "vitest run && npm run test:build",
+    "test:build": "node --test tests/build.test.cjs",
     "test:e2e": "playwright test",
-    "desktop:dev": "npm run build && electron .",
-    "desktop:build": "npm run build && electron-builder --win --dir",
-    "desktop:package": "npm run build && electron-builder --win portable nsis",
+    "desktop:runtime": "node node_modules/electron/install.js",
+    "desktop:dev": "npm run build && npm run desktop:runtime && electron .",
+    "desktop:build": "npm run build && npm run desktop:runtime && electron-builder --win --dir",
+    "desktop:package": "npm run build && npm run desktop:runtime && electron-builder --win portable nsis",
     "test:desktop": "node tests/desktop.cjs"
   },
   "dependencies": {
@@ -51,6 +56,7 @@
   "build": {
     "appId": "com.typingisland.app",
     "productName": "Typing Island",
+    "electronDist": "node_modules/electron/dist",
     "directories": {
       "output": "release"
     },

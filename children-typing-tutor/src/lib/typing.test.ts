@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   accuracy,
   activeTime,
   createSession,
+  createSessionId,
   expire,
   finish,
   pause,
@@ -13,6 +14,17 @@ import {
 } from './typing';
 
 describe('shared typing engine', () => {
+  it('uses cryptographic random values when randomUUID is unavailable', () => {
+    const getRandomValues = crypto.getRandomValues.bind(crypto);
+    vi.stubGlobal('crypto', { getRandomValues });
+    try {
+      const first = createSessionId();
+      expect(first).toMatch(/^[a-f0-9]{32}$/);
+      expect(createSession('fj').id).not.toBe(first);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it('does not advance on mistakes, never forgives errors on backspace', () => {
     let session = createSession('fj');
     session = typeKey(session, { key: 'x' }, 1000);

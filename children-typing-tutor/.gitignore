@@ -20,3 +20,4 @@ Thumbs.db
 *.pfx
 *.p12
 tmp/
+.build.lock

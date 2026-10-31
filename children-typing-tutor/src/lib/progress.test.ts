@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { knownKeys, lessons, practiceText } from '../data/lessons';
+import { fingerFor, knownKeys, lessons, practiceText } from '../data/lessons';
 import { award, defaultProgress, loadProgress, passedCount, saveProgress } from './progress';
 
 describe('curriculum and persistence', () => {
+  it('maps every letter, taught punctuation and digit to the correct QWERTY finger', () => {
+    const groups = ['qaz1', 'wsx2', 'edc3', 'rfvtgb45', 'yhnujm67', 'ik,8', 'ol.9', "p;/'0", ' '];
+    groups.forEach((group, finger) => {
+      for (const key of group) {
+        expect(fingerFor(key)).toBe(finger);
+        expect(fingerFor(key.toUpperCase())).toBe(finger);
+      }
+    });
+    expect(fingerFor('!')).toBe(0);
+  });
   it('games only generate keys from the unlocked course inventory', () => {
     for (let passed = 0; passed <= 20; passed++) {
       const allowed = knownKeys(passed);
@@ -37,6 +47,20 @@ describe('curriculum and persistence', () => {
     expect(
       award(defaultProgress(), { id: 'x', accuracy: 100, seconds: 1, lessonId: 20 }).lessons,
     ).toEqual({});
+  });
+  it('rejects fractional and unsafe completion counts without rejecting fractional scores or time', () => {
+    const data = award(defaultProgress(), { id: 'a', accuracy: 85.5, seconds: 1.25, lessonId: 1 });
+    for (const invalid of [
+      { ...data, rounds: 1.5 },
+      { ...data, games: 0.5 },
+      { ...data, rounds: Number.MAX_SAFE_INTEGER + 1 },
+      { ...data, days: { '2026-10-31': 1.5 } },
+    ]) {
+      expect(
+        loadProgress({ getItem: () => JSON.stringify(invalid), setItem() {} }).warning,
+      ).not.toBe('');
+    }
+    expect(loadProgress({ getItem: () => JSON.stringify(data), setItem() {} }).data).toEqual(data);
   });
   it('roundtrips valid progress and tolerates corrupt, invalid or blocked storage', () => {
     const data = award(defaultProgress(), { id: 'a', accuracy: 100, seconds: 1, lessonId: 1 });

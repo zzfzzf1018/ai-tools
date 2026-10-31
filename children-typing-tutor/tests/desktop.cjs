@@ -5,6 +5,19 @@ const { createServer } = require('node:net');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
 
+async function completeExercise(page, next) {
+  const text = (await page.locator('.target-text').getAttribute('aria-label')).replace(
+    '目标文本：',
+    '',
+  );
+  await page.getByRole('group', { name: '打字练习区' }).focus();
+  if (await page.getByRole('button', { name: '继续练习', exact: true }).count())
+    await page.getByRole('button', { name: '继续练习', exact: true }).last().click();
+  await page.keyboard.type(text, { delay: 10 });
+  await expect(page.getByRole('button', { name: next, exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+}
+
 async function run() {
   const profile = await mkdtemp(path.join(tmpdir(), 'typing-island-'));
   const executablePath = process.env.DESKTOP_EXECUTABLE;
@@ -84,18 +97,36 @@ async function run() {
     await page.getByRole('button', { name: '开始冒险', exact: true }).click();
     for (const name of ['坐好啦，下一步', '找到空格了', '出发，去找 F 和 J', '开始跟练'])
       await page.getByRole('button', { name, exact: true }).click();
-    for (const next of ['开始小测', '继续探索']) {
-      const text = (await page.locator('.target-text').getAttribute('aria-label')).replace(
-        '目标文本：',
-        '',
-      );
-      await page.getByRole('group', { name: '打字练习区' }).focus();
-      if (await page.getByRole('button', { name: '继续练习', exact: true }).count())
-        await page.getByRole('button', { name: '继续练习', exact: true }).last().click();
-      await page.keyboard.type(text, { delay: 10 });
-      await page.getByRole('button', { name: next, exact: true }).click();
-    }
+    for (const next of ['开始小测', '继续探索']) await completeExercise(page, next);
     await expect(page.getByRole('button', { name: /左手的小伙伴/ })).toBeEnabled();
+    for (let lessonNumber = 3; lessonNumber <= 20; lessonNumber++) {
+      await page.getByRole('button', { name: '继续学习', exact: true }).click();
+      await page.getByRole('button', { name: '开始跟练', exact: true }).click();
+      await completeExercise(page, '开始小测');
+      await completeExercise(page, '继续探索');
+    }
+    await expect(page.locator('.lesson-number.completed')).toHaveCount(20);
+    await page.getByRole('button', { name: '自由练习', exact: true }).click();
+    for (const kind of ['字母', '单词', '短句']) {
+      await page.getByRole('button', { name: kind, exact: true }).click();
+      await page.getByRole('button', { name: '开始练习', exact: true }).click();
+      await completeExercise(page, '继续探索');
+    }
+    await page.getByRole('button', { name: '趣味乐园', exact: true }).click();
+    for (const name of ['出发去旅行', '一起放气球']) {
+      await page.getByRole('button', { name, exact: true }).click();
+      await completeExercise(page, '继续探索');
+    }
+    await page.getByRole('button', { name: '我的成长', exact: true }).click();
+    await expect(page.locator('.badge.earned').filter({ hasText: '游戏好伙伴' })).toBeVisible();
+    await page.getByRole('button', { name: '小岛设置', exact: true }).last().click();
+    await page.getByRole('checkbox', { name: /减少动态效果/ }).check();
+    await page.getByRole('checkbox', { name: /轻柔按键音/ }).check();
+    await page.getByRole('button', { name: '关闭设置' }).click();
+    expect(
+      await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v1')).rounds),
+    ).toBe(25);
+    expect(await page.evaluate(() => window.open('about:blank') === null)).toBe(true);
     const secure = portable
       ? await page.evaluate(
           () =>
@@ -112,7 +143,16 @@ async function run() {
     await application.close();
     application = await launch();
     page = await application.firstWindow();
+    page.on('pageerror', (error) => errors.push(error.message));
     await expect(page.getByRole('button', { name: /左手的小伙伴/ })).toBeEnabled();
+    await expect(page.getByRole('button', { name: '关闭声音', exact: true })).toBeVisible();
+    await expect(page.locator('.app')).toHaveClass(/reduce-motion/);
+    const restored = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('typing-island-v1')),
+    );
+    expect(restored.rounds).toBe(25);
+    expect(restored.games).toBe(2);
+    expect(Object.keys(restored.lessons)).toHaveLength(20);
     if (!portable) {
       await page.getByRole('button', { name: '自由练习', exact: true }).click();
       await page.getByRole('button', { name: '开始练习', exact: true }).click();
@@ -144,8 +184,9 @@ async function run() {
       await closed;
       application = null;
     }
+    if (errors.length) throw new Error(errors.join('\n'));
     console.log(
-      'PASS desktop: bundled local assets, course completion, secure preferences, restart persistence',
+      'PASS desktop: all 20 courses, three practice modes, both games, result focus, secure preferences, settings and progress persistence',
     );
   } finally {
     if (application && !portable) {
@@ -165,7 +206,7 @@ async function run() {
 const watchdog = setTimeout(() => {
   console.error('Desktop smoke test did not reach its completion marker.');
   process.exit(1);
-}, 90000);
+}, 120000);
 run()
   .then(() => {
     clearTimeout(watchdog);

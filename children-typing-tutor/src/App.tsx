@@ -34,9 +34,10 @@ import {
   localDay,
   passedCount,
   saveProgress,
+  STORAGE_KEY,
   type Progress,
 } from './lib/progress';
-import { accuracy, type Session } from './lib/typing';
+import { accuracy, createSessionId, type Session } from './lib/typing';
 import { TypingExercise, type Activity } from './components/TypingExercise';
 import { Keyboard } from './components/Keyboard';
 
@@ -73,7 +74,9 @@ export function App() {
       ? '桌面离线版'
       : import.meta.env.DEV
         ? '网页练习版'
-        : '准备离线资源',
+        : 'serviceWorker' in navigator && 'caches' in window
+          ? '准备离线资源'
+          : '在线学习中',
   );
   const [updateReady, setUpdateReady] = useState(false);
   const updateApp = useRef<((reload?: boolean) => Promise<void>) | null>(null);
@@ -92,7 +95,26 @@ export function App() {
   }, [progress]);
 
   useEffect(() => {
-    if (location.protocol === 'file:' || import.meta.env.DEV) return;
+    const synchronize = (event: StorageEvent) => {
+      if (event.storageArea !== localStorage || (event.key !== STORAGE_KEY && event.key !== null))
+        return;
+      const current = loadProgress(storage);
+      saved.current = current.data;
+      setProgress(current.data);
+      setWarning(current.warning);
+    };
+    window.addEventListener('storage', synchronize);
+    return () => window.removeEventListener('storage', synchronize);
+  }, []);
+
+  useEffect(() => {
+    if (
+      location.protocol === 'file:' ||
+      import.meta.env.DEV ||
+      !('serviceWorker' in navigator) ||
+      !('caches' in window)
+    )
+      return;
     let disposed = false;
     import('virtual:pwa-register')
       .then(({ registerSW }) => {
@@ -171,7 +193,7 @@ export function App() {
   function startLesson(lesson: Lesson, phase: 'guided' | 'checkpoint') {
     setIntro(null);
     setActivity({
-      id: crypto.randomUUID(),
+      id: createSessionId(),
       title: lesson.title,
       text: phase === 'guided' ? lesson.guided : lesson.checkpoint,
       lessonId: lesson.id,
@@ -204,7 +226,7 @@ export function App() {
   function startPractice() {
     const base = practiceText(kind);
     setActivity({
-      id: crypto.randomUUID(),
+      id: createSessionId(),
       title: `${kind === 'letters' ? '字母' : kind === 'words' ? '单词' : '短句'}练习`,
       text: limit ? Array.from({ length: 60 }, () => base).join(' ') : base,
       limit,
@@ -213,7 +235,7 @@ export function App() {
   function startGame(game: 'trail' | 'balloons') {
     const text = practiceText(game === 'trail' ? 'letters' : 'words', knownKeys(passed));
     setActivity({
-      id: crypto.randomUUID(),
+      id: createSessionId(),
       title: game === 'trail' ? '兔兔去旅行' : '放飞单词气球',
       text,
       game,
@@ -339,7 +361,7 @@ export function App() {
               onNext={nextActivity}
               onRetry={() => {
                 if (window.confirm('要重新开始这次练习吗？'))
-                  setActivity({ ...activity, id: crypto.randomUUID() });
+                  setActivity({ ...activity, id: createSessionId() });
               }}
             />
           ) : intro ? (
@@ -377,7 +399,7 @@ export function App() {
                     else {
                       setProgress((previous) =>
                         award(previous, {
-                          id: crypto.randomUUID(),
+                          id: createSessionId(),
                           accuracy: 100,
                           seconds: 0,
                           lessonId: 1,

@@ -78,6 +78,32 @@ test('zero-beginner course: guided, failed checkpoint, retry, unlock, persistenc
   expect(errors).toEqual([]);
 });
 
+test('courses and games remain usable when randomUUID is unavailable on ordinary HTTP', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: undefined });
+    Reflect.deleteProperty(Navigator.prototype, 'serviceWorker');
+    Reflect.deleteProperty(window, 'caches');
+  });
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto('/');
+  await expect(page.getByText('在线学习中', { exact: true })).toBeVisible();
+  await onboarding(page);
+  await page.getByRole('button', { name: '开始跟练' }).click();
+  await typeTarget(page);
+  await page.getByRole('button', { name: '开始小测', exact: true }).click();
+  await typeTarget(page);
+  await page.getByRole('button', { name: '继续探索', exact: true }).click();
+  await page.getByRole('button', { name: '趣味乐园', exact: true }).click();
+  await page.getByRole('button', { name: '出发去旅行', exact: true }).click();
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: '重新开始', exact: true }).click();
+  await typeTarget(page);
+  expect(errors).toEqual([]);
+});
+
 test('practice modes, both games, settings, reset confirmation', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: '自由练习', exact: true }).click();
@@ -148,6 +174,49 @@ test('word balloon asks for a separator instead of claiming the game is complete
   await expect(page.locator('.game-stage .balloon-one span')).toHaveText('完成');
 });
 
+test('Shift, space, apostrophe, exclamation and Caps Lock display the correct keyboard hints', async ({
+  page,
+}) => {
+  const progress = lessons
+    .slice(0, 17)
+    .reduce(
+      (data, lesson) =>
+        award(data, { id: `finger-${lesson.id}`, lessonId: lesson.id, accuracy: 100, seconds: 1 }),
+      defaultProgress(),
+    );
+  await page.addInitScript(
+    (data) => localStorage.setItem('typing-island-v1', JSON.stringify(data)),
+    progress,
+  );
+  await page.goto('/');
+  await page.getByRole('button', { name: '继续学习', exact: true }).click();
+  await page.getByRole('button', { name: '开始跟练' }).click();
+  await expect(page.locator('.finger-hint')).toContainText('左食指 · F');
+  await expect(page.locator('.finger-hint')).toContainText('右手 Shift');
+  const area = page.getByRole('group', { name: '打字练习区' });
+  await area.dispatchEvent('keydown', { key: 'CapsLock', modifierCapsLock: true });
+  await expect(page.getByRole('status')).toContainText('Caps Lock 已开启');
+  await page.keyboard.press('Shift+KeyF');
+  await expect(page.locator('.key.target')).toHaveText('空格');
+  await page.keyboard.press('Space');
+  await expect(page.locator('.finger-hint')).toContainText('右食指 · J');
+  await expect(page.locator('.finger-hint')).toContainText('左手 Shift');
+  await typeTarget(page);
+  await page.getByRole('button', { name: '开始小测', exact: true }).click();
+  await typeTarget(page);
+  await page.getByRole('button', { name: '继续探索', exact: true }).click();
+  await page.getByRole('button', { name: '继续学习', exact: true }).click();
+  await expect(page.locator('.key.target')).toHaveText("'");
+  await expect(page.locator('.finger-hint')).toContainText('右小指');
+  await page.getByRole('button', { name: '开始跟练' }).click();
+  await page.keyboard.type('Hi');
+  await expect(page.locator('.key.target')).toHaveText('1');
+  await expect(page.locator('.finger-hint')).toContainText('左小指 · !');
+  await expect(page.locator('.finger-hint')).toContainText('右手 Shift');
+  await page.keyboard.press('Shift+Digit1');
+  await expect(page.locator('.target-text .typed')).toHaveCount(3);
+});
+
 test('navigation cancellation preserves session; window blur pauses it', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: '自由练习', exact: true }).click();
@@ -188,6 +257,30 @@ test('web assets and lessons work after offline reload', async ({ page, context 
   await context.setOffline(false);
 });
 
+test('an available update cannot reload an active exercise or its result', async ({ page }) => {
+  const updates: boolean[] = [];
+  await page.exposeFunction('captureUpdate', (reload: boolean) => updates.push(reload));
+  await page.route('**/assets/virtual_pwa-register-*.js', (route) =>
+    route.fulfill({
+      contentType: 'application/javascript',
+      body: 'export function registerSW(options) { options.onNeedRefresh(); return async (reload) => globalThis.captureUpdate(reload); }',
+    }),
+  );
+  await page.goto('/');
+  const update = page.getByRole('button', { name: '更新版本', exact: true });
+  await expect(update).toBeEnabled();
+  await page.getByRole('button', { name: '自由练习', exact: true }).click();
+  await page.getByRole('button', { name: '开始练习', exact: true }).click();
+  await expect(update).toBeDisabled();
+  await typeTarget(page);
+  await expect(update).toBeDisabled();
+  expect(updates).toEqual([]);
+  await page.getByRole('button', { name: '继续探索', exact: true }).click();
+  await expect(update).toBeEnabled();
+  await update.click();
+  expect(updates).toEqual([true]);
+});
+
 test('timed practice excludes breaks, ends on deadline and completed navigation needs no warning', async ({
   page,
 }) => {
@@ -218,6 +311,55 @@ test('timed practice excludes breaks, ends on deadline and completed navigation 
   expect(dialogs).toEqual([]);
 });
 
+test('three-minute practice ignores shortcuts, repetition and composition, preserves mistakes and pauses in background', async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.goto('/');
+  await page.getByRole('button', { name: '自由练习', exact: true }).click();
+  await page.getByRole('button', { name: '3 分钟', exact: true }).click();
+  await page.getByRole('button', { name: '开始练习', exact: true }).click();
+  const area = page.getByRole('group', { name: '打字练习区' });
+  await area.focus();
+  await page.keyboard.down('a');
+  await page.keyboard.down('a');
+  await page.keyboard.up('a');
+  await page.keyboard.press('Control+a');
+  for (const input of [
+    { key: 's', isComposing: true },
+    { key: 's', repeat: true },
+    { key: 's', altKey: true },
+    { key: 's', metaKey: true },
+  ])
+    await area.dispatchEvent('keydown', input);
+  await expect(page.locator('.target-text .typed')).toHaveCount(1);
+  await page.keyboard.press('Backspace');
+  await expect(page.locator('.target-text .typed')).toHaveCount(0);
+  await page.keyboard.type('xa');
+  await expect(page.locator('.target-text .typed')).toHaveCount(1);
+  await expect(page.locator('.session-stats > span').first()).toContainText('66%');
+  await page.clock.fastForward(10000);
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.clock.fastForward(240000);
+  await expect(page.locator('.input-message')).toContainText('休息一下');
+  await expect(page.getByRole('region', { name: '练习结果' })).toHaveCount(0);
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect(page.locator('.input-message')).toContainText('休息一下');
+  await page.getByRole('button', { name: '继续练习', exact: true }).last().click();
+  await page.clock.fastForward(180000);
+  await expect(page.getByRole('region', { name: '练习结果' })).toBeVisible();
+  await page.clock.fastForward(240000);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v1')!));
+  expect(saved.seconds).toBe(180);
+  expect(saved.rounds).toBe(1);
+});
+
 test('resume button supports Space without the exercise swallowing its keyboard event', async ({
   page,
 }) => {
@@ -234,6 +376,41 @@ test('resume button supports Space without the exercise swallowing its keyboard 
   await expect(page.getByRole('group', { name: '打字练习区' })).toBeFocused();
   await page.keyboard.type('a');
   await expect(page.locator('.target-text .typed')).toHaveCount(1);
+});
+
+test('keyboard completion focuses the result action and Enter continues the lesson', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await onboarding(page);
+  await page.getByRole('button', { name: '开始跟练' }).click();
+  await typeTarget(page);
+  await expect(page.getByRole('button', { name: '开始小测', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('group', { name: '打字练习区' })).toBeFocused();
+  await typeTarget(page);
+  await expect(page.getByRole('button', { name: '继续探索', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('button', { name: /左手的小伙伴/ })).toBeEnabled();
+});
+
+test('audio device rejections do not produce unhandled errors or block typing', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    AudioContext.prototype.resume = () => Promise.reject(new Error('Audio device unavailable'));
+    AudioContext.prototype.close = () => Promise.reject(new Error('Audio shutdown failed'));
+  });
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto('/');
+  await page.getByRole('button', { name: '开启声音', exact: true }).click();
+  await page.getByRole('button', { name: '自由练习', exact: true }).click();
+  await page.getByRole('button', { name: '开始练习', exact: true }).click();
+  await typeTarget(page);
+  await page.getByRole('button', { name: '继续探索', exact: true }).click();
+  await expect(page.getByRole('button', { name: '开始练习', exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
 });
 
 test('blur just after deadline finishes before a delayed timer can run', async ({ page }) => {
@@ -337,6 +514,30 @@ test('blocked storage keeps practice usable and shows save warning', async ({ pa
   await typeTarget(page);
 });
 
+test('another tab receives progress and settings changes without overwriting new lessons', async ({
+  page,
+  context,
+}) => {
+  await page.goto('/');
+  const second = await context.newPage();
+  await second.goto('/');
+  await expect(second.getByRole('button', { name: '开始冒险', exact: true })).toBeVisible();
+  await onboarding(page);
+  await second.getByRole('button', { name: '开启声音', exact: true }).click();
+  await expect
+    .poll(() => second.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v1')!).rounds))
+    .toBe(1);
+  await expect(page.getByRole('button', { name: '关闭声音', exact: true })).toBeVisible();
+  await second.getByRole('button', { name: '小岛设置', exact: true }).last().click();
+  await second.getByRole('button', { name: '重新开始整个小岛' }).click();
+  await second.getByRole('button', { name: '确认清除记录' }).click();
+  await expect(page.getByRole('button', { name: '开启声音', exact: true })).toBeVisible();
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.reload();
+  await expect(page.getByRole('button', { name: '开始冒险', exact: true })).toBeVisible();
+  await second.close();
+});
+
 test('responsive screenshots and asset checks', async ({ page }) => {
   await page.goto('/');
   for (const [width, height] of [
@@ -362,6 +563,33 @@ test('responsive screenshots and asset checks', async ({ page }) => {
     ).toBe(true);
     await page.screenshot({ path: `test-results/map-${width}.png`, fullPage: true });
   }
+  for (const [width, height] of [
+    [1440, 900],
+    [1280, 800],
+    [768, 1024],
+    [390, 844],
+  ]) {
+    await page.setViewportSize({ width, height });
+    for (const [name, label] of [
+      ['自由练习', 'practice'],
+      ['趣味乐园', 'games'],
+      ['我的成长', 'progress'],
+    ]) {
+      await page.getByRole('button', { name, exact: true }).click();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await page.screenshot({ path: `test-results/${label}-${width}.png`, fullPage: true });
+    }
+    await page.getByRole('button', { name: '小岛设置', exact: true }).last().click();
+    await expect(page.getByRole('dialog')).toBeInViewport({ ratio: 1 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({ path: `test-results/settings-${width}.png` });
+    await page.getByRole('button', { name: '关闭设置' }).click();
+  }
+  await page.getByRole('button', { name: '学习地图', exact: true }).click();
   await onboarding(page);
   await page.getByRole('button', { name: '开始跟练' }).click();
   for (const [width, height] of [

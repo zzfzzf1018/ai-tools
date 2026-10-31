@@ -42,6 +42,7 @@ export function TypingExercise({
   const [now, setNow] = useState(() => performance.now());
   const [caps, setCaps] = useState(false);
   const area = useRef<HTMLDivElement>(null);
+  const resultAction = useRef<HTMLButtonElement>(null);
   const awarded = useRef(false);
   const audio = useRef<AudioContext | null>(null);
   const percent = accuracy(session);
@@ -53,7 +54,7 @@ export function TypingExercise({
   useEffect(() => {
     area.current?.focus();
     return () => {
-      void audio.current?.close();
+      void audio.current?.close().catch(() => undefined);
     };
   }, []);
   useEffect(() => {
@@ -83,16 +84,17 @@ export function TypingExercise({
   useEffect(() => {
     if (done && !awarded.current) {
       awarded.current = true;
+      resultAction.current?.focus();
       onComplete(session);
     }
   }, [done, session, onComplete]);
 
-  function chime() {
+  async function chime() {
     if (!sound) return;
     try {
       const context = audio.current ?? new AudioContext();
       audio.current = context;
-      void context.resume();
+      await context.resume();
       const oscillator = context.createOscillator();
       const gain = context.createGain();
       oscillator.type = 'sine';
@@ -230,7 +232,7 @@ export function TypingExercise({
                 event.preventDefault();
                 const current = performance.now();
                 if (session.status !== 'paused' && event.key === session.text[session.cursor])
-                  chime();
+                  void chime();
                 setNow(current);
                 setSession((previous) =>
                   typeKey(expire(previous, current, activity.limit), event.nativeEvent, current),
@@ -303,7 +305,7 @@ export function TypingExercise({
               <RotateCcw size={17} />
               再练一次
             </button>
-            <button className="primary" onClick={unlocked ? onNext : onRetry}>
+            <button ref={resultAction} className="primary" onClick={unlocked ? onNext : onRetry}>
               {unlocked ? (guided ? '开始小测' : '继续探索') : '再试一次'}
               {unlocked ? <ArrowRight size={17} /> : <Check size={17} />}
             </button>

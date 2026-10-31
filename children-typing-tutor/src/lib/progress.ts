@@ -30,6 +30,8 @@ const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 const count = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0;
+const completionCount = (value: unknown): value is number =>
+  count(value) && Number.isSafeInteger(value);
 
 export function loadProgress(storage: StorageLike): { data: Progress; warning: string } {
   try {
@@ -43,13 +45,13 @@ export function loadProgress(storage: StorageLike): { data: Progress; warning: s
       !record(value.settings) ||
       typeof value.settings.sound !== 'boolean' ||
       typeof value.settings.reducedMotion !== 'boolean' ||
-      !count(value.rounds) ||
-      !count(value.games) ||
+      !completionCount(value.rounds) ||
+      !completionCount(value.games) ||
       !count(value.seconds) ||
       !record(value.days) ||
       !Array.isArray(value.recent) ||
       !value.recent.every((id) => typeof id === 'string') ||
-      !Object.values(value.days).every(count)
+      !Object.values(value.days).every(completionCount)
     )
       throw new Error('Invalid progress');
     for (const [id, result] of Object.entries(value.lessons)) {
