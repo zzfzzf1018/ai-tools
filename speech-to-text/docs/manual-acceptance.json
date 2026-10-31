@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "release_version": "1.0.1",
+  "accepted_on": "2026-10-31",
+  "accepted_by": "user",
+  "status": "accepted",
+  "confirmation": "人工验收成功，封板提交推送打TAG",
+  "scope": "Windows x64, local Chinese/English transcription, CPU/int8",
+  "real_video_test": "Executed using the packaged application; user confirmed manual acceptance",
+  "independent_clean_windows_receipt": "not_provided",
+  "quantitative_accuracy_metrics": "not_provided",
+  "real_test_media_committed": false,
+  "real_test_transcripts_or_frames_committed": false,
+  "notes": "This records user release approval, not fabricated machine test results or CER/WER values. Recognition algorithm and model are unchanged for this release."
+}

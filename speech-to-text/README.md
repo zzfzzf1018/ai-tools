@@ -1,9 +1,13 @@
 # 本地语音转文字
 
+版本 **1.0.1**：用户已于 2026-10-31 确认人工验收成功并授权封板发布，见 [验收记录](docs/manual-acceptance.json) 与 [发布说明](docs/release-review.md)。
+
 Windows 桌面和命令行工具，将中文、英文音频或视频转为 UTF-8 TXT、SRT、WebVTT。
 使用 faster-whisper 多语言模型本地推理，媒体不会上传。首次使用需下载模型，之后可离线运行。
 
 ## 快速使用
+
+**不会写代码也能用：**双击 `help.cmd`，或用浏览器打开 [使用与一键出包手册](docs/user-guide.html)。其中包含实际界面截图、首次安装、双击出包、分享和故障处理步骤。
 
 已构建的版本：解压完整发行目录，双击 `SpeechToText.exe`。不要只复制 EXE，旁边的 `_internal` 是必要依赖。
 源码工作区：双击 `run.cmd`。首次设置先双击 `build.cmd`。
@@ -23,8 +27,11 @@ Windows 桌面和命令行工具，将中文、英文音频或视频转为 UTF-8
 # 或双击 build.cmd
 ```
 
-脚本建立隔离 `.build-venv`，安装锁定依赖，执行依赖检查、静态检查、自动化测试、原生诊断，再用 PyInstaller 打包。
+双击入口会自动查找 Python 3.13，有安装管理器时尝试自动安装；成功后自动打开出包目录。没有管理器时按使用手册从官网安装即可。
+脚本显示中文七阶段进度，建立隔离 `.build-venv`，安装锁定依赖，执行依赖检查、静态检查、自动化测试、原生诊断，再用 PyInstaller 打包。
 失败立即终止。产物为 `dist/SpeechToText/SpeechToText.exe` 和 `dist/SpeechToText-windows-x64.zip`。
+每次构建日志保存在 `.artifacts/logs`；同一目录不允许并发出包；新 ZIP 内容验证与 SHA-256 计算通过后才替换旧 ZIP，并生成同名 `.zip.sha256` 校验文件。
+发行目录包含离线 HTML 手册、`help.cmd`、`build-info.json` 与运行依赖。接收者只需完整解压 ZIP 并双击 EXE，不需要 Python。
 模型不打包进 EXE，避免将数百 MB 到数 GB 的模型强行绑定到安装包。
 没有 `py` 启动器时：`./build.ps1 -PythonPath 'C:/Python313/python.exe'`。
 PowerShell 策略阻止脚本时使用 `build.cmd`，它仅为本次进程设置策略，不修改系统策略，也不请求管理员权限。
@@ -84,14 +91,19 @@ GPU 路径不属于本次 Windows CPU 验收范围。
 ```
 
 真实验收需要 Windows 中文 `Microsoft Huihui Desktop` 和英文 `Microsoft Zira Desktop` 语音。
-标准测试不下载模型，CI 每次提交执行测试和打包；手动 CI 可启用真实识别验收。
-本地 CPU 发布验收：38 项标准测试、10 项真实 small 模型测试、5 项便携 EXE 转写检查通过。
+标准测试不下载模型，CI 模板可配置提交检查和手动真实识别验收；当前项目位于主仓库子目录，GitHub 工作流需要由主仓库根目录的 `.github/workflows` 调用，本轮未验证远程 CI。
+完整门禁运行 `build.cmd -Integration`，执行标准回归、真实 small 模型集成测试和发行 EXE 验收，将 JUnit、源码指纹、逐案例报告及汇总打包进 `validation`。
+最终数量和状态以 `validation/release-evidence.json` 为准；源码中途变化、测试失败/跳过或 EXE 不匹配均不能通过，不用历史测试数量代替本轮结果。
+`build-info.json` 的 `engineering_status` 表示本轮本机工程门禁；自动报告的 `formal_release_status` 是构建时状态。用户人工批准、实际发布提交和远程标签另行记录，不把未提供的外部机器或准确率数据写成测试通过。
 便携包复验可运行 `.\.build-venv\Scripts\python.exe scripts/verify_release.py`，需先准备模型及测试媒体。
+对实际分发 ZIP 复验可加 `--archive dist/SpeechToText-windows-x64.zip`，同时检查哈希、ZIP 文件与构建记录。
 
 - [需求文档](docs/requirements.md)
 - [设计文档](docs/design.md)
 - [测试与验收](docs/testing.md)
 - [审查与发布记录](docs/release-review.md)
+- [普通用户图文手册](docs/user-guide.html)
+- [正式封板外部验收](docs/external-acceptance.md)
 
 依赖版本见 `requirements-lock.txt`，核心稳定版 CTranslate2 需要提供 `pkg_resources` 的 setuptools。
 该接口会产生弃用警告，但不影响本次已验证的 CPU 转写。ONNX VAD 不在执行路径中；使用 Whisper 自带无语音判断。

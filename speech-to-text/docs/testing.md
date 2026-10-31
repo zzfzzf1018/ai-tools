@@ -9,9 +9,11 @@
 5. GUI：创建真实 Tk、布局、文件队列和任务事件，不依赖浏览器截图。
 6. 集成：真实 small 多语言模型识别中英文 WAV/MP3/MP4/MKV；3 秒延迟视频音轨；数字静音。
 7. 打包：PyInstaller 产物执行 doctor，真实字幕导出，验证数据文件、DLL 和动态导入完整性。
+8. 一键入口与手册：CMD 成功/失败返回值、中文空格目录、Windows PowerShell 5.1 解释器探测、命令失败、并发锁、ZIP 结构、重复出包、压缩故障旧包保护、真实 SHA-256、UTF-8 BOM、帮助文件和手册图片链接。
 
-本次本地验证结果：38 项标准测试通过，无跳过；10 项真实 small 模型测试通过；
-5 项便携 EXE 实际转写检查通过。静态检查、格式、依赖一致性和原生诊断均通过。
+本轮结果以完整集成包 `validation/release-evidence.json` 为准，不用历史数量代替最新结果。
+标准与集成测试提供 JUnit，EXE 提供逐案例及哈希证据，源码冻结前后指纹必须一致，ZIP 必须包含同一份汇总和验收 EXE。
+报告拒绝失败、错误、跳过、空测试报告、源码变化和 EXE 不匹配。合成样本通过不等于外部业务通过。
 
 ## 执行
 
@@ -19,6 +21,10 @@
 ./build.ps1 -TestOnly
 ./build.ps1 -TestOnly -Integration
 ./build.ps1 -Integration
+# 自动化模拟双击入口，免暂停但不跳过任何检查
+$env:STT_BUILD_NO_PAUSE='1'
+cmd /d /c call build.cmd
+Remove-Item Env:STT_BUILD_NO_PAUSE
 ```
 
 标准测试无需模型与网络（环境初装仍需要依赖下载）。集成测试不在普通 pytest 中自动下载模型。
@@ -32,6 +38,8 @@ $env:STT_INTEGRATION='1'
 Remove-Item Env:STT_INTEGRATION
 # 已打包后直接复验发行 EXE
 .\.build-venv\Scripts\python.exe scripts/verify_release.py
+# 验证实际 ZIP 并从中文空格目录解压运行
+.\.build-venv\Scripts\python.exe scripts/verify_release.py --archive dist/SpeechToText-windows-x64.zip
 ```
 
 样本由系统 TTS 生成，中文和英文测试句由本项目编写，不下载版权不明音视频。
@@ -53,3 +61,6 @@ Remove-Item Env:STT_INTEGRATION
 锁依赖一致；Ruff 检查与格式通过；全部标准测试通过；真实双语和时间轴验收通过；
 打包诊断及实际转写通过；无未关闭 P0/P1；发布记录写明已验证范围和未验证项。
 CI 配置已经提供，但本地执行通过不代表 GitHub 远程 workflow 已实际运行。
+在当前 ai-tools 主仓库中，子项目 `.github/workflows/ci.yml` 为模板，需要根目录工作流配置调用并设置子项目工作目录。
+环境发现已在本机 Python 3.13 上实测；未在无 Python 的全新机器实装自动下载路径，失败时按 HTML 手册安装官方 3.13 后重试。
+干净 Windows 和业务操作见 [外部验收](external-acceptance.md)。没有证据时保持待验收，不能用模拟结果或环境变量隔离冒充干净电脑。
