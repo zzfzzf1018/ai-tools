@@ -1,6 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 import { lessons } from '../src/data/lessons';
-import { award, defaultProgress } from '../src/lib/progress';
+import {
+  award,
+  BACKUP_MAX_BYTES,
+  defaultProgress,
+  exportBackup,
+  readBackup,
+} from '../src/lib/progress';
 
 async function onboarding(page: Page) {
   await page.getByRole('button', { name: '开始冒险', exact: true }).click();
@@ -70,7 +77,7 @@ test('zero-beginner course: guided, failed checkpoint, retry, unlock, persistenc
   await page.getByRole('button', { name: '继续探索', exact: true }).click();
   await expect(page.getByRole('button', { name: /左手的小伙伴/ })).toBeEnabled();
   const rounds = await page.evaluate(
-    () => JSON.parse(localStorage.getItem('typing-island-v1')!).rounds,
+    () => JSON.parse(localStorage.getItem('typing-island-v2')!).rounds,
   );
   expect(rounds).toBe(3);
   await page.reload();
@@ -141,7 +148,7 @@ test('practice modes, both games, settings, reset confirmation', async ({ page }
   await page.getByRole('button', { name: '确认清除记录' }).click();
   await expect(page.getByRole('button', { name: '开始冒险', exact: true })).toBeVisible();
   expect(
-    await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v1')!).rounds),
+    await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v2')!).rounds),
   ).toBe(0);
 });
 
@@ -156,7 +163,7 @@ test('word balloon asks for a separator instead of claiming the game is complete
       defaultProgress(),
     );
   await page.addInitScript(
-    (data) => localStorage.setItem('typing-island-v1', JSON.stringify(data)),
+    (data) => localStorage.setItem('typing-island-v2', JSON.stringify(data)),
     progress,
   );
   await page.goto('/');
@@ -185,7 +192,7 @@ test('Shift, space, apostrophe, exclamation and Caps Lock display the correct ke
       defaultProgress(),
     );
   await page.addInitScript(
-    (data) => localStorage.setItem('typing-island-v1', JSON.stringify(data)),
+    (data) => localStorage.setItem('typing-island-v2', JSON.stringify(data)),
     progress,
   );
   await page.goto('/');
@@ -281,6 +288,26 @@ test('an available update cannot reload an active exercise or its result', async
   expect(updates).toEqual([true]);
 });
 
+test('a rejected update reports failure without unhandled errors or changing records', async ({
+  page,
+}) => {
+  await page.route('**/assets/virtual_pwa-register-*.js', (route) =>
+    route.fulfill({
+      contentType: 'application/javascript',
+      body: 'export function registerSW(options) { options.onNeedRefresh(); return async () => { throw new Error("Worker update failed"); }; }',
+    }),
+  );
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto('/');
+  const before = await page.evaluate(() => localStorage.getItem('typing-island-v2'));
+  await page.getByRole('button', { name: '更新版本', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('更新暂未成功');
+  await expect(page.getByRole('button', { name: '开始冒险', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('typing-island-v2'))).toBe(before);
+  expect(errors).toEqual([]);
+});
+
 test('timed practice excludes breaks, ends on deadline and completed navigation needs no warning', async ({
   page,
 }) => {
@@ -298,7 +325,7 @@ test('timed practice excludes breaks, ends on deadline and completed navigation 
   await page.clock.fastForward(60100);
   await expect(page.getByRole('region', { name: '练习结果' })).toBeVisible();
   const savedSeconds = await page.evaluate(
-    () => JSON.parse(localStorage.getItem('typing-island-v1')!).seconds,
+    () => JSON.parse(localStorage.getItem('typing-island-v2')!).seconds,
   );
   expect(savedSeconds).toBe(60);
   const dialogs: string[] = [];
@@ -355,7 +382,7 @@ test('three-minute practice ignores shortcuts, repetition and composition, prese
   await page.clock.fastForward(180000);
   await expect(page.getByRole('region', { name: '练习结果' })).toBeVisible();
   await page.clock.fastForward(240000);
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v1')!));
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v2')!));
   expect(saved.seconds).toBe(180);
   expect(saved.rounds).toBe(1);
 });
@@ -429,7 +456,7 @@ test('blur just after deadline finishes before a delayed timer can run', async (
   });
   await expect(page.getByRole('region', { name: '练习结果' })).toBeVisible();
   await expect
-    .poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v1')!).seconds))
+    .poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v2')!).seconds))
     .toBe(60);
 });
 
@@ -482,7 +509,7 @@ test('all twenty lessons complete with physical keyboard events and unlock in or
       await next.click();
     }
   }
-  const result = await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v1')!));
+  const result = await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v2')!));
   expect(Object.keys(result.lessons)).toHaveLength(20);
   expect(
     Object.values(result.lessons).every((value) => (value as { stars: number }).stars === 3),
@@ -493,7 +520,7 @@ test('all twenty lessons complete with physical keyboard events and unlock in or
 });
 
 test('corrupt local data warns without breaking the first lesson', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('typing-island-v1', '{broken'));
+  await page.addInitScript(() => localStorage.setItem('typing-island-v2', '{broken'));
   await page.goto('/');
   await expect(page.getByRole('alert')).toContainText('无法读取');
   await onboarding(page);
@@ -525,7 +552,7 @@ test('another tab receives progress and settings changes without overwriting new
   await onboarding(page);
   await second.getByRole('button', { name: '开启声音', exact: true }).click();
   await expect
-    .poll(() => second.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v1')!).rounds))
+    .poll(() => second.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v2')!).rounds))
     .toBe(1);
   await expect(page.getByRole('button', { name: '关闭声音', exact: true })).toBeVisible();
   await second.getByRole('button', { name: '小岛设置', exact: true }).last().click();
@@ -536,6 +563,371 @@ test('another tab receives progress and settings changes without overwriting new
   await page.reload();
   await expect(page.getByRole('button', { name: '开始冒险', exact: true })).toBeVisible();
   await second.close();
+});
+
+test('1.1 target-key statistics skip guided practice and drive allowed review', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await onboarding(page);
+  await page.getByRole('button', { name: '开始跟练' }).click();
+  await typeTarget(page, 'xxxx');
+  expect(
+    await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v2')!).keyStats),
+  ).toEqual({});
+  await page.getByRole('button', { name: '开始小测', exact: true }).click();
+  await typeTarget(page, 'x');
+  await page.getByRole('button', { name: '继续探索', exact: true }).click();
+  await page.getByRole('button', { name: '我的成长', exact: true }).click();
+  await expect(page.locator('.mastery-key[data-key="f"]')).toContainText('85%');
+  await expect(page.locator('.mastery-key[data-key="j"]')).toContainText('100%');
+  await page.getByRole('button', { name: '大写', exact: true }).click();
+  await expect(page.locator('.mastery-key[data-key="F"]')).toContainText('未练习');
+  await page.getByRole('button', { name: '开始专项复习', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '错键专项复习', exact: true })).toBeVisible();
+  await expect(page.locator('.target-text')).toHaveAttribute('aria-label', '目标文本：ffffff');
+  await typeTarget(page);
+  await page.getByRole('button', { name: '继续探索', exact: true }).click();
+  const data = await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v2')!));
+  expect(data.rounds).toBe(3);
+  expect(data.lessons['3']).toBeUndefined();
+  expect(data.keyStats.f).toEqual({ attempts: 13, correct: 12 });
+});
+
+test('1.1 backup downloads canonical JSON and restores only after keyboard confirmation', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await onboarding(page);
+  await page.getByRole('button', { name: '小岛设置', exact: true }).last().click();
+  const before = await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v2')!));
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出记录', exact: true }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^Typing-Island-backup-.*\.json$/);
+  const downloaded = await download.path();
+  if (!downloaded) throw new Error('No backup download file');
+  expect(readBackup(await readFile(downloaded, 'utf8')).data).toEqual(before);
+  const incoming = award(
+    award(defaultProgress(), { id: 'restore-1', accuracy: 100, seconds: 1, lessonId: 1 }),
+    {
+      id: 'restore-2',
+      accuracy: 95,
+      seconds: 2,
+      lessonId: 2,
+      keyStats: { j: { attempts: 2, correct: 1 } },
+    },
+  );
+  const file = {
+    name: 'backup.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(exportBackup(incoming)),
+  };
+  await page.getByLabel('选择备份文件').setInputFiles(file);
+  await expect(page.getByRole('region', { name: '备份预览' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '取消导入', exact: true })).toBeFocused();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v2')!))).toEqual(
+    before,
+  );
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('button', { name: '导入记录', exact: true })).toBeFocused();
+  await page.getByLabel('选择备份文件').setInputFiles(file);
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: '确认替换记录', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('记录已恢复');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v2')!))).toEqual(
+    incoming,
+  );
+  await page.getByRole('button', { name: '关闭设置' }).click();
+  await page.reload();
+  await expect(page.getByRole('button', { name: /左手的小伙伴/ })).toBeEnabled();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v2')!))).toEqual(
+    incoming,
+  );
+});
+
+test('1.1 immediately closing settings does not cancel an exported backup', async ({ page }) => {
+  await page.goto('/');
+  await onboarding(page);
+  await page.getByRole('button', { name: '小岛设置', exact: true }).last().click();
+  const before = await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v2')!));
+  const downloadPromise = page.waitForEvent('download');
+  await page.evaluate(() => {
+    const exportButton = [...document.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('导出记录'),
+    );
+    exportButton?.click();
+    document.querySelector<HTMLButtonElement>('button[aria-label="关闭设置"]')?.click();
+  });
+  const download = await downloadPromise;
+  const filepath = await download.path();
+  if (!filepath) throw new Error('Backup canceled when settings closed');
+  expect(readBackup(await readFile(filepath, 'utf8')).data).toEqual(before);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('1.1 invalid and oversized backup files preserve current progress', async ({ page }) => {
+  await page.goto('/');
+  await onboarding(page);
+  await page.getByRole('button', { name: '小岛设置', exact: true }).last().click();
+  const before = await page.evaluate(() => localStorage.getItem('typing-island-v2'));
+  for (const text of [
+    '{',
+    JSON.stringify({ ...defaultProgress(), version: 99 }),
+    'x'.repeat(BACKUP_MAX_BYTES + 1),
+  ]) {
+    await page.getByLabel('选择备份文件').setInputFiles({
+      name: 'invalid.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(text),
+    });
+    await expect(page.getByRole('region', { name: '记录备份' }).getByRole('alert')).toBeVisible();
+    await expect(page.getByRole('region', { name: '备份预览' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '导入记录', exact: true })).toBeFocused();
+    expect(await page.evaluate(() => localStorage.getItem('typing-island-v2'))).toBe(before);
+  }
+});
+
+test('1.1 rejected storage and unfinished confirmation cannot overwrite records', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await onboarding(page);
+  await page.getByRole('button', { name: '开始跟练' }).click();
+  await page.keyboard.type('f');
+  await page.getByRole('button', { name: '小岛设置', exact: true }).last().click();
+  const before = await page.evaluate(() => localStorage.getItem('typing-island-v2'));
+  await page.getByLabel('选择备份文件').setInputFiles({
+    name: 'empty.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(exportBackup(defaultProgress())),
+  });
+  page.once('dialog', (dialog) => dialog.dismiss());
+  await page.getByRole('button', { name: '确认替换记录', exact: true }).click();
+  await expect(page.getByRole('region', { name: '记录备份' }).getByRole('alert')).toContainText(
+    '已取消',
+  );
+  expect(await page.evaluate(() => localStorage.getItem('typing-island-v2'))).toBe(before);
+  await page.evaluate(() =>
+    Object.defineProperty(Storage.prototype, 'setItem', {
+      value() {
+        throw new DOMException('Quota exceeded', 'QuotaExceededError');
+      },
+    }),
+  );
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: '确认替换记录', exact: true }).click();
+  await expect(page.getByRole('region', { name: '记录备份' }).getByRole('alert')).toContainText(
+    '无法保存',
+  );
+  expect(await page.evaluate(() => localStorage.getItem('typing-island-v2'))).toBe(before);
+  await page.getByRole('button', { name: '关闭设置' }).click();
+  await expect(page.locator('.target-text .typed')).toHaveCount(1);
+  await expect(page.locator('.input-message')).toContainText('休息一下');
+});
+
+test('1.1 closing settings invalidates a pending file read and blocks repeated imports', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    File.prototype.text = () =>
+      new Promise<string>((resolve) => Object.assign(globalThis, { finishBackupRead: resolve }));
+  });
+  await page.goto('/');
+  await onboarding(page);
+  const before = await page.evaluate(() => localStorage.getItem('typing-island-v2'));
+  await page.getByRole('button', { name: '小岛设置', exact: true }).last().click();
+  await page.getByLabel('选择备份文件').setInputFiles({
+    name: 'pending.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from('{}'),
+  });
+  await expect(page.getByRole('button', { name: '导入记录', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '导出记录', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: '关闭设置' }).click();
+  await page.getByRole('button', { name: '小岛设置', exact: true }).last().click();
+  await page.evaluate(
+    (text) =>
+      (window as Window & { finishBackupRead?: (value: string) => void }).finishBackupRead?.(text),
+    exportBackup(defaultProgress()),
+  );
+  await expect(page.getByRole('region', { name: '备份预览' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '导入记录', exact: true })).toBeEnabled();
+  expect(await page.evaluate(() => localStorage.getItem('typing-island-v2'))).toBe(before);
+});
+
+test('1.1 upgrades legacy storage and imports legacy JSON without inventing statistics', async ({
+  page,
+}) => {
+  const original = award(
+    award(defaultProgress(), { id: 'legacy-1', accuracy: 100, seconds: 1, lessonId: 1 }),
+    { id: 'legacy-2', accuracy: 95, seconds: 2, lessonId: 2 },
+  );
+  const legacy = { ...original, version: 1, keyStats: undefined };
+  await page.goto('/');
+  await page.evaluate(
+    (data) => localStorage.setItem('typing-island-v1', JSON.stringify(data)),
+    legacy,
+  );
+  await page.reload();
+  await expect(page.getByRole('button', { name: /左手的小伙伴/ })).toBeEnabled();
+  await page.getByRole('button', { name: '开启声音', exact: true }).click();
+  expect(
+    await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v2')!).version),
+  ).toBe(2);
+  expect(
+    await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v2')!).keyStats),
+  ).toEqual({});
+  await page.getByRole('button', { name: '小岛设置', exact: true }).last().click();
+  await page.getByLabel('选择备份文件').setInputFiles({
+    name: 'legacy.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(legacy)),
+  });
+  await page.getByRole('button', { name: '确认替换记录', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('记录已恢复');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v2')!))).toEqual(
+    original,
+  );
+});
+
+test('1.1 failed reset preserves both active and legacy records', async ({ page }) => {
+  await page.goto('/');
+  await onboarding(page);
+  await page.evaluate(() => localStorage.setItem('typing-island-v1', 'legacy-record-to-preserve'));
+  const before = await page.evaluate(() => localStorage.getItem('typing-island-v2'));
+  await page.getByRole('button', { name: '小岛设置', exact: true }).last().click();
+  await page.getByRole('button', { name: '重新开始整个小岛' }).click();
+  await page.evaluate(() =>
+    Object.defineProperty(Storage.prototype, 'setItem', {
+      value() {
+        throw new DOMException('Quota denied', 'QuotaExceededError');
+      },
+    }),
+  );
+  await page.getByRole('button', { name: '确认清除记录' }).click();
+  await expect(page.getByRole('alert')).toContainText('无法保存');
+  await expect(page.getByRole('dialog')).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('typing-island-v2'))).toBe(before);
+  expect(await page.evaluate(() => localStorage.getItem('typing-island-v1'))).toBe(
+    'legacy-record-to-preserve',
+  );
+  await page.getByRole('button', { name: '关闭设置' }).click();
+  await expect(page.getByRole('heading', { name: '找到 F 和 J', exact: true })).toBeVisible();
+});
+
+test('1.1 explicit reset also clears the preserved legacy migration source', async ({ page }) => {
+  const legacy = {
+    ...award(defaultProgress(), { id: 'legacy-reset', accuracy: 100, seconds: 1, lessonId: 1 }),
+    version: 1,
+    keyStats: undefined,
+  };
+  await page.goto('/');
+  await page.evaluate(
+    (data) => localStorage.setItem('typing-island-v1', JSON.stringify(data)),
+    legacy,
+  );
+  await page.reload();
+  await page.getByRole('button', { name: '小岛设置', exact: true }).last().click();
+  await page.getByRole('button', { name: '重新开始整个小岛' }).click();
+  await page.getByRole('button', { name: '确认清除记录' }).click();
+  expect(await page.evaluate(() => localStorage.getItem('typing-island-v1'))).toBeNull();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v2')!))).toEqual(
+    defaultProgress(),
+  );
+  await page.reload();
+  await expect(page.getByRole('button', { name: '开始冒险', exact: true })).toBeVisible();
+});
+
+test('1.1 mastery and backup preview fit all required desktop and mobile viewports', async ({
+  page,
+}) => {
+  const data = award(
+    award(defaultProgress(), { id: 'visual-1', accuracy: 100, seconds: 1, lessonId: 1 }),
+    {
+      id: 'visual-2',
+      accuracy: 80,
+      seconds: 2,
+      keyStats: {
+        f: { attempts: 5, correct: 4 },
+        j: { attempts: 5, correct: 5 },
+        F: { attempts: 3, correct: 2 },
+        '!': { attempts: 1, correct: 0 },
+      },
+    },
+  );
+  await page.goto('/');
+  await page.evaluate(
+    (value) => localStorage.setItem('typing-island-v2', JSON.stringify(value)),
+    data,
+  );
+  await page.reload();
+  await page.getByRole('button', { name: '我的成长', exact: true }).click();
+  for (const [width, height] of [
+    [1440, 900],
+    [1280, 800],
+    [768, 1024],
+    [390, 844],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await page.getByRole('button', { name: '小写', exact: true }).click();
+    await expect(page.locator('.mastery-key[data-key="f"]')).toContainText('80%');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({ path: `test-results/mastery-${width}.png`, fullPage: true });
+    await page.getByRole('button', { name: '大写', exact: true }).click();
+    await expect(page.locator('.mastery-key[data-key="F"]')).toContainText('刚开始');
+    await page.getByRole('button', { name: '数字与标点', exact: true }).click();
+    await expect(page.locator('.mastery-key[data-key="!"]')).toContainText('0%');
+    await page.getByRole('button', { name: '小岛设置', exact: true }).last().click();
+    await page.getByLabel('选择备份文件').setInputFiles({
+      name: 'visual.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(exportBackup(data)),
+    });
+    await expect(page.getByRole('dialog')).toBeInViewport({ ratio: 1 });
+    await expect(page.getByRole('button', { name: '取消导入', exact: true })).toBeInViewport({
+      ratio: 1,
+    });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({ path: `test-results/backup-preview-${width}.png` });
+    await page.getByRole('button', { name: '取消导入', exact: true }).click();
+    await page.getByRole('button', { name: '关闭设置' }).click();
+  }
+});
+
+test('accepted large records remain readable without horizontal overflow', async ({ page }) => {
+  const data = {
+    ...defaultProgress(),
+    rounds: Number.MAX_SAFE_INTEGER,
+    seconds: Number.MAX_VALUE,
+    days: { '2026-10-31': Number.MAX_SAFE_INTEGER },
+  };
+  await page.goto('/');
+  await page.evaluate(
+    (incoming) => localStorage.setItem('typing-island-v2', JSON.stringify(incoming)),
+    data,
+  );
+  await page.reload();
+  await page.getByRole('button', { name: '我的成长', exact: true }).click();
+  for (const [width, height] of [
+    [390, 844],
+    [768, 1024],
+    [1280, 800],
+    [1440, 900],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await expect(
+      page.getByRole('heading', { name: '每一小步，都算数。', exact: true }),
+    ).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({ path: `test-results/large-progress-${width}.png`, fullPage: true });
+  }
 });
 
 test('responsive screenshots and asset checks', async ({ page }) => {

@@ -4,6 +4,7 @@ const { spawn } = require('node:child_process');
 const { createServer } = require('node:net');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
+const fs = require('node:fs');
 
 async function completeExercise(page, next) {
   const text = (await page.locator('.target-text').getAttribute('aria-label')).replace(
@@ -119,13 +120,65 @@ async function run() {
     }
     await page.getByRole('button', { name: '我的成长', exact: true }).click();
     await expect(page.locator('.badge.earned').filter({ hasText: '游戏好伙伴' })).toBeVisible();
+    await expect(page.locator('.mastery-key[data-key="f"]')).toContainText('100%');
+    await page.getByRole('button', { name: '开始专项复习', exact: true }).click();
+    await completeExercise(page, '继续探索');
     await page.getByRole('button', { name: '小岛设置', exact: true }).last().click();
     await page.getByRole('checkbox', { name: /减少动态效果/ }).check();
     await page.getByRole('checkbox', { name: /轻柔按键音/ }).check();
+    if (portable) {
+      const downloadProtocol = await page.context().newCDPSession(page);
+      await downloadProtocol.send('Browser.setDownloadBehavior', {
+        behavior: 'allow',
+        downloadPath: profile,
+        eventsEnabled: true,
+      });
+    } else {
+      await application.evaluate(
+        ({ session }, destination) => {
+          session.defaultSession.on('will-download', (_event, item) =>
+            item.setSavePath(destination),
+          );
+        },
+        path.join(profile, 'backup.json'),
+      );
+    }
+    await page.getByRole('button', { name: '导出记录', exact: true }).click();
+    let backupPath = path.join(profile, 'backup.json');
+    if (portable) {
+      await expect
+        .poll(() =>
+          fs.readdirSync(profile).some((name) => /^Typing-Island-backup-.*\.json$/.test(name)),
+        )
+        .toBe(true);
+      const filename = fs
+        .readdirSync(profile)
+        .find((name) => /^Typing-Island-backup-.*\.json$/.test(name));
+      if (!filename) throw new Error('Portable backup file missing');
+      backupPath = path.join(profile, filename);
+    }
+    await expect
+      .poll(() => fs.existsSync(backupPath) && fs.statSync(backupPath).size > 0)
+      .toBe(true);
+    const backupText = fs.readFileSync(backupPath, 'utf8');
+    const backup = JSON.parse(backupText);
+    expect(backup.format).toBe('typing-island-backup');
+    expect(backup.data.version).toBe(2);
+    expect(backup.data.rounds).toBe(26);
+    expect(backup.data.keyStats.f.attempts).toBeGreaterThan(0);
+    expect(backup.data.text).toBeUndefined();
+    await page.getByLabel('选择备份文件').setInputFiles({
+      name: 'backup.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(backupText),
+    });
+    await expect(page.getByRole('button', { name: '取消导入', exact: true })).toBeFocused();
+    await page.getByRole('button', { name: '确认替换记录', exact: true }).click();
+    await expect(page.getByRole('status')).toContainText('记录已恢复');
     await page.getByRole('button', { name: '关闭设置' }).click();
     expect(
-      await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v1')).rounds),
-    ).toBe(25);
+      await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v2')).rounds),
+    ).toBe(26);
     expect(await page.evaluate(() => window.open('about:blank') === null)).toBe(true);
     const secure = portable
       ? await page.evaluate(
@@ -148,11 +201,12 @@ async function run() {
     await expect(page.getByRole('button', { name: '关闭声音', exact: true })).toBeVisible();
     await expect(page.locator('.app')).toHaveClass(/reduce-motion/);
     const restored = await page.evaluate(() =>
-      JSON.parse(localStorage.getItem('typing-island-v1')),
+      JSON.parse(localStorage.getItem('typing-island-v2')),
     );
-    expect(restored.rounds).toBe(25);
+    expect(restored.rounds).toBe(26);
     expect(restored.games).toBe(2);
     expect(Object.keys(restored.lessons)).toHaveLength(20);
+    expect(restored.keyStats).toEqual(backup.data.keyStats);
     if (!portable) {
       await page.getByRole('button', { name: '自由练习', exact: true }).click();
       await page.getByRole('button', { name: '开始练习', exact: true }).click();
@@ -186,7 +240,7 @@ async function run() {
     }
     if (errors.length) throw new Error(errors.join('\n'));
     console.log(
-      'PASS desktop: all 20 courses, three practice modes, both games, result focus, secure preferences, settings and progress persistence',
+      'PASS desktop 1.1: all 20 courses, three practice modes, both games, key statistics, review, real backup export/import, secure preferences and restart persistence',
     );
   } finally {
     if (application && !portable) {

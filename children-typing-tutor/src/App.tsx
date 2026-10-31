@@ -26,11 +26,19 @@ import {
   VolumeX,
   X,
 } from 'lucide-react';
-import { chapters, knownKeys, lessons, practiceText, type Lesson } from './data/lessons';
+import {
+  chapters,
+  knownKeys,
+  lessons,
+  practiceText,
+  reviewText,
+  type Lesson,
+} from './data/lessons';
 import {
   award,
   defaultProgress,
   loadProgress,
+  LEGACY_STORAGE_KEY,
   localDay,
   passedCount,
   saveProgress,
@@ -40,10 +48,13 @@ import {
 import { accuracy, createSessionId, type Session } from './lib/typing';
 import { TypingExercise, type Activity } from './components/TypingExercise';
 import { Keyboard } from './components/Keyboard';
+import { KeyProgress } from './components/KeyProgress';
+import { RecordBackup } from './components/RecordBackup';
 
 const storage = {
   getItem: (key: string) => localStorage.getItem(key),
   setItem: (key: string, value: string) => localStorage.setItem(key, value),
+  removeItem: (key: string) => localStorage.removeItem(key),
 };
 type View = 'learn' | 'practice' | 'games' | 'progress';
 const nav = [
@@ -81,6 +92,7 @@ export function App() {
   const [updateReady, setUpdateReady] = useState(false);
   const updateApp = useRef<((reload?: boolean) => Promise<void>) | null>(null);
   const passed = passedCount(progress);
+  const review = reviewText(progress.keyStats, knownKeys(Math.max(0, passed - 1)));
   const nextLesson = lessons[Math.min(passed, lessons.length - 1)];
   const totalStars = Object.values(progress.lessons).reduce((sum, lesson) => sum + lesson.stars, 0);
   const today = progress.days[localDay()] ?? 0;
@@ -212,6 +224,7 @@ export function App() {
         seconds: session.elapsed / 1000,
         lessonId: activity?.lessonId,
         game: !!activity?.game,
+        keyStats: session.keyStats,
       }),
     );
   }
@@ -241,11 +254,57 @@ export function App() {
       game,
     });
   }
+  function startReview() {
+    setActivity({
+      id: createSessionId(),
+      title: review.focused ? '错键专项复习' : '按键热身',
+      text: review.text,
+    });
+  }
+  function restore(incoming: Progress): string {
+    if (unfinished && !window.confirm('恢复记录会结束这次未完成的练习。确定继续吗？'))
+      return '已取消恢复，当前练习和记录没有改变。';
+    const error = saveProgress(storage, incoming);
+    if (error) {
+      setWarning(error);
+      return error;
+    }
+    saved.current = incoming;
+    setProgress(incoming);
+    setWarning('');
+    setActivity(null);
+    setIntro(null);
+    setCompletedId(null);
+    setView('learn');
+    return '';
+  }
   function toggleSetting(key: keyof Progress['settings']) {
     setProgress((previous) => ({
       ...previous,
       settings: { ...previous.settings, [key]: !previous.settings[key] },
     }));
+  }
+  function resetAll() {
+    const empty = defaultProgress();
+    const error = saveProgress(storage, empty);
+    if (error) {
+      setWarning(error);
+      return;
+    }
+    let removalWarning = '';
+    try {
+      storage.removeItem(LEGACY_STORAGE_KEY);
+    } catch {
+      removalWarning = '当前记录已重置，但旧版本记录无法删除，请检查存储权限。';
+    }
+    saved.current = empty;
+    setProgress(empty);
+    setWarning(removalWarning);
+    setActivity(null);
+    setIntro(null);
+    setReset(false);
+    setSettings(false);
+    setView('learn');
   }
 
   return (
@@ -316,7 +375,9 @@ export function App() {
                 className="text-button"
                 disabled={busy}
                 onClick={() => {
-                  void updateApp.current?.(true);
+                  void updateApp.current?.(true).catch(() => {
+                    setWarning('版本更新暂未成功，请稍后重试。当前学习记录没有改变。');
+                  });
                 }}
               >
                 更新版本
@@ -673,6 +734,20 @@ export function App() {
                     <img src="./assets/bunny.svg" alt="准备练习的兔兔" />
                   </section>
                   <section className="practice-advice">
+                    <Target size={23} />
+                    <div>
+                      <h3>{review.focused ? '错键专项复习' : '按键热身'}</h3>
+                      <p>
+                        重点按键：
+                        {review.keys.map((key) => (key === ' ' ? '空格' : key)).join(' · ')}
+                      </p>
+                      <button className="text-button" onClick={startReview}>
+                        开始专项复习
+                        <ArrowRight size={16} />
+                      </button>
+                    </div>
+                  </section>
+                  <section className="practice-advice">
                     <Sprout size={23} />
                     <div>
                       <h3>第一次来小岛？</h3>
@@ -765,6 +840,9 @@ export function App() {
                       label="累计练习 / 分钟"
                     />
                   </div>
+                  <section className="badges-section">
+                    <KeyProgress stats={progress.keyStats} onReview={startReview} />
+                  </section>
                   <section className="badges-section">
                     <div className="section-title">
                       <h2>
@@ -881,7 +959,7 @@ export function App() {
               if (event.key === 'Tab') {
                 const controls = [
                   ...event.currentTarget.querySelectorAll<HTMLElement>(
-                    'button:not(:disabled), input:not(:disabled)',
+                    'button:not(:disabled), input:not(:disabled):not([hidden])',
                   ),
                 ];
                 const first = controls[0];
@@ -943,6 +1021,7 @@ export function App() {
               <ShieldCheck size={19} />
               学习记录只保存在当前设备。清理浏览器数据会丢失记录，网页版与桌面版暂不同步。
             </p>
+            <RecordBackup data={progress} onImport={restore} />
             <div className="reset-section">
               {reset ? (
                 <>
@@ -951,17 +1030,7 @@ export function App() {
                     <button className="secondary" onClick={() => setReset(false)}>
                       取消
                     </button>
-                    <button
-                      className="danger"
-                      onClick={() => {
-                        setProgress(defaultProgress());
-                        setActivity(null);
-                        setIntro(null);
-                        setReset(false);
-                        setSettings(false);
-                        setView('learn');
-                      }}
-                    >
+                    <button className="danger" onClick={resetAll}>
                       确认清除记录
                     </button>
                   </div>

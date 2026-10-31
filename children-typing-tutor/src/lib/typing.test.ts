@@ -14,6 +14,52 @@ import {
 } from './typing';
 
 describe('shared typing engine', () => {
+  it('keeps key aggregates equal to session totals across ignored keys, pause and backspace', () => {
+    let session = typeKey(createSession('fjf'), { key: 'f' }, 0);
+    for (const input of [
+      { key: 'j', repeat: true },
+      { key: 'j', isComposing: true },
+      { key: 'j', ctrlKey: true },
+      { key: 'j', metaKey: true },
+      { key: 'j', altKey: true },
+    ])
+      expect(typeKey(session, input, 50)).toBe(session);
+    session = typeKey(session, { key: 'x' }, 100);
+    session = pause(session, 200);
+    expect(typeKey(session, { key: 'j' }, 500)).toBe(session);
+    session = typeKey(resume(session, 1000), { key: 'j' }, 1100);
+    const beforeBackspace = session.keyStats;
+    session = typeKey(session, { key: 'Backspace' }, 1200);
+    expect(session.keyStats).toBe(beforeBackspace);
+    session = typeKey(session, { key: 'j' }, 1300);
+    session = typeKey(session, { key: 'f' }, 1400);
+    expect(session.keyStats).toEqual({
+      f: { attempts: 2, correct: 2 },
+      j: { attempts: 3, correct: 2 },
+    });
+    expect(Object.values(session.keyStats).reduce((sum, counts) => sum + counts.attempts, 0)).toBe(
+      session.attempts,
+    );
+    expect(Object.values(session.keyStats).reduce((sum, counts) => sum + counts.correct, 0)).toBe(
+      session.correct,
+    );
+    expect(accuracy(session)).toBe(80);
+  });
+  it('aggregates attempts by target key without saving wrong input or forgiving backspace', () => {
+    const initial = createSession('fj');
+    let session = typeKey(initial, { key: 'x' }, 0);
+    session = typeKey(session, { key: 'f' }, 100);
+    session = typeKey(session, { key: 'Backspace' }, 200);
+    session = typeKey(session, { key: 'f' }, 300);
+    session = typeKey(session, { key: 'j' }, 400);
+    expect(session.keyStats).toEqual({
+      f: { attempts: 3, correct: 2 },
+      j: { attempts: 1, correct: 1 },
+    });
+    expect(initial.keyStats).toEqual({});
+    expect(accuracy(session)).toBe(75);
+    expect(typeKey(session, { key: 'j' }, 500)).toBe(session);
+  });
   it('uses cryptographic random values when randomUUID is unavailable', () => {
     const getRandomValues = crypto.getRandomValues.bind(crypto);
     vi.stubGlobal('crypto', { getRandomValues });

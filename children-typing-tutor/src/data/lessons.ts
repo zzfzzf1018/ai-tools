@@ -1,3 +1,5 @@
+import type { KeyStats } from '../lib/typing';
+
 export interface Lesson {
   id: number;
   title: string;
@@ -284,4 +286,29 @@ export function practiceText(kind: 'letters' | 'words' | 'sentences', allowed?: 
   return kind === 'words'
     ? words.join(' ')
     : 'The little fox has a kite. We play in the sun. Hello, happy world!';
+}
+
+export function reviewText(
+  stats: KeyStats,
+  allowed: string,
+): { text: string; keys: string[]; focused: boolean } {
+  const weak = Object.entries(stats)
+    .filter(([key, counts]) => allowed.includes(key) && counts.attempts > counts.correct)
+    .sort(
+      ([firstKey, first], [secondKey, second]) =>
+        (second.attempts - second.correct) / second.attempts -
+          (first.attempts - first.correct) / first.attempts ||
+        second.attempts - second.correct - (first.attempts - first.correct) ||
+        firstKey.localeCompare(secondKey),
+    )
+    .slice(0, 6)
+    .map(([key]) => key);
+  const keys = weak.length
+    ? weak
+    : [...new Set(allowed)].filter((key) => /[a-z]/.test(key)).slice(0, 6);
+  if (!keys.length) keys.push('f', 'j');
+  const text = Array.from({ length: 6 }, () => keys.join('')).join(
+    allowed.includes(' ') ? ' ' : '',
+  );
+  return { text, keys, focused: weak.length > 0 };
 }

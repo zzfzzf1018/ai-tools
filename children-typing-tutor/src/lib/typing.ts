@@ -1,3 +1,5 @@
+export type KeyStats = Record<string, { attempts: number; correct: number }>;
+
 export interface Session {
   id: string;
   text: string;
@@ -8,6 +10,7 @@ export interface Session {
   since: number | null;
   status: 'ready' | 'active' | 'paused' | 'done';
   lastWrong: string | null;
+  keyStats: KeyStats;
 }
 
 export interface KeyInput {
@@ -39,6 +42,7 @@ export function createSession(text: string, id: string = createSessionId()): Ses
     since: null,
     status: text ? 'ready' : 'done',
     lastWrong: null,
+    keyStats: {},
   };
 }
 
@@ -89,6 +93,8 @@ export function typeKey(session: Session, input: KeyInput, now: number): Session
   if (input.key === 'Backspace')
     return { ...session, cursor: Math.max(0, session.cursor - 1), lastWrong: null };
   const correct = input.key === session.text[session.cursor];
+  const target = session.text[session.cursor];
+  const previous = session.keyStats[target] ?? { attempts: 0, correct: 0 };
   const next: Session = {
     ...session,
     status: 'active',
@@ -97,6 +103,10 @@ export function typeKey(session: Session, input: KeyInput, now: number): Session
     correct: session.correct + Number(correct),
     cursor: session.cursor + Number(correct),
     lastWrong: correct ? null : input.key,
+    keyStats: {
+      ...session.keyStats,
+      [target]: { attempts: previous.attempts + 1, correct: previous.correct + Number(correct) },
+    },
   };
   return next.cursor === next.text.length ? finish(next, now) : next;
 }
