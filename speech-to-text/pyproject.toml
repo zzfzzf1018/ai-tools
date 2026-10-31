@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "local-speech-to-text"
+version = "1.0.0"
+description = "Local Chinese and English transcription with synchronized subtitles"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+	"faster-whisper==1.2.1",
+	"av==16.1.0",
+	"ctranslate2==4.6.0",
+	"onnxruntime==1.23.2",
+	"setuptools==80.9.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "ruff>=0.14,<1", "pyinstaller>=6.16,<7"]
+
+[project.scripts]
+speech-to-text = "speech_to_text.cli:main"
+speech-to-text-gui = "speech_to_text.gui:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = ["integration: requires a real Whisper model"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

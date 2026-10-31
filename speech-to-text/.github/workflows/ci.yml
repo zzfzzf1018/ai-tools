@@ -1,0 +1,32 @@
+name: Verify And Build
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      integration:
+        description: Run real bilingual recognition acceptance tests
+        type: boolean
+        default: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements-lock.txt
+      - name: Test And Build
+        shell: pwsh
+        env:
+          STT_RUN_INTEGRATION: ${{ inputs.integration }}
+        run: |
+          $Integration = $env:STT_RUN_INTEGRATION -eq 'true'
+          ./build.ps1 -PythonPath (Get-Command python).Source -Integration:$Integration
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SpeechToText-windows-x64
+          path: dist/SpeechToText-windows-x64.zip
