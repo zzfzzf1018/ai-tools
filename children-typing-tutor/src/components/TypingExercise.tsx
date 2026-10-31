@@ -21,6 +21,7 @@ export interface Activity {
   text: string;
   lessonId?: number;
   phase?: 'guided' | 'checkpoint';
+  passed?: boolean;
   game?: 'trail' | 'balloons';
   limit?: number;
 }
@@ -49,7 +50,8 @@ export function TypingExercise({
   const elapsed = activeTime(session, now);
   const done = session.status === 'done';
   const guided = activity.phase === 'guided';
-  const unlocked = !activity.lessonId || guided || (percent ?? 0) >= 85;
+  const progressed = !activity.lessonId || guided || (percent ?? 0) >= 85;
+  const unlocked = progressed || !!activity.passed;
 
   useEffect(() => {
     area.current?.focus();
@@ -291,13 +293,15 @@ export function TypingExercise({
             ))}
           </div>
           <h2>
-            {guided ? '手指热身完成！' : unlocked ? '又前进了一小步！' : '再练一遍，会更稳！'}
+            {guided ? '手指热身完成！' : progressed ? '又前进了一小步！' : '再练一遍，会更稳！'}
           </h2>
           <p>
             {guided
               ? '接下来自己试试，不着急。'
-              : activity.lessonId && !unlocked
-                ? '小测达到 85% 准确率，就能探索下一课。'
+              : !progressed
+                ? activity.passed
+                  ? '这一课已经通过啦，最好成绩会一直保留。'
+                  : '小测达到 85% 准确率，就能探索下一课。'
                 : '每一次认真练习，都值得一颗小星星。'}
           </p>
           <div className="button-row">

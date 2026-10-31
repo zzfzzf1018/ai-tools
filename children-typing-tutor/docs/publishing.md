@@ -20,7 +20,7 @@ Releases 中的 Source code ZIP/TAR 是源码，不是可直接运行的应用�
 
 - 本项目在 `ai-tools/children-typing-tutor/`，Git 根目录在 `ai-tools/`。只识别 `children-typing-tutor-v` 标签前缀，不使用其他项目的发布标签。
 - 沿用已有 `children-typing-tutor-v1.1.0` 等标签，不移动或覆盖历史标签。
-- 采用 GitHubFlow，`main` 默认递增 Patch；例如 `1.1.0` 之后的未发布构建为 `1.1.1-N`，正式 `children-typing-tutor-v1.1.1` 标签为 `1.1.1`。
+- 采用 GitHubFlow，`main` 默认递增 Patch；例如 `1.1.0` 之后的未发布构建为 `1.1.1-N`。注意 `children-typing-tutor-v1.1.1` 已作为 CI 集成快照标签存在且不对应 npm 版本，因此 1.1.0 之后的首个正式修复版使用 `1.1.2`。
 - `main` 与 `unknown` 都禁止对已经打标签的提交再次递增；后者覆盖 `main` 已超前时旧标签的 detached checkout，不能仅靠主分支配置保证标签版本正确。
 - 不按提交中的 `+semver:` 自动升主/次版本，避免同仓其他项目的提交消息改变本项目版本。维护者通过 `npm version X.Y.Z --no-git-tag-version` 同步修改本项目两份 npm 元数据；这是自动发布的显式版本开关。
 - 提交距离 `N` 仍可能包含同仓其他项目提交，不承诺独立的项目提交计数。

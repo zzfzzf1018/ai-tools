@@ -1,7 +1,7 @@
 {
   "name": "typing-island",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.1.2",
   "description": "A playful, offline-first English typing tutor for children",
   "author": "Typing Island",
   "type": "module",

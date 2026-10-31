@@ -30,6 +30,7 @@ import {
   chapters,
   knownKeys,
   lessons,
+  passedKeys,
   practiceText,
   reviewText,
   type Lesson,
@@ -92,10 +93,15 @@ export function App() {
   const [updateReady, setUpdateReady] = useState(false);
   const updateApp = useRef<((reload?: boolean) => Promise<void>) | null>(null);
   const passed = passedCount(progress);
-  const review = reviewText(progress.keyStats, knownKeys(Math.max(0, passed - 1)));
+  const review = reviewText(progress.keyStats, passedKeys(passed));
   const nextLesson = lessons[Math.min(passed, lessons.length - 1)];
   const totalStars = Object.values(progress.lessons).reduce((sum, lesson) => sum + lesson.stars, 0);
   const today = progress.days[localDay()] ?? 0;
+  const weekDays = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() - ((date.getDay() + 6) % 7) + index);
+    return localDay(date);
+  });
   const busy = activity !== null || intro !== null;
   const unfinished = intro !== null || (activity !== null && activity.id !== completedId);
 
@@ -210,6 +216,7 @@ export function App() {
       text: phase === 'guided' ? lesson.guided : lesson.checkpoint,
       lessonId: lesson.id,
       phase,
+      passed: lesson.id <= passed,
     });
   }
   function complete(session: Session) {
@@ -421,7 +428,7 @@ export function App() {
               onComplete={complete}
               onNext={nextActivity}
               onRetry={() => {
-                if (window.confirm('要重新开始这次练习吗？'))
+                if (activity.id === completedId || window.confirm('要重新开始这次练习吗？'))
                   setActivity({ ...activity, id: createSessionId() });
               }}
             />
@@ -459,12 +466,14 @@ export function App() {
                     else if (introStep < 2) setIntroStep(introStep + 1);
                     else {
                       setProgress((previous) =>
-                        award(previous, {
-                          id: createSessionId(),
-                          accuracy: 100,
-                          seconds: 0,
-                          lessonId: 1,
-                        }),
+                        (previous.lessons[1]?.stars ?? 0) >= 1
+                          ? previous
+                          : award(previous, {
+                              id: createSessionId(),
+                              accuracy: 100,
+                              seconds: 0,
+                              lessonId: 1,
+                            }),
                       );
                       setIntro(lessons[1]);
                       setIntroStep(0);
@@ -652,16 +661,20 @@ export function App() {
                             : '不比快，认真完成就很棒。'}
                         </p>
                         <div className="goal-days">
-                          {'一二三四五六日'.split('').map((day, index) => (
-                            <span
-                              key={day}
-                              className={
-                                (new Date().getDay() + 6) % 7 === index && today > 0 ? 'today' : ''
-                              }
-                            >
-                              {day}
-                            </span>
-                          ))}
+                          {weekDays.map((day, index) => {
+                            const rounds = progress.days[day] ?? 0;
+                            return (
+                              <span
+                                key={day}
+                                className={
+                                  rounds ? (day === localDay() ? 'today' : 'practiced') : ''
+                                }
+                                title={`星期${'一二三四五六日'[index]}：${rounds} 次练习`}
+                              >
+                                {'一二三四五六日'[index]}
+                              </span>
+                            );
+                          })}
                         </div>
                       </section>
                       <section className="pocket">

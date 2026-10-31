@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { fingerFor, knownKeys, lessons, practiceText, reviewText } from '../data/lessons';
+import {
+  fingerFor,
+  knownKeys,
+  lessons,
+  passedKeys,
+  practiceText,
+  reviewText,
+} from '../data/lessons';
 import {
   award,
   BACKUP_MAX_BYTES,
@@ -79,10 +86,22 @@ describe('curriculum and persistence', () => {
     expect(
       reviewText({ j: { attempts: 2, correct: 1 }, f: { attempts: 4, correct: 2 } }, 'fj').keys,
     ).toEqual(['f', 'j']);
-    for (let passed = 0; passed <= 20; passed++) {
-      const allowed = knownKeys(Math.max(0, passed - 1));
+    for (let passed = 2; passed <= 20; passed++) {
+      const allowed = passedKeys(passed);
       expect([...reviewText(stats, allowed).text].every((key) => allowed.includes(key))).toBe(true);
     }
+  });
+  it('keeps keys of an unpassed lesson out of focused review', () => {
+    const failedFj = { f: { attempts: 4, correct: 2 }, j: { attempts: 4, correct: 1 } };
+    for (const passed of [0, 1]) {
+      expect(passedKeys(passed)).toBe('');
+      expect(reviewText(failedFj, passedKeys(passed))).toEqual({
+        text: 'fj'.repeat(6),
+        keys: ['f', 'j'],
+        focused: false,
+      });
+    }
+    expect(reviewText(failedFj, passedKeys(2)).focused).toBe(true);
   });
   it('migrates valid 1.0 records without inventing key history', () => {
     const data = award(defaultProgress(), { id: 'old', accuracy: 95, seconds: 1.25, lessonId: 1 });

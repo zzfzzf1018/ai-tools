@@ -731,6 +731,10 @@ button:disabled {
   background: #83b48d;
   color: #fff;
 }
+.goal-days .practiced {
+  background: #dcecdf;
+  color: #3f7a4f;
+}
 .pocket {
   padding: 22px 18px;
   border: 1px solid #eae8d9;

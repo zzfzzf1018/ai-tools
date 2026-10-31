@@ -253,6 +253,13 @@ export function knownKeys(passed: number): string {
     .join('');
 }
 
+export function passedKeys(passed: number): string {
+  return lessons
+    .slice(0, Math.max(0, passed))
+    .map((lesson) => lesson.keys)
+    .join('');
+}
+
 export function practiceText(kind: 'letters' | 'words' | 'sentences', allowed?: string): string {
   if (kind === 'letters') {
     const keys = allowed

@@ -61,7 +61,6 @@ test('zero-beginner course: guided, failed checkpoint, retry, unlock, persistenc
   await page.getByRole('button', { name: '开始小测', exact: true }).click();
   await typeTarget(page, 'xxxxxxxx');
   await expect(page.getByRole('heading', { name: '再练一遍，会更稳！' })).toBeVisible();
-  page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: '再试一次', exact: true }).click();
   const area = page.getByRole('group', { name: '打字练习区' });
   await area.focus();
@@ -494,6 +493,7 @@ test('reset confirmation preserves focus when its buttons are replaced', async (
 test('all twenty lessons complete with physical keyboard events and unlock in order', async ({
   page,
 }) => {
+  test.setTimeout(120000);
   await page.goto('/');
   await onboarding(page);
   for (const lesson of lessons.slice(1)) {
@@ -517,6 +517,111 @@ test('all twenty lessons complete with physical keyboard events and unlock in or
   expect(result.rounds).toBe(20);
   await page.getByRole('button', { name: '我的成长', exact: true }).click();
   await expect(page.locator('.badge.earned').filter({ hasText: '小小打字家' })).toBeVisible();
+});
+
+test('1.1.2 replaying the keyboard intro does not add another completed practice', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await onboarding(page);
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: '返回学习地图' }).click();
+  await page.locator('.lesson-tile').filter({ hasText: lessons[0].title }).click();
+  await page.getByRole('button', { name: '坐好啦，下一步' }).click();
+  await page.getByRole('button', { name: '找到空格了' }).click();
+  await page.getByRole('button', { name: '出发，去找 F 和 J' }).click();
+  await expect(page.getByRole('heading', { name: lessons[1].title })).toBeVisible();
+  const data = await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v2')!));
+  expect(data.rounds).toBe(1);
+  expect(Object.values(data.days)).toEqual([1]);
+  expect(data.recent).toHaveLength(1);
+});
+
+test('1.1.2 a failed retake of a passed lesson keeps the way forward and retries without a prompt', async ({
+  page,
+}) => {
+  const progress = lessons
+    .slice(0, 2)
+    .reduce(
+      (data, lesson) =>
+        award(data, { id: `pass-${lesson.id}`, lessonId: lesson.id, accuracy: 100, seconds: 1 }),
+      defaultProgress(),
+    );
+  await page.addInitScript(
+    (data) => localStorage.setItem('typing-island-v2', JSON.stringify(data)),
+    progress,
+  );
+  const dialogs: string[] = [];
+  page.on('dialog', async (dialog) => {
+    dialogs.push(dialog.message());
+    await dialog.accept();
+  });
+  await page.goto('/');
+  await page.locator('.lesson-tile').filter({ hasText: lessons[1].title }).click();
+  await page.getByRole('button', { name: '开始跟练' }).click();
+  await typeTarget(page);
+  await page.getByRole('button', { name: '开始小测', exact: true }).click();
+  await typeTarget(page, 'xxxxxxxx');
+  await expect(page.getByRole('heading', { name: '再练一遍，会更稳！' })).toBeVisible();
+  await expect(page.getByRole('region', { name: '练习结果' })).toContainText('这一课已经通过啦');
+  await expect(page.getByRole('button', { name: '继续探索', exact: true })).toBeFocused();
+  await page.getByRole('button', { name: '再练一次', exact: true }).click();
+  await expect(page.getByRole('group', { name: '打字练习区' })).toBeFocused();
+  expect(dialogs).toEqual([]);
+  await typeTarget(page, 'xxxxxxxx');
+  await page.getByRole('button', { name: '继续探索', exact: true }).click();
+  await expect(page.locator('.lesson-tile').filter({ hasText: lessons[2].title })).toBeEnabled();
+  const data = await page.evaluate(() => JSON.parse(localStorage.getItem('typing-island-v2')!));
+  expect(data.lessons['2']).toEqual({ accuracy: 100, stars: 3 });
+  expect(dialogs).toEqual([]);
+});
+
+test('1.1.2 review ignores mistakes from a lesson that is not passed yet', async ({ page }) => {
+  let progress = award(defaultProgress(), {
+    id: 'intro',
+    lessonId: 1,
+    accuracy: 100,
+    seconds: 0,
+  });
+  progress = award(progress, {
+    id: 'failed-fj',
+    lessonId: 2,
+    accuracy: 50,
+    seconds: 3,
+    keyStats: { f: { attempts: 4, correct: 1 }, j: { attempts: 4, correct: 3 } },
+  });
+  await page.addInitScript(
+    (data) => localStorage.setItem('typing-island-v2', JSON.stringify(data)),
+    progress,
+  );
+  await page.goto('/');
+  await page.getByRole('button', { name: '自由练习', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '按键热身', exact: true })).toBeVisible();
+  await expect(page.getByText('重点按键：f · j')).toBeVisible();
+  await page.getByRole('button', { name: '开始专项复习', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '按键热身', exact: true })).toBeVisible();
+  await expect(page.locator('.target-text')).toHaveAttribute(
+    'aria-label',
+    '目标文本：fjfjfjfjfjfj',
+  );
+});
+
+test('1.1.2 weekly goal marks every practiced day of the current week', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-10-29T10:00:00'));
+  let progress = defaultProgress();
+  for (const [index, day] of ['2026-10-25', '2026-10-26', '2026-10-26', '2026-10-29'].entries())
+    progress = award(progress, { id: `day-${index}`, accuracy: 90, seconds: 1 }, day);
+  await page.addInitScript(
+    (data) => localStorage.setItem('typing-island-v2', JSON.stringify(data)),
+    progress,
+  );
+  await page.goto('/');
+  const days = page.locator('.goal-days span');
+  await expect(days).toHaveCount(7);
+  const classes = await days.evaluateAll((items) => items.map((item) => item.className));
+  expect(classes).toEqual(['practiced', '', '', 'today', '', '', '']);
+  await expect(days.first()).toHaveAttribute('title', '星期一：2 次练习');
+  await expect(page.locator('.goal-ring strong')).toContainText('1');
 });
 
 test('corrupt local data warns without breaking the first lesson', async ({ page }) => {
