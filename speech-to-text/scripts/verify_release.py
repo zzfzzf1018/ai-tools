@@ -18,14 +18,19 @@ def main() -> None:
     root = Path(__file__).resolve().parent.parent
     executable = root / "dist/SpeechToText/SpeechToText.exe"
     cases = [
-        ("en.mp3", "en", "speech"),
-        ("zh.mp4", "zh", "\u4e2d\u6587"),
-        ("zh.mkv", "zh", "\u5b57\u5e55"),
-        ("delayed.mp4", "en", "english"),
-        ("silence.wav", "unknown", ""),
+        (name, language, keyword, long_mode)
+        for long_mode in (False, True)
+        for name, language, keyword in [
+            ("en.mp3", "en", "speech"),
+            ("zh.mp4", "zh", "\u4e2d\u6587"),
+            ("zh.mkv", "zh", "\u5b57\u5e55"),
+            ("delayed.mp4", "en", "english"),
+            ("silence.wav", "unknown", ""),
+        ]
     ]
+    cases.append(("long-en.mkv", "en", "speech", True))
     evidence = {
-        "schema_version": 1,
+        "schema_version": 2,
         "status": "running",
         "started_at_utc": datetime.now(UTC).isoformat(),
         "fixture_kind": "synthetic_tts",
@@ -65,36 +70,45 @@ def main() -> None:
         with executable.open("rb") as source:
             evidence["executable_sha256"] = hashlib.file_digest(source, "sha256").hexdigest()
         inputs = []
-        for index, (name, _, _) in enumerate(cases):
+        for index, (name, _, _, _) in enumerate(cases):
             source = root / ".test-media" / name
             target = temporary_root / f"case-{index}{source.suffix}"
             shutil.copy2(source, target)
             inputs.append(target)
-        command = [
-            str(executable),
-            "transcribe",
-            *(str(path) for path in inputs),
-            "-o",
-            str(temporary_root / "output"),
-            "--model",
-            "small",
-            "--model-dir",
-            str(root / ".models"),
-            "--offline",
-            "--quiet",
-        ]
-        completed = subprocess.run(
-            command,
-            capture_output=True,
-            encoding="utf-8",
-            timeout=600,
-            env={**os.environ, "PYTHONUTF8": "1"},
-        )
-        if completed.returncode:
-            raise RuntimeError(f"Packaged transcription failed: {completed.stderr}")
-        results = [json.loads(line) for line in completed.stdout.splitlines() if line.strip()]
+        results = []
+        for long_mode in (False, True):
+            selected = [
+                path for path, case in zip(inputs, cases, strict=True) if case[3] == long_mode
+            ]
+            command = [
+                str(executable),
+                "transcribe",
+                *(str(path) for path in selected),
+                "-o",
+                str(temporary_root / "output"),
+                "--model",
+                "small",
+                "--model-dir",
+                str(root / ".models"),
+                "--offline",
+                "--quiet",
+            ]
+            if long_mode:
+                command.append("--long-files")
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                encoding="utf-8",
+                timeout=600,
+                env={**os.environ, "PYTHONUTF8": "1"},
+            )
+            if completed.returncode:
+                raise RuntimeError(f"Packaged transcription failed: {completed.stderr}")
+            results.extend(
+                json.loads(line) for line in completed.stdout.splitlines() if line.strip()
+            )
         assert len(results) == len(cases)
-        for (name, language, keyword), result in zip(cases, results, strict=True):
+        for (name, language, keyword, long_mode), result in zip(cases, results, strict=True):
             assert result["language"] == language, result
             text = Path(result["outputs"]["txt"]).read_text(encoding="utf-8").lower()
             assert keyword in text, (name, text)
@@ -105,13 +119,15 @@ def main() -> None:
                 assert text == "" and srt == "" and result["segments"] == 0
             else:
                 assert " --> " in srt and result["segments"] > 0
-            if name == "delayed.mp4":
+            if name in {"delayed.mp4", "long-en.mkv"}:
                 first_timestamp = srt.splitlines()[1].split(" --> ")[0]
                 hours, minutes, seconds = first_timestamp.replace(",", ".").split(":")
-                assert int(hours) * 3600 + int(minutes) * 60 + float(seconds) >= 2.5
+                minimum = 7202.5 if name == "long-en.mkv" else 2.5
+                assert int(hours) * 3600 + int(minutes) * 60 + float(seconds) >= minimum
             evidence["cases"].append(
                 {
                     "input": name,
+                    "long_files": long_mode,
                     "language": result["language"],
                     "segments": result["segments"],
                     "duration": result["duration"],
@@ -122,7 +138,7 @@ def main() -> None:
                     },
                 }
             )
-            print(f"PASS packaged {name}: {result['segments']} segments, {language}")
+            print(f"PASS packaged {name} long_files={long_mode}: {result['segments']} segments")
     evidence["status"] = "passed"
     evidence["completed_at_utc"] = datetime.now(UTC).isoformat()
     if args.report:

@@ -8,6 +8,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+EXPECTED_PACKAGED_CASES = {
+    (name, long_mode)
+    for long_mode in (False, True)
+    for name in ("en.mp3", "zh.mp4", "zh.mkv", "delayed.mp4", "silence.wav")
+} | {("long-en.mkv", True)}
 
 
 def file_hash(path: Path) -> str:
@@ -89,7 +94,11 @@ def collect_evidence(
     packaged_report = json.loads(packaged.read_text(encoding="utf-8"))
     packaged_passed = (
         packaged_report.get("status") == "passed"
-        and len(packaged_report.get("cases", [])) == 5
+        and len(packaged_report.get("cases", [])) == len(EXPECTED_PACKAGED_CASES)
+        and {
+            (case.get("input"), case.get("long_files")) for case in packaged_report.get("cases", [])
+        }
+        == EXPECTED_PACKAGED_CASES
         and all(case.get("status") == "passed" for case in packaged_report["cases"])
         and packaged_report.get("executable_sha256") == file_hash(executable)
     )

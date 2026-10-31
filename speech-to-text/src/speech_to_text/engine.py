@@ -24,6 +24,7 @@ class Options:
     offline: bool = False
     audio_track: int = 0
     overwrite: bool = False
+    long_files: bool = False
 
     def __post_init__(self) -> None:
         if self.language not in {"auto", "zh", "en"}:
@@ -106,6 +107,10 @@ class Transcriber:
         }
         if source in outputs.values():
             raise ValueError("Output cannot replace the input media")
+        if self.options.long_files:
+            from speech_to_text.long_files import transcribe_resumable
+
+            return transcribe_resumable(self, source, destination, cancel, progress)
         if not self.options.overwrite:
             for path in outputs.values():
                 if path.exists():

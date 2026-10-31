@@ -1,4 +1,6 @@
-from collections.abc import Callable
+import math
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
 
@@ -83,3 +85,109 @@ def decode_media(
     if progress:
         progress("Decoded audio", 0.0)
     return audio
+
+
+@dataclass(frozen=True)
+class AudioChunk:
+    start: float
+    core_start: float
+    core_end: float
+    audio: np.ndarray
+
+
+def iter_media_chunks(
+    source: Path,
+    audio_track: int = 0,
+    cancel: Event | None = None,
+    *,
+    chunk_seconds: float = 300,
+    overlap_seconds: float = 2,
+) -> Iterator[AudioChunk]:
+    if not math.isfinite(chunk_seconds) or chunk_seconds <= 0:
+        raise ValueError("Chunk duration must be positive and finite")
+    if not math.isfinite(overlap_seconds) or not 0 <= overlap_seconds < chunk_seconds / 2:
+        raise ValueError("Invalid chunk overlap")
+    size = round(chunk_seconds * SAMPLE_RATE)
+    overlap = round(overlap_seconds * SAMPLE_RATE)
+    if size < 1:
+        raise ValueError("Chunk duration is too small")
+    if not source.is_file():
+        raise FileNotFoundError(f"Input file not found: {source}")
+    if source.suffix.lower() not in SUPPORTED_EXTENSIONS:
+        raise ValueError(f"Unsupported file extension: {source.suffix}")
+    check_cancelled(cancel)
+    buffer = np.zeros(size + overlap, dtype=np.float32)
+    window_start = core_start = cursor = 0
+
+    def emit() -> AudioChunk:
+        return AudioChunk(
+            window_start / SAMPLE_RATE,
+            core_start / SAMPLE_RATE,
+            min(core_start + size, cursor) / SAMPLE_RATE,
+            buffer[: min(len(buffer), cursor - window_start)].copy(),
+        )
+
+    def advance() -> None:
+        nonlocal buffer, window_start, core_start
+        core_start += size
+        window_start = core_start - overlap
+        retained = buffer[-2 * overlap :].copy() if overlap else np.empty(0, np.float32)
+        buffer = np.zeros(size + 2 * overlap, dtype=np.float32)
+        buffer[: len(retained)] = retained
+
+    try:
+        with av.open(str(source)) as container:
+            if not container.streams.audio:
+                raise ValueError("Input contains no audio track")
+            if not 0 <= audio_track < len(container.streams.audio):
+                raise ValueError(f"Audio track {audio_track} does not exist")
+            stream = container.streams.audio[audio_track]
+            origin = (container.start_time or 0) / av.time_base
+            resampler = av.AudioResampler(format="fltp", layout="mono", rate=SAMPLE_RATE)
+
+            def append(frame: av.AudioFrame) -> Iterator[AudioChunk]:
+                nonlocal cursor
+                check_cancelled(cancel)
+                samples = frame.to_ndarray().reshape(-1).astype(np.float32)
+                start = (
+                    round((float(frame.time) - origin) * SAMPLE_RATE)
+                    if frame.time is not None
+                    else cursor
+                )
+                if start < 0:
+                    samples = samples[-start:]
+                    start = 0
+                if not samples.size:
+                    return
+                if start < window_start:
+                    raise ValueError("Nonmonotonic audio timestamps in long-file mode")
+                end = start + samples.size
+                cursor = max(cursor, end)
+                while end > window_start + len(buffer):
+                    check_cancelled(cancel)
+                    left = max(start, window_start)
+                    right = min(end, window_start + len(buffer))
+                    if right > left:
+                        buffer[left - window_start : right - window_start] = samples[
+                            left - start : right - start
+                        ]
+                    yield emit()
+                    advance()
+                left = max(start, window_start)
+                if end > left:
+                    buffer[left - window_start : end - window_start] = samples[left - start :]
+
+            for frame in container.decode(stream):
+                check_cancelled(cancel)
+                for converted in resampler.resample(frame):
+                    yield from append(converted)
+            for converted in resampler.resample(None):
+                yield from append(converted)
+    except av.error.FFmpegError as error:
+        raise ValueError(f"Unable to decode media: {error}") from error
+    if cursor == 0:
+        raise ValueError("Input contains no decodable audio samples")
+    while cursor > core_start:
+        check_cancelled(cancel)
+        yield emit()
+        advance()

@@ -24,6 +24,7 @@ def test_gui_layout_queue_and_worker(tmp_path: Path, monkeypatch) -> None:
         app._clear()
         assert not app.files
         assert app.language.get() == "\u81ea\u52a8\u68c0\u6d4b"
+        assert app.long_files.get() is False
         for geometry in ("1060x780", "880x680"):
             root.geometry(geometry)
             root.update()
@@ -60,5 +61,27 @@ def test_gui_layout_queue_and_worker(tmp_path: Path, monkeypatch) -> None:
         app._clear()
         assert not app.files and not app.results
         assert not app.preview.get("1.0", "end").strip()
+        identity = app.table.insert("", "end", values=(str(source), "pending"))
+        app.files[identity] = source
+        app.output.set(str(tmp_path / "long-output"))
+        app.long_files.set(True)
+        captured = []
+
+        class ImmediateThread:
+            def __init__(self, *, target, args, daemon):
+                self.target, self.args = target, args
+                captured.append(args[2])
+
+            def start(self):
+                self.target(*self.args)
+
+        monkeypatch.setattr(gui.threading, "Thread", ImmediateThread)
+        app._start()
+        assert captured[0].long_files is True
+        assert all(str(control.cget("state")) == "disabled" for control in app.controls)
+        app._poll()
+        assert not app.busy
+        assert app.results[identity].segments
+        assert app.long_files.get() is True
     finally:
         root.destroy()

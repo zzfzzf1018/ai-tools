@@ -63,6 +63,24 @@ def main() -> None:
     raw = decode_media(destination / "raw-en.wav")
     encode(destination / "delayed.mp4", raw, delay=3, video=True)
     encode(destination / "silence.wav", np.zeros(80000, dtype=np.float32))
+    encode_sparse_long(destination / "long-en.mkv", decode_media(destination / "en.wav"))
+
+
+def encode_sparse_long(path: Path, samples: np.ndarray, *, delay: float = 7201) -> None:
+    with av.open(str(path), "w") as container:
+        stream = container.add_stream("pcm_s16le", rate=16000)
+        stream.layout = "mono"
+        for offset, data in [(0, np.zeros(1600, np.float32)), (round(delay * 16000), samples)]:
+            for start in range(0, len(data), 4096):
+                values = (data[start : start + 4096] * 30000).astype(np.int16).reshape(1, -1)
+                frame = av.AudioFrame.from_ndarray(values, format="s16", layout="mono")
+                frame.sample_rate = 16000
+                frame.time_base = Fraction(1, 16000)
+                frame.pts = offset + start
+                for packet in stream.encode(frame):
+                    container.mux(packet)
+        for packet in stream.encode(None):
+            container.mux(packet)
 
 
 if __name__ == "__main__":

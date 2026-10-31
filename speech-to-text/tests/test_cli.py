@@ -36,3 +36,31 @@ def test_cli_bad_options(capsys) -> None:
 def test_doctor(capsys) -> None:
     assert cli.main(["doctor"]) == 0
     assert json.loads(capsys.readouterr().out)["cuda_devices"] >= 0
+
+
+def test_cli_long_files_is_opt_in(tmp_path: Path, monkeypatch, capsys) -> None:
+    source = tmp_path / "good.wav"
+    create_audio(source)
+    seen = []
+
+    def transcriber(options):
+        seen.append(options.long_files)
+        return Transcriber(options, FakeModel)
+
+    monkeypatch.setattr(cli, "Transcriber", transcriber)
+    assert cli.main(["transcribe", str(source), "-o", str(tmp_path / "old"), "--quiet"]) == 0
+    assert (
+        cli.main(
+            [
+                "transcribe",
+                str(source),
+                "-o",
+                str(tmp_path / "new"),
+                "--quiet",
+                "--long-files",
+            ]
+        )
+        == 0
+    )
+    assert seen == [False, True]
+    assert len(capsys.readouterr().out.splitlines()) == 2

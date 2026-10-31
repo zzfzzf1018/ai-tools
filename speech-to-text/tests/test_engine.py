@@ -93,3 +93,46 @@ def test_digital_silence_does_not_load_model(tmp_path: Path) -> None:
 def test_invalid_options(kwargs) -> None:
     with pytest.raises(ValueError):
         Options(**kwargs)
+
+
+def test_long_mode_resume_skips_committed_inference(tmp_path: Path, monkeypatch) -> None:
+    import speech_to_text.long_files as long_files
+
+    source = tmp_path / "long.wav"
+    create_audio(source, duration=3)
+    monkeypatch.setattr(long_files, "CHUNK_SECONDS", 1)
+    monkeypatch.setattr(long_files, "OVERLAP_SECONDS", 0)
+    cancel = Event()
+
+    def progress(message, fraction):
+        if message == "Checkpoint saved: 1.0s":
+            cancel.set()
+
+    options = Options(model="tiny", long_files=True)
+    first = Transcriber(options, FakeModel)
+    output = tmp_path / "output"
+    with pytest.raises(CancelledError):
+        first.transcribe(source, output, cancel=cancel, progress=progress)
+    assert first._model.calls == 1
+    assert not (output / "long.txt").exists()
+    assert len(list((output / ".stt-resume").glob("*.json"))) == 1
+    resumed = Transcriber(options, FakeModel)
+    result = resumed.transcribe(source, output)
+    assert resumed._model.calls == 2
+    assert result.duration == 3
+    assert [segment.start for segment in result.segments] == [0.2, 1.2, 2.2]
+    assert not list((output / ".stt-resume").glob("*.json"))
+
+
+def test_default_mode_never_uses_chunk_decoder(tmp_path: Path, monkeypatch) -> None:
+    import speech_to_text.long_files as long_files
+
+    source = tmp_path / "ordinary.wav"
+    create_audio(source)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Default path must remain unchanged")
+
+    monkeypatch.setattr(long_files, "transcribe_resumable", forbidden)
+    Transcriber(Options(model="tiny"), FakeModel).transcribe(source, tmp_path / "out")
+    assert not (tmp_path / "out" / ".stt-resume").exists()

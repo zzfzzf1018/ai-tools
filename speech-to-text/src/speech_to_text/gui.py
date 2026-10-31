@@ -31,6 +31,7 @@ class Application:
         self.track = tk.StringVar(value="0")
         self.offline = tk.BooleanVar(value=False)
         self.overwrite = tk.BooleanVar(value=False)
+        self.long_files = tk.BooleanVar(value=False)
         self.status = tk.StringVar(value="\u5c31\u7eea")
         self._build()
         self.root.protocol("WM_DELETE_WINDOW", self._close)
@@ -118,6 +119,7 @@ class Application:
         for label, variable in [
             ("\u4ec5\u4f7f\u7528\u672c\u5730\u6a21\u578b", self.offline),
             ("\u8986\u76d6\u5df2\u6709\u8f93\u51fa", self.overwrite),
+            ("\u957f\u6587\u4ef6\u4e0e\u65ad\u70b9\u6062\u590d", self.long_files),
         ]:
             control = ttk.Checkbutton(flags, text=label, variable=variable)
             control.pack(side="left", padx=(0, 20))
@@ -253,6 +255,7 @@ class Application:
                 offline=self.offline.get(),
                 audio_track=int(self.track.get()),
                 overwrite=self.overwrite.get(),
+                long_files=self.long_files.get(),
             )
         except (ValueError, KeyError) as error:
             messagebox.showerror("\u53c2\u6570\u9519\u8bef", str(error), parent=self.root)

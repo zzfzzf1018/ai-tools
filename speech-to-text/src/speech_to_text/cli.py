@@ -34,6 +34,11 @@ def parser() -> argparse.ArgumentParser:
         "--audio-track", type=int, default=0, help="Audio track index (zero-based)"
     )
     transcribe.add_argument("--overwrite", action="store_true")
+    transcribe.add_argument(
+        "--long-files",
+        action="store_true",
+        help="Opt in to bounded-memory chunks and automatic checkpoint resume",
+    )
     transcribe.add_argument("--quiet", action="store_true")
     add_model_arguments(transcribe)
     return root
@@ -75,6 +80,7 @@ def main(argv: list[str] | None = None) -> int:
             language=getattr(args, "language", "auto"),
             audio_track=getattr(args, "audio_track", 0),
             overwrite=getattr(args, "overwrite", False),
+            long_files=getattr(args, "long_files", False),
         )
         transcriber = Transcriber(options)
 

@@ -273,7 +273,7 @@ def test_clean_machine_runner_rejects_this_python_machine(tmp_path: Path):
     assert receipt["status"] == "blocked"
 
 
-@pytest.mark.parametrize("mismatch", ["none", "source", "executable"])
+@pytest.mark.parametrize("mismatch", ["none", "source", "executable", "missing_long"])
 def test_evidence_never_seals_unverified_external_gates(
     tmp_path: Path, evidence_functions, mismatch
 ):
@@ -297,7 +297,11 @@ def test_evidence_never_seals_unverified_external_gates(
         json.dumps(
             {
                 "status": "passed",
-                "cases": [{"status": "passed"} for _ in range(5)],
+                "cases": [
+                    {"input": name, "long_files": mode, "status": "passed"}
+                    for name, mode in evidence_functions["EXPECTED_PACKAGED_CASES"]
+                    if mismatch != "missing_long" or not mode
+                ],
                 "executable_sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
             }
         )
