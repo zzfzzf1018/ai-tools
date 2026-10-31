@@ -1,0 +1,109 @@
+name: Speech to Text CI and Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "speech-to-text/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "speech-to-text/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: speech-to-text-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      publish: ${{ steps.plan.outputs.publish }}
+      tag: ${{ steps.plan.outputs.tag }}
+    defaults:
+      run:
+        working-directory: speech-to-text
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.13"
+          architecture: x64
+          cache: pip
+          cache-dependency-path: speech-to-text/requirements-lock.txt
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+        with:
+          dotnet-version: "8.0.x"
+      - run: dotnet tool restore
+      - name: Detect project release version change
+        id: plan
+        env:
+          STT_BEFORE_SHA: ${{ github.event.before }}
+        run: python scripts/versioning.py plan
+      - name: Calculate GitVersion
+        id: version
+        run: python scripts/versioning.py version
+      - name: Test, build and verify the Windows package
+        run: ./build.ps1 -PythonPath (Get-Command python).Source -RequireGitVersion
+      - name: Prepare downloads and checksums
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: .\.build-venv\Scripts\python.exe scripts/versioning.py prepare --archive dist/SpeechToText-windows-x64.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: speech-to-text-${{ steps.version.outputs.version }}
+          path: speech-to-text/release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: speech-to-text-build-logs
+          path: |
+            speech-to-text/.artifacts/logs/
+            speech-to-text/.artifacts/*.xml
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.verify.outputs.publish == 'true'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: speech-to-text-${{ needs.verify.outputs.version }}
+          path: downloads
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.verify.outputs.tag }}
+          RELEASE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd downloads
+          sha256sum --check SHA256SUMS.txt
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo 'Release already exists; refusing to overwrite published downloads.' >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" ./* \
+            --target "$RELEASE_SHA" --draft --title "Speech to Text ${RELEASE_TAG#speech-to-text-v}" \
+            --notes $'Windows x64: download SpeechToText-*-windows-x64.zip, extract the whole folder and double-click SpeechToText.exe. Python is not required.\nThe Whisper model is not bundled; the first transcription downloads it (small is recommended), later runs can be offline.\nUnsigned: Windows may warn about an unknown publisher. Verify SHA256SUMS.txt.\nCI gates: Ruff, standard tests, GitVersion tests and packaged EXE doctor/version. Real-model bilingual acceptance is run locally, not on GitHub runners (see release.json real_model_checks).'
+          gh release edit "$RELEASE_TAG" --draft=false --latest

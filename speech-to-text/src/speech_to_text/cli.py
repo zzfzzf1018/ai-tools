@@ -3,7 +3,7 @@ import json
 import sys
 from pathlib import Path
 
-from speech_to_text import __version__
+from speech_to_text import build_version
 from speech_to_text.engine import MODELS, Options, Transcriber
 from speech_to_text.media import CancelledError
 
@@ -18,7 +18,7 @@ def add_model_arguments(parser: argparse.ArgumentParser) -> None:
 
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description="Local Chinese/English speech transcription")
-    root.add_argument("--version", action="version", version=__version__)
+    root.add_argument("--version", action="version", version=build_version())
     commands = root.add_subparsers(dest="command")
     commands.add_parser("gui", help="Open desktop application (default)")
     commands.add_parser("doctor", help="Check native libraries and runtime")
@@ -52,6 +52,7 @@ def doctor() -> dict[str, str | int]:
     import faster_whisper
 
     return {
+        "version": build_version(),
         "python": sys.version.split()[0],
         "av": av.__version__,
         "faster_whisper": faster_whisper.__version__,

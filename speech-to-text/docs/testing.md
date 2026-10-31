@@ -11,6 +11,8 @@
 7. 打包：PyInstaller 产物执行 doctor，真实字幕导出，验证数据文件、DLL 和动态导入完整性。
 8. 一键入口与手册：CMD 成功/失败返回值、中文空格目录、Windows PowerShell 5.1 解释器探测、命令失败、并发锁、ZIP 结构、重复出包、压缩故障旧包保护、真实 SHA-256、UTF-8 BOM、帮助文件和手册图片链接。
 9. 长文件：默认路径隔离、重叠样本一致性、固定窗口、稀疏超两小时时间轴、词归属、检查点损坏/媒体变化/配置变化、原子写失败、同任务并发、子进程强制退出、尾块、发布中断与用户输出保护。
+10. 版本与发布（`tests/test_versioning.py`）：源码基线唯一且为正式 SemVer、安装元数据一致、本地回退标记为 `-local`；临时多项目 Git 仓库中版本不变/升版/多提交 push/其他项目升版/PR/首次推送/降版/重复标签/错误 checkout；发布附件拒绝版本、提交、内嵌版本、回退构建、失败门禁和哈希不符；工作流路径、权限与 Action SHA 固定。
+    `-m gitversion`（需 `STT_GITVERSION=1`、.NET SDK 8、Git）用真实 GitVersion 6.3.0 验证正式标签、`1.0.1-1` 开发版本、其他项目标签隔离、dirty 检测、main 超前后 detached 标签，以及模拟 GitHub 环境的升版发布计划。标准测试不包含该标记；`build.ps1 -RequireGitVersion` 和 CI 单独运行。
 
 真实模型门禁同时运行旧模式和新模式的双语四格式/延迟音轨/静音案例；新模式另外验证两小时后英文语音，
 中英重复语音在十秒测试窗口边界的关键词数量和恢复输出一致性。
@@ -67,7 +69,7 @@ Remove-Item Env:STT_INTEGRATION
 
 锁依赖一致；Ruff 检查与格式通过；全部标准测试通过；真实双语和时间轴验收通过；
 打包诊断及实际转写通过；无未关闭 P0/P1；发布记录写明已验证范围和未验证项。
-CI 配置已经提供，但本地执行通过不代表 GitHub 远程 workflow 已实际运行。
-在当前 ai-tools 主仓库中，子项目 `.github/workflows/ci.yml` 为模板，需要根目录工作流配置调用并设置子项目工作目录。
+GitHub 自动发布只包含标准门禁、GitVersion 回归与打包 EXE 检查，见 [版本管理与自动发布](versioning-release.md)；本地通过不代表远程 workflow 已实际运行。
+仓库根 `.github/workflows/speech-to-text-release.yml` 是生效的工作流；子项目 `.github/workflows/ci.yml` 仅为旧模板。
 环境发现已在本机 Python 3.13 上实测；未在无 Python 的全新机器实装自动下载路径，失败时按 HTML 手册安装官方 3.13 后重试。
 干净 Windows 和业务操作见 [外部验收](external-acceptance.md)。没有证据时保持待验收，不能用模拟结果或环境变量隔离冒充干净电脑。

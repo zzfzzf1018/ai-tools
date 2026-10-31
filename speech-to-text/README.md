@@ -1,6 +1,6 @@
 # 本地语音转文字
 
-版本 **1.1.0 候选版**：新增默认关闭的“长文件与断点恢复”，普通转写路径保持不变。
+版本 **1.1.1**：增加 GitVersion 版本管理和 GitHub 自动发布；保留默认关闭的“长文件与断点恢复”。
 工程门禁以当前发行包的 `validation/release-evidence.json` 为准；本次功能变更不继承 1.0.1 的人工发布批准，见 [发布说明](docs/release-review.md)。
 
 Windows 桌面和命令行工具，将中文、英文音频或视频转为 UTF-8 TXT、SRT、WebVTT。
@@ -11,6 +11,7 @@ Windows 桌面和命令行工具，将中文、英文音频或视频转为 UTF-8
 **不会写代码也能用：**双击 `help.cmd`，或用浏览器打开 [使用与一键出包手册](docs/user-guide.html)。其中包含实际界面截图、首次安装、双击出包、分享和故障处理步骤。
 
 已构建的版本：解压完整发行目录，双击 `SpeechToText.exe`。不要只复制 EXE，旁边的 `_internal` 是必要依赖。
+正式版下载：[GitHub Releases](https://github.com/zzfzzf1018/ai-tools/releases) 中的 `Speech to Text X.Y.Z` → Assets → `SpeechToText-X.Y.Z-windows-x64.zip`，详见 [版本管理与自动发布](docs/versioning-release.md)。
 源码工作区：双击 `run.cmd`。首次设置先双击 `build.cmd`。
 
 桌面操作：添加一个或多个媒体文件，选择语言和模型，指定输出目录，再开始转写。
@@ -36,6 +37,14 @@ Windows 桌面和命令行工具，将中文、英文音频或视频转为 UTF-8
 模型不打包进 EXE，避免将数百 MB 到数 GB 的模型强行绑定到安装包。
 没有 `py` 启动器时：`./build.ps1 -PythonPath 'C:/Python313/python.exe'`。
 PowerShell 策略阻止脚本时使用 `build.cmd`，它仅为本次进程设置策略，不修改系统策略，也不请求管理员权限。
+
+## 版本管理与自动发布
+
+版本由 GitVersion 6.3.0（.NET SDK 8 本地工具，[GitVersion.yml](GitVersion.yml)）计算，标签前缀 `speech-to-text-v`。
+唯一手工维护的正式版本基线是 `src/speech_to_text/__init__.py` 的 `__version__`；开发构建为 `X.Y.(Z+1)-N`，写入 EXE、`--version`、`doctor` 和 `build-info.json`。
+没有 .NET 或 Git 历史时本地出包回退为 `X.Y.Z-local` 并警告；`./build.ps1 -RequireGitVersion` 禁止回退。
+仓库根工作流 `.github/workflows/speech-to-text-release.yml` 在本项目改动时验证和出包；main 上 `__version__` 升高时自动创建标签与 GitHub Release 下载。
+完整规则、发布步骤和边界见 [版本管理与自动发布](docs/versioning-release.md)。
 
 ## 命令行
 
@@ -109,7 +118,7 @@ GPU 路径不属于本次 Windows CPU 验收范围。
 ```
 
 真实验收需要 Windows 中文 `Microsoft Huihui Desktop` 和英文 `Microsoft Zira Desktop` 语音。
-标准测试不下载模型，CI 模板可配置提交检查和手动真实识别验收；当前项目位于主仓库子目录，GitHub 工作流需要由主仓库根目录的 `.github/workflows` 调用，本轮未验证远程 CI。
+标准测试不下载模型。仓库根工作流在 GitHub 上运行标准门禁、GitVersion 回归和打包，不运行真实模型验收；项目内 `.github/workflows/ci.yml` 是不会被 GitHub 执行的旧模板。
 完整门禁运行 `build.cmd -Integration`，执行标准回归、真实 small 模型集成测试和发行 EXE 验收，将 JUnit、源码指纹、逐案例报告及汇总打包进 `validation`。
 最终数量和状态以 `validation/release-evidence.json` 为准；源码中途变化、测试失败/跳过或 EXE 不匹配均不能通过，不用历史测试数量代替本轮结果。
 `build-info.json` 的 `engineering_status` 表示本轮本机工程门禁；自动报告的 `formal_release_status` 是构建时状态。用户人工批准、实际发布提交和远程标签另行记录，不把未提供的外部机器或准确率数据写成测试通过。
@@ -120,6 +129,7 @@ GPU 路径不属于本次 Windows CPU 验收范围。
 - [设计文档](docs/design.md)
 - [测试与验收](docs/testing.md)
 - [审查与发布记录](docs/release-review.md)
+- [版本管理与自动发布](docs/versioning-release.md)
 - [普通用户图文手册](docs/user-guide.html)
 - [正式封板外部验收](docs/external-acceptance.md)
 

@@ -1,6 +1,23 @@
 # 审查与发布记录
 
-当前候选版本：1.1.0，日期：2026-10-31。以下保留 1.0.1 历史发布记录。
+当前候选版本：1.1.1，日期：2026-10-31。以下保留历史发布记录。
+
+## GitVersion 与 GitHub 自动发布（2026-10-31）
+
+范围仅为版本管理、自动发布、下载附件和文档，转写算法、模型和界面未改动。规则与操作见 [版本管理与自动发布](versioning-release.md)。
+
+| 风险或审查发现 | 处理与验证 |
+| --- | --- |
+| `pyproject.toml` 与 `__init__.py` 重复维护版本 | 改为 setuptools 动态读取 `__version__`；安装元数据一致性回归 |
+| 多项目仓库中子目录工作流不生效，其他项目标签/提交干扰 | 工作流放在 Git 根，只路由 `speech-to-text/**`；标签前缀隔离、根相对路径读取历史版本；真实 GitVersion 多项目回归 |
+| EXE 版本与计算版本不一致或打包无版本 | 版本 JSON 内嵌进 EXE，spec 缺失即失败；出包第 5 步核对 `SpeechToText.exe --version` |
+| 无 .NET/Git 的普通用户无法出包 | 本地回退为明显的 `X.Y.Z-local` 并警告；`prepare` 拒绝回退构建；CI 使用 `-RequireGitVersion` |
+| 打标签提交上带未提交改动的本地包看似正式版 | review 发现后增加本地警告，`prepare` 拒绝 `uncommitted_changes≠0`；回归先补后过 |
+| 未测试、降版、重复标签、附件被篡改或覆盖已发布 | 升版严格递增、标签/SHA/干净工作区校验、只读验证后独立写权限任务、SHA-256 复核、草稿转正式、拒绝覆盖；Actions 固定提交 SHA |
+
+本轮门禁：Ruff 检查与格式通过；标准测试 120 项、真实 GitVersion 回归 2 项、真实 small 模型集成 27 项、发行 EXE 11 例全部通过，`engineering_status=passed`；actionlint 1.7.7（官方校验和核对）通过。
+在临时克隆中模拟 GitHub main push 升版 1.1.1：`plan` 输出发布 `speech-to-text-v1.1.1` 并本地打标签，GitVersion 1.1.1，完整出包、EXE 版本 1.1.1、`prepare` 生成版本化 ZIP/SHA256SUMS/release.json，构建后工作区保持干净；版本不符时 `prepare` 失败。
+本轮按升版发布规则准备 1.1.1，远程 Actions 与 Releases 上传结果以 GitHub 实际运行状态为准；GitHub 托管机器不运行真实模型验收，Release 附件的 `real_model_checks` 如实为 `not_run`。
 
 ## 1.1.0 长文件审查
 

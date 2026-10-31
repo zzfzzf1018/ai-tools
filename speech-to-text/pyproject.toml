@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "local-speech-to-text"
-version = "1.1.0"
+dynamic = ["version"]
 description = "Local Chinese and English transcription with synchronized subtitles"
 requires-python = ">=3.11,<3.14"
 dependencies = [
@@ -25,10 +25,16 @@ speech-to-text-gui = "speech_to_text.gui:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.dynamic]
+version = { attr = "speech_to_text.__version__" }
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-markers = ["integration: requires a real Whisper model"]
+markers = [
+	"integration: requires a real Whisper model",
+	"gitversion: requires .NET SDK 8, Git and the pinned GitVersion tool",
+]
 
 [tool.ruff]
 target-version = "py311"

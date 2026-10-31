@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all, collect_data_files
 
 datas = []
@@ -9,6 +11,11 @@ for package in ('faster_whisper', 'ctranslate2', 'av', 'tokenizers'):
     binaries += package_binaries
     hiddenimports += package_hidden
 datas += collect_data_files('setuptools')
+# Written by scripts/versioning.py in build.ps1; refuse to package an unversioned EXE.
+version_file = Path('.artifacts/build-version.json')
+if not version_file.is_file():
+    raise SystemExit('Missing .artifacts/build-version.json; run build.ps1 to calculate the version.')
+datas.append((str(version_file), 'speech_to_text'))
 
 analysis = Analysis(
     ['scripts/launcher.py'],

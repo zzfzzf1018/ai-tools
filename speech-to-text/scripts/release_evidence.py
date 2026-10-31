@@ -22,7 +22,7 @@ def file_hash(path: Path) -> str:
 
 def source_manifest(root: Path) -> dict:
     files = set()
-    for name in ("src", "scripts", "tests", "docs", ".github"):
+    for name in ("src", "scripts", "tests", "docs", ".github", ".config"):
         directory = root / name
         if directory.exists():
             files.update(path for path in directory.rglob("*") if path.is_file())
@@ -32,7 +32,14 @@ def source_manifest(root: Path) -> dict:
         if path.is_file()
         and (
             path.suffix in {".cmd", ".ps1", ".spec"}
-            or path.name in {"README.md", "pyproject.toml", "requirements-lock.txt", ".gitignore"}
+            or path.name
+            in {
+                "README.md",
+                "pyproject.toml",
+                "requirements-lock.txt",
+                ".gitignore",
+                "GitVersion.yml",
+            }
         )
     )
     entries = {

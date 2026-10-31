@@ -3,7 +3,8 @@
     [switch]$TestOnly,
     [switch]$Integration,
     [switch]$InstallPython,
-    [switch]$OpenOutput
+    [switch]$OpenOutput,
+    [switch]$RequireGitVersion
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'scripts\packaging.ps1')
@@ -40,11 +41,33 @@ try {
     Invoke-Checked -Executable $Python -Arguments @('-m', 'pip', 'install', '-r', 'requirements-lock.txt')
     Invoke-Checked -Executable $Python -Arguments @('-m', 'pip', 'install', '--no-deps', '-e', '.')
     Invoke-Checked -Executable $Python -Arguments @('-m', 'pip', 'check')
+    Write-Host '      计算版本号（GitVersion）'
+    $VersionPath = Join-Path $PSScriptRoot '.artifacts\build-version.json'
+    if (Test-Path -LiteralPath $VersionPath) { Remove-Item -LiteralPath $VersionPath -Force }
+    $VersionArguments = @('scripts/versioning.py', 'version', '--output', '.artifacts/build-version.json')
+    if (-not $RequireGitVersion) { $VersionArguments += '--allow-fallback' }
+    Invoke-Checked -Executable $Python -Arguments $VersionArguments
+    $BuildVersion = Get-Content -LiteralPath $VersionPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($BuildVersion.source -ne 'gitversion') {
+        Write-Host "警告：未能使用 GitVersion，本次为非正式版本 $($BuildVersion.version)。正式发布由 GitHub Actions 完成。"
+    } elseif ($BuildVersion.uncommitted_changes -gt 0) {
+        Write-Host "警告：工作区有 $($BuildVersion.uncommitted_changes) 处未提交改动，本包只供自用，不能作为正式发布。"
+    }
+    Write-Host "本次版本：$($BuildVersion.version)"
     Write-Host '[3/7] 自动检查代码并运行测试，任何失败都会停止出包'
     Invoke-Checked -Executable $Python -Arguments @('-m', 'ruff', 'check', 'src', 'tests', 'scripts')
     Invoke-Checked -Executable $Python -Arguments @('-m', 'ruff', 'format', '--check', 'src', 'tests', 'scripts')
     Invoke-Checked -Executable $Python -Arguments @('scripts/release_evidence.py', 'snapshot', '--output', '.artifacts/source-manifest.json')
-    Invoke-Checked -Executable $Python -Arguments @('-m', 'pytest', '-m', 'not integration', '-q', '--junitxml=.artifacts/standard-tests.xml')
+    Invoke-Checked -Executable $Python -Arguments @('-m', 'pytest', '-m', 'not integration and not gitversion', '-q', '--junitxml=.artifacts/standard-tests.xml')
+    if ($RequireGitVersion) {
+        $PreviousGitVersion = $env:STT_GITVERSION
+        try {
+            $env:STT_GITVERSION = '1'
+            Invoke-Checked -Executable $Python -Arguments @('-m', 'pytest', '-m', 'gitversion', '-q', '--junitxml=.artifacts/gitversion-tests.xml')
+        } finally {
+            $env:STT_GITVERSION = $PreviousGitVersion
+        }
+    }
     Invoke-Checked -Executable $Python -Arguments @('-m', 'speech_to_text', 'doctor')
     if ($Integration) {
         & (Join-Path $PSScriptRoot 'scripts\prepare_fixtures.ps1') -PythonPath $Python
@@ -62,6 +85,10 @@ try {
         Invoke-Checked -Executable $Python -Arguments @('-m', 'PyInstaller', '--clean', '--noconfirm', 'speech-to-text.spec')
         Write-Host '[5/7] 验证生成的应用程序'
         Invoke-Checked -Executable '.\dist\SpeechToText\SpeechToText.exe' -Arguments @('doctor')
+        $PackagedVersion = & '.\dist\SpeechToText\SpeechToText.exe' --version
+        if ($LASTEXITCODE -ne 0 -or "$PackagedVersion".Trim() -ne $BuildVersion.version) {
+            throw "应用程序版本 $PackagedVersion 与计算版本 $($BuildVersion.version) 不一致。"
+        }
         if ($Integration) {
             Invoke-Checked -Executable $Python -Arguments @('scripts/verify_release.py', '--report', '.artifacts/packaged-acceptance.json')
         }
@@ -70,7 +97,10 @@ try {
         New-Item -ItemType Directory -Force -Path 'dist\SpeechToText\docs' | Out-Null
         Copy-Item 'docs\*' -Destination 'dist\SpeechToText\docs' -Recurse -Force
         New-Item -ItemType Directory -Force -Path 'dist\SpeechToText\validation' | Out-Null
-        Copy-Item '.artifacts\standard-tests.xml', '.artifacts\source-manifest.json' -Destination 'dist\SpeechToText\validation'
+        Copy-Item '.artifacts\standard-tests.xml', '.artifacts\source-manifest.json', '.artifacts\build-version.json' -Destination 'dist\SpeechToText\validation'
+        if ($RequireGitVersion) {
+            Copy-Item '.artifacts\gitversion-tests.xml' -Destination 'dist\SpeechToText\validation'
+        }
         if ($Integration) {
             Invoke-Checked -Executable $Python -Arguments @('scripts/release_evidence.py', 'collect', '--output', '.artifacts/release-evidence.json')
             Copy-Item '.artifacts\integration-tests.xml', '.artifacts\packaged-acceptance.json', '.artifacts\release-evidence.json' -Destination 'dist\SpeechToText\validation'
@@ -84,7 +114,11 @@ try {
         $Manifest = [ordered]@{
             built_at_utc = (Get-Date).ToUniversalTime().ToString('o')
             platform = 'windows-x64'
-            version = (& $Python -c 'import speech_to_text; print(speech_to_text.__version__)')
+            version = $BuildVersion.version
+            full_version = $BuildVersion.full_version
+            version_source = $BuildVersion.source
+            commit = $BuildVersion.commit
+            uncommitted_changes = $BuildVersion.uncommitted_changes
             python = (& $Python -c 'import sys; print(sys.version.split()[0])')
             standard_checks = 'passed'
             real_model_checks = $(if ($Integration) { 'passed' } else { 'not_run' })
