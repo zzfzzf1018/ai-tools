@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { resolveVersion } = require('./version.cjs');
 
 const projectRoot = path.resolve(__dirname, '..');
 
@@ -85,6 +86,8 @@ function runBuild(target, options = {}) {
   }
   try {
     fs.writeFileSync(lockDescriptor, String(process.pid));
+    const version = (options.resolveVersion || resolveVersion)(root);
+    metadata.version = version.SemVer;
     log(`\nBuilding ${metadata.name} ${metadata.version} (${target})`);
     log('Installing locked dependencies. Network access is required for uncached downloads.');
     execute(['ci', '--no-audit', '--no-fund'], root);
@@ -128,6 +131,7 @@ function runBuild(target, options = {}) {
           '--x64',
           '--publish',
           'never',
+          `-c.extraMetadata.version=${metadata.version}`,
         ],
         root,
       );

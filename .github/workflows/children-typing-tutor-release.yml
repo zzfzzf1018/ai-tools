@@ -1,0 +1,127 @@
+name: Typing Island CI and Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "children-typing-tutor/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "children-typing-tutor/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: typing-island-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      publish: ${{ steps.plan.outputs.publish }}
+      tag: ${{ steps.plan.outputs.tag }}
+    defaults:
+      run:
+        working-directory: children-typing-tutor
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: children-typing-tutor/package-lock.json
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+        with:
+          dotnet-version: "8.0.x"
+      - run: dotnet tool restore
+      - run: npm ci --no-audit --no-fund
+      - name: Detect project release version change
+        id: plan
+        env:
+          TYPING_BEFORE_SHA: ${{ github.event.before }}
+        run: node scripts/release.cjs plan
+      - name: Calculate and validate GitVersion
+        id: version
+        run: node scripts/release.cjs version
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run test:version
+      - run: npm audit --audit-level=high
+      - run: npx playwright install chromium
+      - run: npm run test:e2e
+      - run: npm run build:all
+      - name: Test actual unpacked app
+        run: |
+          $env:DESKTOP_EXECUTABLE = (Resolve-Path 'release/win-unpacked/Typing Island.exe').Path
+          npm run test:desktop
+      - name: Test actual portable app
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $env:DESKTOP_EXECUTABLE = (Resolve-Path "release/Typing-Island-$env:RELEASE_VERSION-x64-portable.exe").Path
+          npm run test:desktop
+      - name: Prepare downloads and checksums
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          Compress-Archive -Path dist/* -DestinationPath "release/Typing-Island-$env:RELEASE_VERSION-web.zip"
+          node scripts/release.cjs prepare
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: typing-island-${{ steps.version.outputs.version }}
+          path: children-typing-tutor/release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: typing-island-test-failures
+          path: |
+            children-typing-tutor/playwright-report/
+            children-typing-tutor/test-results/
+          retention-days: 7
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.verify.outputs.publish == 'true'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: typing-island-${{ needs.verify.outputs.version }}
+          path: downloads
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.verify.outputs.tag }}
+          RELEASE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd downloads
+          sha256sum --check SHA256SUMS.txt
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo 'Release already exists; refusing to overwrite published downloads.' >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" ./* \
+            --target "$RELEASE_SHA" --draft --title "Typing Island ${RELEASE_TAG#children-typing-tutor-v}" \
+            --notes $'Windows x64: download the portable.exe to run without installation, or setup.exe to install.\nUnsigned: Windows may warn about an unknown publisher. NSIS installation/uninstallation is not automatically tested.\nWeb ZIP: extract and serve over HTTP; offline caching needs HTTPS or localhost.\nSHA256SUMS.txt and release.json record download hashes and the source commit.\nLearning records stay on the device; no desktop auto-updater.'
+          gh release edit "$RELEASE_TAG" --draft=false --latest

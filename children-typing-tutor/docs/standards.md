@@ -41,6 +41,8 @@
 
 ## 发布门禁
 
+版本与自动发布使用固定 GitVersion 6.3.0；本地正式构建需 Git 完整历史与标签、.NET SDK 8 和 `dotnet tool restore`。统一入口计算版本，不改写源码 npm 元数据；正式标签只能是 `children-typing-tutor-vX.Y.Z`。Git 根目录的 Actions 只在本项目目录发生 main push / PR 改动时触发；整次 main push 前后项目 npm 正式版本不变只跑 pipeline，版本严格升高且完整门禁、两种实际 exe 回归通过后才自动建标签和发布。PR、仅其他项目/工作流改动或仅推标签不发布，也不配置手工触发。位置、版本更新命令、权限、首发操作和失败恢复见[版本管理与自动发布](publishing.md)。
+
 1.1 增量检查要求：
 
 - 版本 1 原记录迁移后，课程、设置与累计字段不丢失，不伪造按键统计；旧键保留，新键优先，明确重置时清理旧键。
@@ -52,6 +54,7 @@
 npm run typecheck
 npm run lint
 npm test
+npm run test:version
 npm run format:check
 npm run test:e2e
 npm run desktop:package

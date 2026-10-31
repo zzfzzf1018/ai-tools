@@ -22,11 +22,13 @@
     "format:check": "prettier --check .",
     "test": "vitest run && npm run test:build",
     "test:build": "node --test tests/build.test.cjs",
+    "test:version": "node --test tests/version.test.cjs",
+    "version:show": "node scripts/version.cjs",
     "test:e2e": "playwright test",
     "desktop:runtime": "node node_modules/electron/install.js",
     "desktop:dev": "npm run build && npm run desktop:runtime && electron .",
-    "desktop:build": "npm run build && npm run desktop:runtime && electron-builder --win --dir",
-    "desktop:package": "npm run build && npm run desktop:runtime && electron-builder --win portable nsis",
+    "desktop:build": "npm run build:windows",
+    "desktop:package": "npm run build:windows",
     "test:desktop": "node tests/desktop.cjs"
   },
   "dependencies": {
@@ -47,11 +49,13 @@
     "eslint": "^9.39.0",
     "globals": "^16.5.0",
     "prettier": "^3.6.2",
+    "semver": "^7.8.5",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.0",
     "vite": "^7.3.1",
     "vite-plugin-pwa": "^1.2.0",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "yaml": "^2.9.1"
   },
   "build": {
     "appId": "com.typingisland.app",

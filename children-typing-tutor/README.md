@@ -4,6 +4,10 @@
 
 当前开发版本：1.1.0。沿用 1.0 的 20 课和奖励规则，新增按键统计、专项复习与本地记录备份；多儿童档案等后续路线暂未实施。
 
+正式下载入口：[GitHub Releases](https://github.com/zzfzzf1018/ai-tools/releases)。选择 `Typing Island` 发布下的 Windows x64 便携版或安装包；源码 ZIP 不是可运行版本。只有自动发布工作流成功后才会出现新版附件，配置不会回填旧标签。版本由 GitVersion 计算，详见[版本管理与自动发布](docs/publishing.md)。
+
+Actions 仅在本项目目录有改动的 main push / PR 时运行。同版本修改只跑 pipeline；main push 中通过 `npm version X.Y.Z --no-git-tag-version` 提高本项目版本，全部验证通过后才自动创建正式标签和下载发布，PR 不发布，其他项目或仅工作流/标签改动不触发。
+
 ## 已实现
 
 - 20 节分步课程：认识键盘、F/J 定位、基准行、上下排、单词、Shift 和短句。
@@ -31,13 +35,13 @@ npm run dev
 
 ## 一键构建
 
-Windows 上安装 Node.js（含 npm）后，在项目根目录双击：
+Windows 上安装 Node.js（含 npm）、Git 与 .NET SDK 8，完整克隆仓库并在项目根目录运行一次 `dotnet tool restore` 后双击：
 
 - [build.cmd](build.cmd)：同时构建网页版和 Windows x64 桌面版。
 - [build-web.cmd](build-web.cmd)：仅构建网页版。
 - [build-windows.cmd](build-windows.cmd)：仅构建 Windows x64 桌面版。
 
-不需要先手动安装项目依赖。脚本会通过 `npm ci` 按锁文件重新安装依赖，再执行 TypeScript 检查和生产构建；桌面版会显式准备锁定版本的 Electron x64 运行时（Electron 45 不再自动安装运行时），复用它生成便携程序、NSIS 安装包和完整目录包，不会自动发布。首次构建或缓存不足时需联网下载 npm、Electron 和打包工具资源；失败会停止并保留错误窗口，不会显示成功。已安装不受支持的 Node.js 版本也会明确拒绝构建。
+不需要先手动安装 npm 依赖。脚本先由固定 GitVersion 计算版本，再通过 `npm ci` 按锁文件重新安装依赖，执行 TypeScript 检查和生产构建；桌面版会显式准备锁定版本的 Electron x64 运行时（Electron 45 不再自动安装运行时），复用它生成便携程序、NSIS 安装包和完整目录包，不会从本地构建自动发布。包内版本和 exe 文件名使用 GitVersion，源码两份 npm 元数据保持不变。首次构建或缓存不足时需联网下载 NuGet、npm、Electron 和打包工具资源；失败会停止并保留错误窗口，不会显示成功。GitVersion 缺失、无完整 Git 历史或不受支持的 Node.js 版本也会明确拒绝构建。
 
 网页输出到 `dist/`，桌面输出到 `release/`。每次成功安装依赖后会重建 `dist/`；桌面构建还会清空并重建 `release/`，请勿在这两个生成目录存放手工文件。仅网页构建不会修改已有桌面产物。Windows 入口不依赖启动时的工作目录，项目路径可含空格或中文。
 
@@ -85,8 +89,8 @@ npm run desktop:package
 ```
 
 - `desktop:dev` 先构建网页，再用 Electron 启动，避免网页和桌面加载逻辑不同。
-- `desktop:build` 输出 `release/win-unpacked/Typing Island.exe`。目录包需保留整个目录，不可单独移动该 exe。
-- `desktop:package` 输出 `release/` 下的 portable 便携版与 NSIS 安装包，文件名包含版本、架构及打包类型。
+- `desktop:build` 与 `desktop:package` 均为 GitVersion 一键 Windows 构建的兼容入口，输出目录包、portable 便携版和 NSIS 安装包，文件名包含计算版本、架构及打包类型。
+- 目录包中的 `release/win-unpacked/Typing Island.exe` 需保留整个目录，不可单独移动该 exe。
 - 安装包未签名，Windows 可能提示未知发布者。不要对不明来源的软件忽略安全警告；本项目不包含代码签名证书。
 
 验证打包后的桌面程序：
@@ -134,6 +138,7 @@ docs/              需求、设计、规范和审查验收记录
 - [设计文档](docs/design.md)
 - [开发与评审规范](docs/standards.md)
 - [审查修复与封板记录](docs/release.md)
+- [版本管理与 GitHub 自动发布](docs/publishing.md)
 - [第三方资源说明](docs/third-party.md)
 
 ## 常见问题

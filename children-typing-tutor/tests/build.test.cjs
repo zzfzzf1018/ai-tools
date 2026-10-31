@@ -5,6 +5,135 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { test } = require('node:test');
 const { checkEnvironment, parseTarget, runBuild } = require('../scripts/build.cjs');
+const { validateRelease, prepareAssets, planRelease } = require('../scripts/release.cjs');
+const { parse: parseYaml } = require('yaml');
+
+test('only a main push with an increased project version is published', () => {
+  const event = { name: 'push', ref: 'refs/heads/main', sha: 'a'.repeat(40) };
+  assert.deepEqual(planRelease('1.1.0', '1.1.0', event), { publish: false, tag: '' });
+  assert.deepEqual(planRelease('1.1.1', '1.1.0', event), {
+    publish: true,
+    tag: 'children-typing-tutor-v1.1.1',
+  });
+  assert.equal(planRelease('1.1.0', null, event).publish, true);
+  assert.equal(planRelease('1.1.1', '1.1.0', { ...event, name: 'pull_request' }).publish, false);
+  assert.equal(
+    planRelease('1.1.1', '1.1.0', { ...event, ref: 'refs/tags/children-typing-tutor-v1.1.1' })
+      .publish,
+    false,
+  );
+  assert.throws(() => planRelease('1.0.0', '1.1.0', event), /must increase/);
+  assert.throws(() => planRelease('1.1.1-rc.1', '1.1.0', event), /stable SemVer/);
+});
+
+test('release accepts only a clean, matching stable project tag and Windows version', () => {
+  const sha = 'a'.repeat(40);
+  const version = { SemVer: '1.2.3', Sha: sha, UncommittedChanges: 0 };
+  assert.equal(validateRelease(version, 'children-typing-tutor-v1.2.3', sha), '1.2.3');
+  for (const tag of [
+    'v1.2.3',
+    'other-v1.2.3',
+    'children-typing-tutor-v01.2.3',
+    'children-typing-tutor-v1.2.3-rc.1',
+    'children-typing-tutor-v1.0.0-sealed-20261031',
+  ])
+    assert.throws(() => validateRelease(version, tag, sha), /stable SemVer/);
+  assert.throws(
+    () => validateRelease(version, 'children-typing-tutor-v1.2.4', sha),
+    /do not match/,
+  );
+  assert.throws(
+    () => validateRelease(version, 'children-typing-tutor-v1.2.3', 'b'.repeat(40)),
+    /do not match/,
+  );
+  assert.throws(
+    () =>
+      validateRelease({ ...version, UncommittedChanges: 1 }, 'children-typing-tutor-v1.2.3', sha),
+    /clean worktree/,
+  );
+  assert.throws(() => validateRelease(version, 'children-typing-tutor-v65536.0.0', sha), /65535/);
+});
+
+test('release assets use the calculated version and include verifiable hashes', (context) => {
+  const { root, write } = fixture(context);
+  for (const suffix of ['x64-portable.exe', 'x64-setup.exe', 'web.zip'])
+    write(`release/Typing-Island-1.2.3-${suffix}`);
+  write('release-assets/stale.txt');
+  const version = { SemVer: '1.2.3', FullSemVer: '1.2.3', Sha: 'a'.repeat(40) };
+  const assets = prepareAssets(root, version);
+  assert.equal(assets.length, 3);
+  assert.equal(fs.existsSync(path.join(root, 'release-assets/stale.txt')), false);
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'release-assets/release.json')));
+  assert.equal(manifest.commit, version.Sha);
+  assert.equal(manifest.version, version.SemVer);
+  const { createHash } = require('node:crypto');
+  for (const asset of assets) {
+    const contents = fs.readFileSync(path.join(root, 'release-assets', asset.filename));
+    assert.equal(asset.sha256, createHash('sha256').update(contents).digest('hex'));
+    assert.equal(asset.bytes, contents.length);
+    assert.ok(
+      fs
+        .readFileSync(path.join(root, 'release-assets/SHA256SUMS.txt'), 'utf8')
+        .includes(`${asset.sha256}  ${asset.filename}\n`),
+    );
+  }
+  fs.truncateSync(path.join(root, 'release/Typing-Island-1.2.3-web.zip'), 0);
+  assert.throws(() => prepareAssets(root, version), /Missing or empty/);
+  assert.equal(fs.existsSync(path.join(root, 'release-assets/release.json')), true);
+  assert.throws(
+    () => prepareAssets(root, { ...version, SemVer: '../../unsafe' }),
+    /Invalid release/,
+  );
+});
+
+test('repository-root workflow gates publication on full history, tests and actual exe checks', () => {
+  const workflow = parseYaml(
+    fs.readFileSync(
+      path.resolve(__dirname, '../../.github/workflows/children-typing-tutor-release.yml'),
+      'utf8',
+    ),
+  );
+  assert.deepEqual(workflow.on.push.paths, ['children-typing-tutor/**']);
+  assert.deepEqual(workflow.on.pull_request.paths, ['children-typing-tutor/**']);
+  assert.equal(workflow.on.push.tags, undefined);
+  assert.equal(workflow.on.workflow_dispatch, undefined);
+  assert.equal(workflow.permissions.contents, 'read');
+  assert.equal(workflow.jobs.verify['runs-on'], 'windows-latest');
+  assert.equal(workflow.jobs.verify.defaults.run['working-directory'], 'children-typing-tutor');
+  const steps = workflow.jobs.verify.steps;
+  for (const step of [...steps, ...workflow.jobs.publish.steps]) {
+    if (step.uses) assert.match(step.uses, /^actions\/[a-z-]+@[0-9a-f]{40}$/);
+  }
+  const checkout = steps.find((step) => step.uses?.startsWith('actions/checkout@'));
+  assert.equal(checkout.with['fetch-depth'], 0);
+  assert.equal(checkout.with['persist-credentials'], false);
+  for (const command of [
+    'dotnet tool restore',
+    'npm test',
+    'npm run test:version',
+    'npm run test:e2e',
+    'npm run build:all',
+    'npm audit --audit-level=high',
+  ])
+    assert.ok(
+      steps.some((step) => step.run === command),
+      command,
+    );
+  assert.equal(steps.filter((step) => step.run?.includes('npm run test:desktop')).length, 2);
+  assert.equal(workflow.jobs.publish.needs, 'verify');
+  assert.equal(workflow.jobs.publish.permissions.contents, 'write');
+  assert.equal(
+    workflow.jobs.publish.if,
+    "github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.verify.outputs.publish == 'true'",
+  );
+  assert.equal(workflow.jobs.verify.outputs.publish, '${{ steps.plan.outputs.publish }}');
+  assert.ok(
+    steps.find((step) => step.id === 'plan').env.TYPING_BEFORE_SHA.includes('github.event.before'),
+  );
+  const publish = workflow.jobs.publish.steps.find((step) => step.run)?.run;
+  assert.ok(publish.includes('sha256sum --check SHA256SUMS.txt'));
+  assert.ok(publish.includes('--target "$RELEASE_SHA" --draft'));
+});
 
 function fixture(context) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'typing build space '));
@@ -40,11 +169,14 @@ function fixture(context) {
         write(artifact);
     }
     if (args[0] === 'exec') {
+      const version = args
+        .find((argument) => argument.startsWith('-c.extraMetadata.version='))
+        .split('=')[1];
       for (const artifact of [
         'release/win-unpacked/Typing Island.exe',
         'release/win-unpacked/resources/app.asar',
-        'release/Typing-Island-1.0.0-x64-portable.exe',
-        'release/Typing-Island-1.0.0-x64-setup.exe',
+        `release/Typing-Island-${version}-x64-portable.exe`,
+        `release/Typing-Island-${version}-x64-setup.exe`,
       ])
         write(artifact);
     }
@@ -53,9 +185,62 @@ function fixture(context) {
     root,
     commands,
     write,
-    options: { root, execute, platform: 'win32', nodeVersion: '22.14.0', log: () => {} },
+    options: {
+      root,
+      execute,
+      platform: 'win32',
+      nodeVersion: '22.14.0',
+      log: () => {},
+      resolveVersion: () => ({ SemVer: '1.0.0' }),
+    },
   };
 }
+
+test('GitVersion controls packaged version without ever changing npm source metadata', (context) => {
+  const { root, options, commands } = fixture(context);
+  const lockPath = path.join(root, 'package-lock.json');
+  fs.writeFileSync(
+    lockPath,
+    JSON.stringify({
+      name: 'typing-island',
+      version: '1.0.0',
+      packages: { '': { version: '1.0.0' } },
+    }),
+  );
+  const originals = ['package.json', 'package-lock.json'].map((filename) =>
+    fs.readFileSync(path.join(root, filename)),
+  );
+  options.resolveVersion = () => ({ SemVer: '1.2.3' });
+  const execute = options.execute;
+  options.execute = (args, cwd, extraEnv) => {
+    for (const [index, filename] of ['package.json', 'package-lock.json'].entries())
+      assert.deepEqual(fs.readFileSync(path.join(root, filename)), originals[index]);
+    execute(args, cwd, extraEnv);
+  };
+  const artifacts = runBuild('windows', options);
+  assert.ok(commands.at(-1).includes('-c.extraMetadata.version=1.2.3'));
+  assert.ok(artifacts.includes('release/Typing-Island-1.2.3-x64-portable.exe'));
+  for (const [index, filename] of ['package.json', 'package-lock.json'].entries())
+    assert.deepEqual(fs.readFileSync(path.join(root, filename)), originals[index]);
+  options.execute = () => {
+    throw new Error('install failed');
+  };
+  assert.throws(() => runBuild('web', options), /install failed/);
+  for (const [index, filename] of ['package.json', 'package-lock.json'].entries())
+    assert.deepEqual(fs.readFileSync(path.join(root, filename)), originals[index]);
+});
+
+test('GitVersion failure does not install, clean outputs or leave a lock', (context) => {
+  const { root, options, commands, write } = fixture(context);
+  write('dist/keep.txt');
+  options.resolveVersion = () => {
+    throw new Error('GitVersion failed');
+  };
+  assert.throws(() => runBuild('web', options), /GitVersion failed/);
+  assert.equal(commands.length, 0);
+  assert.equal(fs.existsSync(path.join(root, 'dist/keep.txt')), true);
+  assert.equal(fs.existsSync(path.join(root, '.build.lock')), false);
+});
 
 test('targets are explicit and unknown or extra arguments fail', () => {
   assert.equal(parseTarget([]), 'all');
@@ -105,6 +290,7 @@ for (const target of ['all', 'windows']) {
       '--x64',
       '--publish',
       'never',
+      '-c.extraMetadata.version=1.0.0',
     ]);
     assert.equal(fs.existsSync(path.join(root, 'release/stale.exe')), false);
   });
