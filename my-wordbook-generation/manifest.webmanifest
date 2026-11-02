@@ -1,0 +1,20 @@
+{
+  "name": "单词书 · Wordbook",
+  "short_name": "单词书",
+  "description": "离线单词学习：分级词库、SM-2 间隔重复、生词本多格式导出。",
+  "lang": "zh-CN",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f6f1e6",
+  "theme_color": "#2f6b57",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

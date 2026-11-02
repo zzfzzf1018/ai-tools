@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>单词书 · Wordbook</title>
+  <meta name="description" content="离线单词学习：分级词库、SM-2 间隔重复、生词本多格式导出。">
+  <meta name="theme-color" content="#2f6b57">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <script>
+    try {
+      var s = JSON.parse(localStorage.getItem('wb:v1:settings') || '{}');
+      var t = s.theme || 'auto';
+      var dark = t === 'dark' || (t === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    } catch (e) {}
+  </script>
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <a class="skip-link" href="#view">跳到内容</a>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#/today" aria-label="单词书首页">
+        <span class="brand-mark" aria-hidden="true">词</span>
+        <span class="brand-text"><strong>单词书</strong><small id="tierBadge">日常对话 · 2,000</small></span>
+      </a>
+      <nav class="nav" id="nav" aria-label="主导航"></nav>
+      <div class="top-actions">
+        <button class="icon-btn" id="themeToggle" type="button" aria-label="切换主题"></button>
+      </div>
+    </header>
+    <main class="view" id="view" tabindex="-1"></main>
+    <footer class="foot">本地离线运行 · 学习数据只保存在当前浏览器</footer>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <noscript><div class="noscript">需要启用 JavaScript 才能使用单词书。</div></noscript>
+
+  <script src="vendor/xlsx.full.min.js"></script>
+  <script src="js/data/wordbank.js"></script>
+  <script src="js/core/store.js"></script>
+  <script src="js/core/srs.js"></script>
+  <script src="js/core/words.js"></script>
+  <script src="js/core/session.js"></script>
+  <script src="js/core/export.js"></script>
+  <script src="js/core/speech.js"></script>
+  <script src="js/ui/common.js"></script>
+  <script src="js/ui/onboarding.js"></script>
+  <script src="js/ui/today.js"></script>
+  <script src="js/ui/learn.js"></script>
+  <script src="js/ui/review.js"></script>
+  <script src="js/ui/notebook.js"></script>
+  <script src="js/ui/stats.js"></script>
+  <script src="js/ui/settings.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

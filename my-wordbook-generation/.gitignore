@@ -1,0 +1,18 @@
+# Trae 分享包与验收截图
+.trae-html-share-packages/
+.screenshots/
+
+# Python 构建缓存
+__pycache__/
+*.pyc
+.cache/
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# 临时文件
+*.tmp
+*.log
