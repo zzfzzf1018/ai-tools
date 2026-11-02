@@ -11,7 +11,7 @@
 - 每日学习与复习，不认识的词自动进入生词本。
 - 生词本支持 CSV、XLSX、TXT、Markdown、JSON、Anki CSV 六种导出。
 - 科学记忆：SM-2 间隔重复 + 主动回忆题型 + 错词强化 + 复习负载可视化。
-- 本地网页应用（双击 `index.html` 可用）+ 桌面启动器（隐藏本地服务 + Edge 独立窗口）。
+- 三种运行形态：本地网页（双击 `index.html`）、Edge 启动器（隐藏本地服务 + 独立窗口）、Electron 桌面版（系统托盘常驻）。
 
 非目标：账号云同步、AI 生成助记、原生移动端、社区功能。
 
@@ -118,10 +118,19 @@ js/main.js                 # 路由与启动
 scripts/build_wordbank.py
 scripts/serve.mjs          # 本地静态服务，端口 4173
 启动单词书.vbs              # 隐藏启动服务 + Edge --app 窗口
+desktop/main.js            # Electron 主进程：窗口、托盘、单实例、状态记忆
+desktop/icon.*             # 桌面图标（png / ico）
+package.json               # desktop 与 package 脚本
 tests/*.test.mjs           # node --test
 ```
 
 桌面：`启动单词书.vbs` 运行 `node scripts/serve.mjs`（隐藏窗口），再用 Edge `--app=http://127.0.0.1:4173` 打开独立窗口；`manifest.webmanifest` + `sw.js` 支持安装为桌面应用。`file://` 模式不依赖服务。
+
+Electron 桌面版：`npm install` 后 `npm run desktop` 启动，`npm run package` 用 electron-packager 生成
+`dist/Wordbook-win32-x64/`。关闭窗口隐藏到系统托盘（右键退出），单实例运行，窗口位置与大小写入
+`%APPDATA%\单词书\window-state.json`；渲染进程启用 `contextIsolation` / `sandbox` 并禁用
+`nodeIntegration`，不产生子窗口、不导航到外部页面。三种形态各自使用独立的本地存储，
+可通过设置页的全量 JSON 备份与导入迁移。
 
 ## 8. 验收
 
@@ -129,5 +138,6 @@ tests/*.test.mjs           # node --test
 - 首次引导 → 今日页 → 学习 → 复习 → 生词本 → 导出全链路可用。
 - 不认识的词进入生词本；答错/忘记自动收录；可备注、掌握、移除。
 - 六种导出文件可正常打开，CSV 不乱码，XLSX 可读，JSON 可解析，Anki 格式可导入。
-- 刷新与重启后数据不丢；`file://` 与桌面启动器均可运行。
+- 刷新与重启后数据不丢；`file://`、桌面启动器与 Electron 桌面版均可运行。
+- Electron 版单实例、关闭最小化到托盘、托盘可恢复窗口并可退出；导入全量备份后设置、卡片、生词本与统计全部生效。
 - `node --test` 覆盖 SRS 排期、队列、导出纯函数、词库校验。

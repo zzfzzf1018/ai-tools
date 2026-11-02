@@ -161,6 +161,43 @@
       )
     );
 
+    function importBackup(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function () {
+        let payload = null;
+        try {
+          payload = JSON.parse(String(reader.result));
+        } catch (e) {
+          ui.toast('备份文件不是有效的 JSON', 'warn');
+          return;
+        }
+        try {
+          WB.store.importAll(payload);
+        } catch (e) {
+          ui.toast(e && e.message ? e.message : '导入失败', 'warn');
+          return;
+        }
+        WB.session.reset();
+        if (WB.main) {
+          WB.main.applyTheme();
+          WB.main.refreshChrome();
+          WB.main.go('today');
+        }
+        ui.toast('备份已导入');
+      };
+      reader.onerror = function () { ui.toast('读取备份文件失败', 'warn'); };
+      reader.readAsText(file);
+    }
+
+    const importInput = ui.el('input', {
+      type: 'file',
+      accept: '.json,application/json',
+      style: 'display:none',
+      onchange: importBackup
+    });
+
     const data = ui.el('section', { class: 'card' },
       ui.el('div', { class: 'card-title' }, ui.el('h2', null, '数据')),
       settingRow('本地数据', '共 ' + cardCount + ' 张卡片、' + notebookCount + ' 个生词，占用 ' + sizeText(WB.store.storageBytes()) + '。',
@@ -180,8 +217,20 @@
           }
         }, '导出 JSON')
       ),
+      settingRow('导入备份', '从网页版、启动器版或旧版导出的 JSON 恢复学习数据，导入会覆盖当前全部数据。',
+        ui.el('button', {
+          class: 'btn',
+          type: 'button',
+          onclick: function () {
+            if (!ui.confirm('导入会覆盖当前全部学习数据，确定继续吗？')) return;
+            importInput.value = '';
+            importInput.click();
+          }
+        }, '选择 JSON')
+      ),
+      importInput,
       ui.el('p', { class: 'muted tiny', style: 'margin-top:12px' },
-        '提示：桌面启动器（本地服务）与直接打开 index.html（file://）属于不同的页面来源，学习数据不互通，建议固定一种打开方式。')
+        '提示：网页版、Edge 启动器与 Electron 桌面版属于不同的本地来源，学习数据不互通；可用上方全量备份与导入迁移。')
     );
 
     const danger = ui.el('section', { class: 'card danger-zone' },

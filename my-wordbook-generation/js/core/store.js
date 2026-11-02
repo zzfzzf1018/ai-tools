@@ -89,6 +89,16 @@
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   }
 
+  function objectMap(value) {
+    const source = plainObject(value);
+    const out = {};
+    Object.keys(source).forEach(function (key) {
+      const item = source[key];
+      if (item && typeof item === 'object' && !Array.isArray(item)) out[key] = item;
+    });
+    return out;
+  }
+
   function clampNumber(value, min, max, fallback) {
     const n = Number(value);
     if (!Number.isFinite(n)) return fallback;
@@ -270,6 +280,36 @@
     return state.settings;
   }
 
+  function importAll(payload) {
+    const data = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null;
+    if (!data) throw new Error('不是有效的备份文件');
+    if (data.schema !== 'wb:v1') throw new Error('不是单词书导出的备份文件');
+
+    const meta = plainObject(data.meta);
+    if (!Object.keys(meta).length) throw new Error('备份文件缺少元信息');
+
+    const cards = objectMap(data.cards);
+    Object.keys(cards).forEach(function (key) {
+      if (!cards[key].w) cards[key].w = key;
+    });
+
+    state.settings = mergeSettings(data.settings);
+    state.cards = cards;
+    state.notebook = objectMap(data.notebook);
+    state.reviews = Array.isArray(data.reviews) ? data.reviews.filter(function (item) {
+      return item && typeof item === 'object' && !Array.isArray(item) && item.w;
+    }) : [];
+    state.daily = objectMap(data.daily);
+    state.meta = Object.assign({}, meta, {
+      version: meta.version || 1,
+      createdAt: meta.createdAt || date.today(),
+      lastOpen: date.today()
+    });
+
+    ['settings', 'cards', 'notebook', 'reviews', 'daily', 'meta'].forEach(persist);
+    return state.settings;
+  }
+
   function exportAll() {
     return {
       app: '单词书 Wordbook',
@@ -309,6 +349,7 @@
     recordAnswer: recordAnswer,
     streak: streak,
     resetAll: resetAll,
+    importAll: importAll,
     exportAll: exportAll,
     storageBytes: storageBytes
   };

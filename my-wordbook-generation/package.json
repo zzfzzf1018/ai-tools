@@ -1,0 +1,17 @@
+{
+  "name": "wordbook",
+  "version": "1.1.0",
+  "private": true,
+  "description": "单词书 · 离线分级词汇与 SM-2 记忆",
+  "main": "desktop/main.js",
+  "author": "zzf",
+  "license": "MIT",
+  "scripts": {
+    "desktop": "electron .",
+    "package": "electron-packager . Wordbook --platform=win32 --arch=x64 --out=dist --overwrite --icon=desktop/icon.ico --app-version=1.1.0 --ignore=\"^/node_modules\" --ignore=\"^/tests\" --ignore=\"^/docs\" --ignore=\"^/scripts\" --ignore=\"^/dist\" --ignore=\"^/.trae-html-share-packages\" --ignore=\"^/.screenshots\""
+  },
+  "devDependencies": {
+    "electron": "^45.2.1",
+    "@electron/packager": "^20.3.0"
+  }
+}

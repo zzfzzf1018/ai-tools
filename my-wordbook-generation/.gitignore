@@ -2,6 +2,10 @@
 .trae-html-share-packages/
 .screenshots/
 
+# 桌面构建
+node_modules/
+dist/
+
 # Python 构建缓存
 __pycache__/
 *.pyc
