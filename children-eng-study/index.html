@@ -4,8 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🌈 趣味英语乐园 - Kids English Wonderland</title>
+    <meta name="theme-color" content="#FFE5EC">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Ctext%20y='.9em'%20font-size='90'%3E%F0%9F%8E%AA%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="css/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Baloo+2:wght@500;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
     <!-- 背景装饰气泡 -->
@@ -31,6 +32,7 @@
                     <span class="stat-emoji">🔥</span>
                     <span id="streakCount">0</span>
                 </div>
+                <button class="settings-btn" id="settingsBtn" title="语音设置" aria-label="语音设置">⚙️</button>
             </div>
         </header>
 
@@ -52,7 +54,7 @@
                         <div class="grade-icon">🐣</div>
                         <div class="grade-name">一年级</div>
                         <div class="grade-en">Grade 1</div>
-                        <div class="grade-desc">字母大冒险</div>
+                        <div class="grade-desc">单词启蒙</div>
                     </div>
                     <div class="grade-card" data-grade="2">
                         <div class="grade-icon">🐰</div>
@@ -203,9 +205,21 @@
                     </div>
                 </div>
 
+                <h3 class="badges-title">📈 年级进度</h3>
+                <div class="grade-progress-list" id="gradeProgressList">
+                    <!-- 年级进度动态生成 -->
+                </div>
+
                 <h3 class="badges-title">🎖️ 成就徽章</h3>
                 <div class="badges-grid" id="badgesGrid">
                     <!-- 徽章动态生成 -->
+                </div>
+
+                <div class="data-actions">
+                    <button class="data-btn" id="exportBtn">⬇️ 导出进度</button>
+                    <button class="data-btn" id="importBtn">⬆️ 导入进度</button>
+                    <input type="file" id="importFile" accept=".json,application/json" hidden>
+                    <span class="data-hint" id="dataHint"></span>
                 </div>
             </div>
         </section>
@@ -218,6 +232,29 @@
             <div class="modal-title" id="modalTitle">太棒了！</div>
             <div class="modal-message" id="modalMessage"></div>
             <button class="modal-btn" id="modalBtn">继续</button>
+        </div>
+    </div>
+
+    <!-- 语音设置面板 -->
+    <div class="settings-overlay" id="settingsPanel">
+        <div class="settings-card">
+            <h3 class="settings-title">🔊 语音设置</h3>
+            <label class="setting-row">
+                <span>自动朗读卡片</span>
+                <input type="checkbox" id="autoSpeakToggle">
+            </label>
+            <label class="setting-row">
+                <span>语速 <b id="speechRateValue">0.8</b></span>
+                <input type="range" id="speechRate" min="0.6" max="1.2" step="0.1">
+            </label>
+            <label class="setting-row">
+                <span>英语音色</span>
+                <select id="voiceSelect"></select>
+            </label>
+            <div class="settings-actions">
+                <button class="data-btn" id="settingsTest">试听</button>
+                <button class="data-btn" id="settingsClose">完成</button>
+            </div>
         </div>
     </div>
 

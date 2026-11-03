@@ -12,6 +12,7 @@ const App = {
     
     // 用户进度数据
     userData: {
+        schemaVersion: 2,
         stars: 0,
         streak: 0,
         lastVisitDate: null,
@@ -43,6 +44,8 @@ const App = {
         this.initGradeSelector();
         this.initDailyMissions();
         this.initModal();
+        this.initSettings();
+        this.initDataTransfer();
         
         // 打印支持信息
         console.log('🎪 趣味英语乐园已启动！');
@@ -81,6 +84,7 @@ const App = {
         if (!data.gradeProgress || typeof data.gradeProgress !== 'object') {
             data.gradeProgress = {};
         }
+        data.schemaVersion = 2;
         this.migrateLearnedWords();
     },
 
@@ -133,6 +137,29 @@ const App = {
         document.getElementById('totalGames').textContent = this.userData.totalGames;
         document.getElementById('totalDays').textContent = this.userData.totalDays;
         this.updateBadges();
+        this.updateGradeProgress();
+    },
+
+    // 年级进度（已完成单元数 / 总单元数）
+    updateGradeProgress: function() {
+        const list = document.getElementById('gradeProgressList');
+        if (!list) return;
+
+        list.innerHTML = Object.keys(LEARNING_DATA).map(grade => {
+            const gradeData = LEARNING_DATA[grade];
+            const units = Object.keys(gradeData.units);
+            const done = units.filter(unit =>
+                this.userData.completedUnits.includes(`${grade}-${unit}`)
+            ).length;
+            const percent = Math.round((done / units.length) * 100);
+            return `
+                <div class="grade-progress-item">
+                    <span class="gp-name">${gradeData.emoji} ${gradeData.name}</span>
+                    <div class="gp-track"><div class="gp-fill" style="width:${percent}%"></div></div>
+                    <span class="gp-count">${done}/${units.length}</span>
+                </div>
+            `;
+        }).join('');
     },
 
     // 检查连续学习
@@ -170,38 +197,46 @@ const App = {
 
     // 标签页导航
     initNavigation: function() {
-        const tabBtns = document.querySelectorAll('.tab-btn');
-        tabBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                const tab = btn.dataset.tab;
-                // 更新按钮状态
-                tabBtns.forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                // 切换页面
-                document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-                document.getElementById('page-' + tab).classList.add('active');
-                
-                // 从「← 返回」或其它 Tab 回到学习页时，恢复卡片控制条
-                if (tab === 'learn') {
-                    document.getElementById('cardControls').style.display =
-                        this.currentGrade ? 'flex' : 'none';
-                }
-
-                if (tab === 'progress') {
-                    this.updateBadges();
-                    this.updateStats();
-                }
-            });
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.showPage(btn.dataset.tab));
         });
+    },
+
+    // 统一切换页面：停止发音、恢复学习控制条、刷新成就数据
+    showPage: function(tab) {
+        SpeechHelper.stop();
+
+        document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
+        const page = document.getElementById('page-' + tab);
+        if (page) page.classList.add('active');
+
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === tab);
+        });
+
+        // 从「← 返回」或其它 Tab 回到学习页时，恢复卡片控制条
+        document.getElementById('cardControls').style.display =
+            (tab === 'learn' && this.currentGrade) ? 'flex' : 'none';
+
+        if (tab === 'progress') this.updateStats();
     },
 
     // 年级选择
     initGradeSelector: function() {
         const gradeCards = document.querySelectorAll('.grade-card');
         gradeCards.forEach(card => {
+            card.setAttribute('role', 'button');
+            card.setAttribute('tabindex', '0');
+            card.setAttribute('aria-label', `${card.dataset.grade} 年级`);
             card.addEventListener('click', () => {
                 const grade = parseInt(card.dataset.grade);
                 this.enterGrade(grade);
+            });
+            card.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    card.click();
+                }
             });
             
             // 添加悬停动画
@@ -220,11 +255,8 @@ const App = {
         const gradeData = LEARNING_DATA[grade];
         
         // 切换到学习页面
-        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-        document.getElementById('page-learn').classList.add('active');
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelector('.tab-btn[data-tab="learn"]').classList.add('active');
-        
+        this.showPage('learn');
+
         // 更新标题
         document.getElementById('learnTitle').textContent = 
             `${gradeData.emoji} ${gradeData.name} - ${gradeData.theme}`;
@@ -253,7 +285,7 @@ const App = {
 
         // 显示控制按钮
         document.getElementById('cardControls').style.display = 'flex';
-        
+
         // 绑定按钮事件
         this.bindCardControls();
     },
@@ -283,7 +315,8 @@ const App = {
         if (this.currentGrade === 1 && this.currentUnit === '1') cardType = 'letter';
 
         container.innerHTML = `
-            <div class="learning-card ${cardType === 'letter' ? 'letter-card' : ''}" data-type="${cardType}">
+            <div class="learning-card ${cardType === 'letter' ? 'letter-card' : ''}" data-type="${cardType}"
+                 id="learningCard" role="button" tabindex="0" aria-label="点击再听一遍发音">
                 <span class="card-emoji">${card.emoji}</span>
                 <div class="card-word">${card.word}</div>
                 <div class="card-phonetic">${card.phonetic}</div>
@@ -299,14 +332,27 @@ const App = {
             </div>
         `;
 
-        // 绑定发音按钮
+        // 绑定发音按钮（整张卡片点击/回车也能重听）
+        const cardEl = document.getElementById('learningCard');
         const speakBtn = document.getElementById('cardSpeakBtn');
         speakBtn.addEventListener('click', () => {
             this.speakCurrentCard(true);
         });
+        cardEl.addEventListener('click', (e) => {
+            if (e.target.closest('.speak-icon')) return;
+            this.speakCurrentCard(true);
+        });
+        cardEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                this.speakCurrentCard(true);
+            }
+        });
 
-        // 自动发音（不计入朗读次数）
-        setTimeout(() => this.speakCurrentCard(false), 300);
+        // 自动发音（不计入朗读次数，可在语音设置里关闭）
+        if (SpeechHelper.settings.autoSpeak) {
+            setTimeout(() => this.speakCurrentCard(false), 300);
+        }
 
         // 更新进度
         this.updateCardControls();
@@ -401,11 +447,7 @@ const App = {
         };
 
         backBtn.onclick = () => {
-            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            document.getElementById('page-home').classList.add('active');
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            document.querySelector('.tab-btn[data-tab="home"]').classList.add('active');
-            document.getElementById('cardControls').style.display = 'none';
+            this.showPage('home');
         };
     },
 
@@ -574,6 +616,103 @@ const App = {
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') this.closeModal();
         });
+    },
+
+    // 语音设置面板
+    initSettings: function() {
+        const panel = document.getElementById('settingsPanel');
+        const toggle = document.getElementById('autoSpeakToggle');
+        const rate = document.getElementById('speechRate');
+        const rateValue = document.getElementById('speechRateValue');
+        const voiceSelect = document.getElementById('voiceSelect');
+
+        toggle.checked = SpeechHelper.settings.autoSpeak;
+        rate.value = SpeechHelper.settings.rate;
+        rateValue.textContent = SpeechHelper.settings.rate;
+
+        const fillVoices = () => {
+            const voices = SpeechHelper.getEnglishVoices();
+            voiceSelect.innerHTML = '<option value="">自动选择</option>';
+            voices.forEach(voice => {
+                const option = document.createElement('option');
+                option.value = voice.name;
+                option.textContent = `${voice.name} (${voice.lang})`;
+                voiceSelect.appendChild(option);
+            });
+            voiceSelect.value = SpeechHelper.settings.voiceName || '';
+        };
+        fillVoices();
+        if (window.speechSynthesis) {
+            window.speechSynthesis.onvoiceschanged = fillVoices;
+        }
+
+        toggle.onchange = () => {
+            SpeechHelper.settings.autoSpeak = toggle.checked;
+            SpeechHelper.saveSettings();
+        };
+        rate.oninput = () => {
+            SpeechHelper.settings.rate = parseFloat(rate.value);
+            rateValue.textContent = rate.value;
+            SpeechHelper.saveSettings();
+        };
+        voiceSelect.onchange = () => {
+            SpeechHelper.settings.voiceName = voiceSelect.value;
+            SpeechHelper.saveSettings();
+        };
+
+        document.getElementById('settingsBtn').onclick = () => panel.classList.add('show');
+        document.getElementById('settingsClose').onclick = () => panel.classList.remove('show');
+        document.getElementById('settingsTest').onclick = () => {
+            SpeechHelper.speak('Hello! Let us learn English together.');
+        };
+        panel.addEventListener('click', (e) => {
+            if (e.target.id === 'settingsPanel') panel.classList.remove('show');
+        });
+    },
+
+    // 进度导出 / 导入
+    initDataTransfer: function() {
+        const fileInput = document.getElementById('importFile');
+        const hint = document.getElementById('dataHint');
+
+        document.getElementById('exportBtn').onclick = () => {
+            const payload = {
+                schemaVersion: 2,
+                exportedAt: new Date().toISOString(),
+                userData: this.userData
+            };
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `kids-english-progress-${new Date().toISOString().slice(0, 10)}.json`;
+            link.click();
+            URL.revokeObjectURL(url);
+            hint.textContent = '已导出进度文件';
+        };
+
+        document.getElementById('importBtn').onclick = () => fileInput.click();
+        fileInput.onchange = () => {
+            const file = fileInput.files[0];
+            if (!file) return;
+            file.text().then(text => {
+                const parsed = JSON.parse(text);
+                const data = parsed.userData || parsed;
+                if (!data || typeof data !== 'object') throw new Error('文件格式不正确');
+                if (!window.confirm('导入会覆盖当前进度，确定继续吗？')) {
+                    fileInput.value = '';
+                    return;
+                }
+
+                this.userData = Object.assign({}, this.userData, data);
+                this.normalizeUserData();
+                this.saveUserData();
+                location.reload();
+            }).catch(error => {
+                hint.textContent = `导入失败：${error.message}`;
+                fileInput.value = '';
+            });
+        };
     },
 
     // 彩色纸屑庆祝效果

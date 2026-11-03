@@ -17,9 +17,17 @@ const Game = {
     bindGameSelector: function() {
         const gameCards = document.querySelectorAll('.game-card');
         gameCards.forEach(card => {
+            card.setAttribute('role', 'button');
+            card.setAttribute('tabindex', '0');
             card.addEventListener('click', () => {
                 const gameType = card.dataset.game;
                 this.startGame(gameType);
+            });
+            card.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    card.click();
+                }
             });
         });
 
@@ -87,14 +95,20 @@ const Game = {
         document.getElementById('gameScore').textContent = this.gameScore;
     },
 
-    completeGame: function() {
+    // 按正确率发星：全对 5 星，正确率越低星星越少，保底 1 星
+    completeGame: function(correct = 0, total = 0) {
+        const ratio = total > 0 ? correct / total : 1;
+        const stars = Math.max(1, Math.min(5, Math.round(1 + ratio * 4)));
+
         App.userData.totalGames++;
         App.userData.missions.game = true;
-        App.userData.stars += 3;
+        App.userData.stars += stars;
         App.saveUserData();
         App.updateStats();
         App.updateMissionsUI();
         App.checkBadges();
+
+        return stars;
     },
 
     // ============== 连连看游戏 ==============
@@ -187,8 +201,8 @@ const Game = {
 
                 if (matchedCount === words.length) {
                     setTimeout(() => {
-                        this.completeGame();
-                        App.showModal('🎉', '恭喜通关！', `你的得分是 ${this.gameScore} 分！`, () => {});
+                        const stars = this.completeGame(words.length, words.length);
+                        App.showModal('🎉', '恭喜通关！', `你的得分是 ${this.gameScore} 分，获得 ${stars} 颗星星！`);
                         App.createConfetti();
                     }, 500);
                 }
@@ -216,8 +230,8 @@ const Game = {
             if (currentIndex >= words.length) {
                 // 游戏结束
                 setTimeout(() => {
-                    this.completeGame();
-                    App.showModal('🎉', '游戏结束！', `正确 ${correctCount}/${words.length} 题，得分 ${this.gameScore}！`, () => {});
+                    const stars = this.completeGame(correctCount, words.length);
+                    App.showModal('🎉', '游戏结束！', `正确 ${correctCount}/${words.length} 题，得分 ${this.gameScore}，获得 ${stars} 颗星星！`);
                 }, 500);
                 return;
             }
@@ -244,8 +258,10 @@ const Game = {
                 </div>
             `;
 
-            // 自动播放发音
-            setTimeout(() => SpeechHelper.speakWord(currentWord.word), 300);
+            // 自动播放发音（可在语音设置里关闭）
+            if (SpeechHelper.settings.autoSpeak) {
+                setTimeout(() => SpeechHelper.speakWord(currentWord.word), 300);
+            }
 
             // 播放按钮
             document.getElementById('guessAudioBtn').addEventListener('click', function() {
@@ -288,8 +304,8 @@ const Game = {
         const renderQuestion = () => {
             if (currentIndex >= words.length) {
                 setTimeout(() => {
-                    this.completeGame();
-                    App.showModal('🎉', '拼写完成！', `正确 ${correctCount}/${words.length}，得分 ${this.gameScore}！`, () => {});
+                    const stars = this.completeGame(correctCount, words.length);
+                    App.showModal('🎉', '拼写完成！', `正确 ${correctCount}/${words.length}，得分 ${this.gameScore}，获得 ${stars} 颗星星！`);
                 }, 500);
                 return;
             }
@@ -310,8 +326,10 @@ const Game = {
                 </div>
             `;
 
-            // 自动播放发音
-            setTimeout(() => SpeechHelper.speakWord(currentWord.word), 300);
+            // 自动播放发音（可在语音设置里关闭）
+            if (SpeechHelper.settings.autoSpeak) {
+                setTimeout(() => SpeechHelper.speakWord(currentWord.word), 300);
+            }
 
             const input = document.getElementById('spellInput');
             input.focus();
@@ -432,8 +450,8 @@ const Game = {
 
                             if (matchedPairs === words.length) {
                                 setTimeout(() => {
-                                    this.completeGame();
-                                    App.showModal('🎉', '记忆超群！', `得分 ${this.gameScore} 分！`, () => {});
+                                    const stars = this.completeGame(words.length, words.length);
+                                    App.showModal('🎉', '记忆超群！', `得分 ${this.gameScore} 分，获得 ${stars} 颗星星！`);
                                 }, 500);
                             }
                         }, 600);

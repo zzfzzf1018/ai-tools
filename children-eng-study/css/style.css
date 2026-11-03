@@ -31,7 +31,7 @@
 }
 
 html, body {
-    font-family: 'Fredoka', 'Baloo 2', system-ui, -apple-system, sans-serif;
+    font-family: 'Fredoka', 'Baloo 2', system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
     background: var(--color-bg);
     min-height: 100vh;
     color: var(--color-text);
@@ -729,11 +729,12 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 600;
     color: white;
     text-align: center;
     padding: 8px;
+    word-break: break-word;
     perspective: 1000px;
     position: relative;
     transform-style: preserve-3d;
@@ -1135,4 +1136,156 @@ html, body {
     .card-emoji { font-size: 56px; }
     .memory-grid { grid-template-columns: repeat(3, 1fr); }
     .game-content { padding: 20px; }
+}
+
+/* 语音设置 */
+.settings-btn {
+    width: 42px;
+    height: 42px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.9);
+    font-size: 20px;
+    cursor: pointer;
+    box-shadow: var(--shadow-card);
+    transition: transform 0.2s;
+}
+
+.settings-btn:hover { transform: rotate(25deg) scale(1.05); }
+
+.settings-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1100;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s;
+}
+
+.settings-overlay.show { opacity: 1; visibility: visible; }
+
+.settings-card {
+    background: white;
+    border-radius: var(--radius-lg);
+    padding: 28px;
+    width: min(360px, 90vw);
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.settings-title {
+    margin: 0;
+    font-size: 22px;
+    color: var(--color-text);
+    text-align: center;
+}
+
+.setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 15px;
+    color: var(--color-text);
+}
+
+.setting-row input[type="range"] {
+    width: 140px;
+    accent-color: var(--color-primary);
+}
+
+.setting-row select {
+    max-width: 170px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 2px solid #E5E7EB;
+    font-size: 13px;
+}
+
+.settings-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+
+/* 年级进度 */
+.grade-progress-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 32px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    box-shadow: var(--shadow-card);
+}
+
+.grade-progress-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.gp-name { width: 92px; font-size: 15px; font-weight: 600; }
+
+.gp-track {
+    flex: 1;
+    height: 12px;
+    background: #F1F5F9;
+    border-radius: 100px;
+    overflow: hidden;
+}
+
+.gp-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--color-secondary), var(--color-primary));
+    border-radius: 100px;
+    transition: width 0.4s;
+}
+
+.gp-count { font-size: 14px; color: var(--color-text-light); }
+
+/* 进度导入导出 */
+.data-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 24px;
+}
+
+.data-btn {
+    border: none;
+    border-radius: 100px;
+    padding: 10px 20px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    color: #0F766E;
+    background: linear-gradient(135deg, #CCFBF1, #A7F3D0);
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(78, 205, 196, 0.25);
+}
+
+.data-btn:hover { filter: brightness(0.97); }
+
+.data-hint { font-size: 13px; color: var(--color-text-light); }
+
+/* 减少动态效果 */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+    .confetti { display: none; }
 }

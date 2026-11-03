@@ -4,14 +4,50 @@
    ======================================== */
 
 const SpeechHelper = {
+    // 语音设置（与学习进度分开存储）
+    settings: { autoSpeak: true, rate: 0.8, voiceName: '' },
+    settingsKey: 'kidsEnglishSpeechSettings',
+
     // 检查浏览器是否支持语音合成
     isSupported: function() {
         return 'speechSynthesis' in window;
     },
 
+    loadSettings: function() {
+        try {
+            const raw = localStorage.getItem(this.settingsKey);
+            if (raw) Object.assign(this.settings, JSON.parse(raw));
+        } catch (e) {
+            console.warn('加载语音设置失败:', e);
+        }
+        this.settings.rate = parseFloat(this.settings.rate);
+        if (!Number.isFinite(this.settings.rate)) this.settings.rate = 0.8;
+        this.settings.autoSpeak = this.settings.autoSpeak !== false;
+        this.settings.voiceName = this.settings.voiceName || '';
+    },
+
+    saveSettings: function() {
+        try {
+            localStorage.setItem(this.settingsKey, JSON.stringify(this.settings));
+        } catch (e) {
+            console.warn('保存语音设置失败:', e);
+        }
+    },
+
+    // 获取所有英语语音
+    getEnglishVoices: function() {
+        if (!this.isSupported()) return [];
+        return window.speechSynthesis.getVoices()
+            .filter(v => v.lang && v.lang.toLowerCase().startsWith('en'));
+    },
+
     // 获取英语语音
     getEnglishVoice: function() {
         const voices = window.speechSynthesis.getVoices();
+        if (this.settings.voiceName) {
+            const chosen = voices.find(v => v.name === this.settings.voiceName);
+            if (chosen) return chosen;
+        }
         // 优先选择美式或英式英语
         const preferredVoices = [
             'Google US English',
@@ -50,7 +86,7 @@ const SpeechHelper = {
             const voice = this.getEnglishVoice();
             
             utterance.lang = 'en-US';
-            utterance.rate = options.rate || 0.8;  // 稍慢的语速，适合儿童
+            utterance.rate = options.rate || this.settings.rate;  // 语速可在设置面板调整
             utterance.pitch = options.pitch || 1.1;  // 稍高的音调，更有趣
             utterance.volume = options.volume || 1;
             
@@ -73,7 +109,7 @@ const SpeechHelper = {
         const voice = this.getEnglishVoice();
         
         utterance.lang = 'en-US';
-        utterance.rate = 0.75;
+        utterance.rate = this.settings.rate * 0.95;
         utterance.pitch = 1.1;
         
         if (voice) utterance.voice = voice;
@@ -99,7 +135,7 @@ const SpeechHelper = {
         const voice = this.getEnglishVoice();
         
         utterance.lang = 'en-US';
-        utterance.rate = 0.85;
+        utterance.rate = this.settings.rate;
         utterance.pitch = 1.0;
         
         if (voice) utterance.voice = voice;
@@ -119,11 +155,12 @@ const SpeechHelper = {
 
     // 停止朗读
     stop: function() {
-        window.speechSynthesis.cancel();
+        if (this.isSupported()) window.speechSynthesis.cancel();
     },
 
     // 预加载语音（某些浏览器需要）
     preloadVoices: function() {
+        this.loadSettings();
         if (this.isSupported()) {
             window.speechSynthesis.getVoices();
             window.speechSynthesis.onvoiceschanged = () => {

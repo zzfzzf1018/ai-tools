@@ -9,7 +9,7 @@ const LEARNING_DATA = {
     1: {
         name: '一年级',
         emoji: '🐣',
-        theme: '字母大冒险',
+        theme: '单词启蒙',
         units: {
             1: {
                 title: 'Unit 1 打招呼',
