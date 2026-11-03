@@ -1,0 +1,88 @@
+/* ===== 成长式主题：CSS 变量换肤 =====
+   candy     一二年级（糖果乐园）
+   transition 三年级（清新过渡）
+   space     四五年级（太空冒险）
+*/
+
+body[data-theme="candy"] {
+  --bg: linear-gradient(160deg, #ffeef5 0%, #fff7d6 50%, #dff3ff 100%);
+  --topbar-bg: rgba(255,255,255,.85);
+  --card-bg: #ffffff;
+  --primary: #f472b6;
+  --secondary: #34d399;
+  --title: #db2777;
+  --text: #4b3a44;
+  --text-soft: #9d8794;
+  --chip-bg: #fce7f3;
+  --chip-text: #be185d;
+  --progress-bg: #f3e8ee;
+  --node-bg: #fff7fb;
+  --node-border: #f9a8d4;
+  --node-done-bg: #d1fae5;
+  --node-done-border: #34d399;
+  --explore-bg: #fdf4ff;
+  --drop-bg: #fff5fb;
+  --drop-hover: #ffe4f2;
+  --hint-bg: #f0fdfa;
+  --radius: 24px;
+  --shadow: 0 8px 24px rgba(219,39,119,.12);
+  --shadow-sm: 0 3px 10px rgba(219,39,119,.10);
+}
+
+body[data-theme="transition"] {
+  --bg: linear-gradient(160deg, #ecfdf5 0%, #f0f9ff 55%, #f5f3ff 100%);
+  --topbar-bg: rgba(255,255,255,.88);
+  --card-bg: #ffffff;
+  --primary: #14b8a6;
+  --secondary: #8b5cf6;
+  --title: #0f766e;
+  --text: #273640;
+  --text-soft: #7d94a0;
+  --chip-bg: #ccfbf1;
+  --chip-text: #0f766e;
+  --progress-bg: #e2f4f1;
+  --node-bg: #f4fffc;
+  --node-border: #5eead4;
+  --node-done-bg: #ede9fe;
+  --node-done-border: #8b5cf6;
+  --explore-bg: #f7fefb;
+  --drop-bg: #f4fdfa;
+  --drop-hover: #d9f7f0;
+  --hint-bg: #f5f3ff;
+  --radius: 22px;
+  --shadow: 0 8px 24px rgba(20,184,166,.14);
+  --shadow-sm: 0 3px 10px rgba(20,184,166,.10);
+}
+
+body[data-theme="space"] {
+  --bg: linear-gradient(165deg, #0f172a 0%, #1e1b4b 60%, #312e81 100%);
+  --topbar-bg: rgba(30,27,75,.85);
+  --card-bg: rgba(255,255,255,.07);
+  --primary: #22d3ee;
+  --secondary: #facc15;
+  --title: #a5f3fc;
+  --text: #e0e7ff;
+  --text-soft: #94a3b8;
+  --chip-bg: rgba(34,211,238,.15);
+  --chip-text: #67e8f9;
+  --progress-bg: rgba(255,255,255,.10);
+  --node-bg: rgba(255,255,255,.08);
+  --node-border: #22d3ee;
+  --node-done-bg: rgba(250,204,21,.15);
+  --node-done-border: #facc15;
+  --explore-bg: rgba(255,255,255,.05);
+  --drop-bg: rgba(255,255,255,.06);
+  --drop-hover: rgba(34,211,238,.15);
+  --hint-bg: rgba(34,211,238,.10);
+  --radius: 20px;
+  --shadow: 0 8px 24px rgba(0,0,0,.4);
+  --shadow-sm: 0 3px 10px rgba(0,0,0,.35);
+}
+body[data-theme="space"] .choice-btn,
+body[data-theme="space"] .seq-item { color: var(--text); }
+body[data-theme="space"] .btn-big,
+body[data-theme="space"] .btn-secondary { color: #0f172a; }
+body[data-theme="space"] .weight-chip { color: #0f172a; }
+body[data-theme="space"] .answer-chip { color: #0f172a; }
+body[data-theme="space"] .choice-btn.correct,
+body[data-theme="space"] .seq-item.picked { color: #0f172a; }
