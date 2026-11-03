@@ -2,6 +2,15 @@
 
 遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.4.8] - 2026-11-03
+
+### BUG 修复（多 frame 竞态）
+
+- **`chrome.tabs.sendMessage` 多 frame 消息竞态**：popup 点选时 `blk:pick` 广播到所有 frame，iframe 之前会同步 `sendResponse({ok:false})`，而 `chrome.tabs.sendMessage` 的 callback 只收到**第一个**响应——导致 popup 立即收到失败，顶层的 `startPick` 异步通道还在跑。修法：iframe 对 `blk:pick` **静默跳过不 sendResponse**，让顶层独占消息通道。
+- **角标被 iframe `reportState()` 覆盖**：每个 frame apply 完都会 `reportState()` 给 background 设角标。跨域场景下，顶层 `sitePaused=true` 设角标 ⏸ 后，iframe `sitePaused=false` 的 `reportState` 异步到达会把角标覆盖回空。修法：`reportState()` 加 isTop 守卫，只有顶层 frame 上报角标。
+- **commands 广播的 `sendResponse` 跨域不一致**：background 用 `chrome.tabs.sendMessage` 广播 `blk:toggleSite`，iframe `sendResponse` 里 `sitePaused: isSitePaused(location.hostname)` 用的是 iframe 自己的 host（比如 ads.com），和顶层 example.com 无关。background 收到 iframe 响应会误设角标。修法：`toggleTab/toggleSite/setSitePaused` 的 `sendResponse` 只顶层 frame 发，iframe 静默跳过。
+- **集成测试 harness 兼容 `window.top` 未定义**：vm sandbox 里 `window.top` 不存在会导致 `isTop=false`，让 `blk:ping` 提前 return、Promise 永不 resolve → Node 报 "unsettled top-level await"。修法：`window.top === undefined ? true : window.top === window` fallback。
+
 ## [1.4.7] - 2026-11-03
 
 ### 新增
@@ -11,12 +20,6 @@
   - 消息路由分两类：**状态上报**（角标、弹窗查询、点选通道）只顶层 frame 响应；**操作执行**（toggle/apply/cancelPick）全 frame 执行各自任务但静默跳过 sendResponse
   - toast 守卫：iframe 内快捷键暂停/恢复静默执行，不弹提示条
   - `match_about_blank: false` 排除空 iframe
-
-### BUG 修复（手动深度 review 发现）
-
-- **chrome.tabs.sendMessage 多 frame 消息竞态**：popup 点选时 `blk:pick` 广播到所有 frame，iframe 之前会同步 `sendResponse({ok:false})`，而 `chrome.tabs.sendMessage` 的 callback 只收到**第一个**响应——导致 popup 立即收到失败，顶层的 `startPick` 异步通道还在跑。修法：iframe 对 `blk:pick` **静默跳过不 sendResponse**，让顶层独占消息通道。
-- **角标被 iframe reportState 覆盖**：每个 frame apply 完都会 `reportState()` 给 background 设角标。跨域场景下，顶层 sitePaused=true 设角标 ⏸ 后，iframe sitePaused=false 的 reportState 异步到达会把角标覆盖回空。修法：`reportState()` 加 isTop 守卫，只有顶层 frame 上报角标。
-- **commands 广播的 sendResponse 跨域不一致**：background 用 `chrome.tabs.sendMessage` 广播 `blk:toggleSite`，iframe sendResponse 里 `sitePaused: isSitePaused(location.hostname)` 用的是 iframe 自己的 host（比如 ads.com），和顶层 example.com 无关。background 收到 iframe 响应会误设角标。修法：`toggleTab/toggleSite/setSitePaused` 的 sendResponse 只顶层 frame 发。
 
 ### 已知局限
 
