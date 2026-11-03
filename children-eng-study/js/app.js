@@ -15,12 +15,14 @@ const App = {
         stars: 0,
         streak: 0,
         lastVisitDate: null,
+        missionDate: null,
         totalWords: 0,
         totalSpeak: 0,
         totalGames: 0,
         totalDays: 0,
-        learnedWords: [],  // 已学习的单词
+        learnedWords: [],  // 已学习的单词，键为 "年级-单元-单词"
         completedGames: [],
+        completedUnits: [],  // 已完成的单元，键为 "年级-单元"
         missions: {
             learn: 0,
             speak: 0,
@@ -30,15 +32,17 @@ const App = {
         gradeProgress: {}  // 各年级进度
     },
 
+    // 发音代次，用于丢弃上一张卡片迟到的回调
+    speechToken: 0,
+
     // 初始化
     init: function() {
         this.loadUserData();
-        this.updateStats();
+        this.checkDailyStreak();
         this.initNavigation();
         this.initGradeSelector();
         this.initDailyMissions();
         this.initModal();
-        this.checkDailyStreak();
         
         // 打印支持信息
         console.log('🎪 趣味英语乐园已启动！');
@@ -51,16 +55,73 @@ const App = {
         if (saved) {
             try {
                 const parsed = JSON.parse(saved);
-                this.userData = Object.assign(this.userData, parsed);
+                if (parsed && typeof parsed === 'object') {
+                    this.userData = Object.assign({}, this.userData, parsed);
+                }
             } catch(e) {
                 console.warn('加载用户数据失败:', e);
             }
         }
+        this.normalizeUserData();
+    },
+
+    // 兼容旧版本存档：补齐缺失字段，并把纯单词迁移成 "年级-单元-单词"
+    normalizeUserData: function() {
+        const data = this.userData;
+        ['learnedWords', 'completedGames', 'completedUnits', 'badges'].forEach(key => {
+            if (!Array.isArray(data[key])) data[key] = [];
+        });
+        ['stars', 'streak', 'totalWords', 'totalSpeak', 'totalGames', 'totalDays'].forEach(key => {
+            if (!Number.isFinite(data[key])) data[key] = 0;
+        });
+        data.missions = Object.assign(
+            { learn: 0, speak: 0, game: false },
+            data.missions && typeof data.missions === 'object' ? data.missions : {}
+        );
+        if (!data.gradeProgress || typeof data.gradeProgress !== 'object') {
+            data.gradeProgress = {};
+        }
+        this.migrateLearnedWords();
+    },
+
+    // 旧存档里的 learnedWords 是纯单词，重复词会被跨年级去重；迁移为单元内唯一键
+    migrateLearnedWords: function() {
+        const migrated = [];
+        const seen = new Set();
+        this.userData.learnedWords.forEach(entry => {
+            if (typeof entry !== 'string') return;
+            let key = entry;
+            if (!/^\d+-\d+-/.test(entry)) {
+                key = this.findFirstWordKey(entry) || entry;
+            }
+            if (!seen.has(key)) {
+                seen.add(key);
+                migrated.push(key);
+            }
+        });
+        this.userData.learnedWords = migrated;
+        if (migrated.length) this.userData.totalWords = migrated.length;
+    },
+
+    findFirstWordKey: function(word) {
+        for (const grade of Object.keys(LEARNING_DATA)) {
+            const units = LEARNING_DATA[grade].units;
+            for (const unit of Object.keys(units)) {
+                if (units[unit].words.some(item => item.word === word)) {
+                    return `${grade}-${unit}-${word}`;
+                }
+            }
+        }
+        return null;
     },
 
     // 保存用户数据
     saveUserData: function() {
-        localStorage.setItem('kidsEnglishUserData', JSON.stringify(this.userData));
+        try {
+            localStorage.setItem('kidsEnglishUserData', JSON.stringify(this.userData));
+        } catch(e) {
+            console.warn('保存用户数据失败:', e);
+        }
     },
 
     // 更新统计显示
@@ -82,18 +143,29 @@ const App = {
         const yesterdayStr = yesterday.toDateString();
 
         if (this.userData.lastVisitDate === today) {
-            // 今天已经访问过
-        } else if (this.userData.lastVisitDate === yesterdayStr) {
-            // 昨天访问过，增加连续天数
-            this.userData.streak++;
+            // 今天已经访问过，学习天数不重复累加
+            if (this.userData.streak < 1) this.userData.streak = 1;
         } else {
-            // 中断了，重置
-            this.userData.streak = 1;
+            if (this.userData.lastVisitDate === yesterdayStr) {
+                // 昨天访问过，增加连续天数
+                this.userData.streak++;
+            } else {
+                // 中断了，重置
+                this.userData.streak = 1;
+            }
+            this.userData.totalDays++;
+            this.userData.lastVisitDate = today;
+            this.resetDailyMissions(today);
         }
-        
-        this.userData.lastVisitDate = today;
+
         this.saveUserData();
         this.updateStats();
+    },
+
+    // 每日任务跨天清零（只改数据，UI 由 updateMissionsUI 刷新）
+    resetDailyMissions: function(today) {
+        this.userData.missionDate = today || new Date().toDateString();
+        this.userData.missions = { learn: 0, speak: 0, game: false };
     },
 
     // 标签页导航
@@ -109,7 +181,12 @@ const App = {
                 document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
                 document.getElementById('page-' + tab).classList.add('active');
                 
-                // 如果是成就页，刷新徽章
+                // 从「← 返回」或其它 Tab 回到学习页时，恢复卡片控制条
+                if (tab === 'learn') {
+                    document.getElementById('cardControls').style.display =
+                        this.currentGrade ? 'flex' : 'none';
+                }
+
                 if (tab === 'progress') {
                     this.updateBadges();
                     this.updateStats();
@@ -225,11 +302,11 @@ const App = {
         // 绑定发音按钮
         const speakBtn = document.getElementById('cardSpeakBtn');
         speakBtn.addEventListener('click', () => {
-            this.speakCurrentCard();
+            this.speakCurrentCard(true);
         });
 
-        // 自动发音
-        setTimeout(() => this.speakCurrentCard(), 300);
+        // 自动发音（不计入朗读次数）
+        setTimeout(() => this.speakCurrentCard(false), 300);
 
         // 更新进度
         this.updateCardControls();
@@ -238,43 +315,54 @@ const App = {
         this.trackLearnedWord(card.word);
     },
 
-    // 朗读当前卡片
-    speakCurrentCard: function() {
+    // 朗读当前卡片；isManual 为 true 时才算用户主动朗读
+    speakCurrentCard: function(isManual) {
         const card = this.currentCards[this.currentCardIndex];
         if (!card) return;
 
         const speakIcon = document.getElementById('cardSpeakBtn');
         const speakBtn = document.getElementById('speakBtn');
-        
-        SpeechHelper.speakWord(card.word, 
+
+        // 每次发音递增代次：旧卡片的 onend / 延时句子会被丢弃
+        const token = ++this.speechToken;
+        const isStillCurrent = () =>
+            this.speechToken === token && this.currentCards[this.currentCardIndex] === card;
+
+        SpeechHelper.speakWord(card.word,
             () => {
+                if (!isStillCurrent()) return;
                 if (speakIcon) speakIcon.classList.add('speaking');
                 if (speakBtn) speakBtn.classList.add('speaking');
             },
             () => {
+                if (!isStillCurrent()) return;
                 if (speakIcon) speakIcon.classList.remove('speaking');
                 if (speakBtn) speakBtn.classList.remove('speaking');
-                
+
                 // 朗读句子
                 setTimeout(() => {
+                    if (!isStillCurrent()) return;
                     SpeechHelper.speakSentence(card.sentence);
                 }, 800);
             }
         );
 
-        // 更新朗读统计
-        this.userData.totalSpeak++;
-        this.userData.missions.speak++;
-        this.saveUserData();
-        this.updateMissionsUI();
-        this.updateStats();
-        this.checkBadges();
+        // 只有用户主动点发音才计入朗读统计，自动播放不算
+        if (isManual) {
+            this.userData.totalSpeak++;
+            this.userData.missions.speak++;
+            this.saveUserData();
+            this.updateMissionsUI();
+            this.updateStats();
+            this.checkBadges();
+        }
     },
 
-    // 跟踪学习的单词
+    // 跟踪学习的单词（以单元内唯一键计数，避免跨年级重复词被吞掉）
     trackLearnedWord: function(word) {
-        if (!this.userData.learnedWords.includes(word)) {
-            this.userData.learnedWords.push(word);
+        const key = `${this.currentGrade}-${this.currentUnit}-${word}`;
+        if (!this.userData.learnedWords.includes(key)) {
+            this.userData.learnedWords.push(key);
             this.userData.totalWords = this.userData.learnedWords.length;
             this.userData.missions.learn++;
             this.userData.stars += 1;  // 每学一个单词得一颗星
@@ -304,18 +392,12 @@ const App = {
                 this.currentCardIndex++;
                 this.renderCard();
             } else {
-                // 已完成所有卡片，给奖励
-                this.showModal('🎉', '太棒了！', '你完成了这个单元的学习！获得5颗星星！', () => {
-                    this.userData.stars += 5;
-                    this.saveUserData();
-                    this.updateStats();
-                });
-                this.createConfetti();
+                this.completeUnit();
             }
         };
 
         speakBtn.onclick = () => {
-            this.speakCurrentCard();
+            this.speakCurrentCard(true);
         };
 
         backBtn.onclick = () => {
@@ -332,11 +414,46 @@ const App = {
         const prevBtn = document.getElementById('prevCard');
         const nextBtn = document.getElementById('nextCard');
         if (prevBtn) prevBtn.disabled = this.currentCardIndex === 0;
-        if (nextBtn) nextBtn.disabled = this.currentCardIndex === this.currentCards.length - 1;
+        if (nextBtn) {
+            const isLast = this.currentCardIndex === this.currentCards.length - 1;
+            // 最后一张仍可点击，用于触发单元完成奖励
+            nextBtn.disabled = this.currentCards.length === 0;
+            nextBtn.innerHTML = isLast
+                ? '完成 ✓'
+                : '下一张 <span class="btn-icon">▶</span>';
+        }
+    },
+
+    // 完成当前单元：首次完成奖励 5 颗星，重复学习只提示不重复发星
+    completeUnit: function() {
+        const key = `${this.currentGrade}-${this.currentUnit}`;
+        const firstTime = !this.userData.completedUnits.includes(key);
+
+        if (firstTime) {
+            this.userData.completedUnits.push(key);
+            this.userData.stars += 5;
+            this.saveUserData();
+            this.updateStats();
+        }
+
+        this.createConfetti();
+        this.showModal(
+            '🎉',
+            '太棒了！',
+            firstTime
+                ? '你完成了这个单元的学习！获得5颗星星！'
+                : '这个单元你又复习了一遍，真棒！'
+        );
+        this.checkBadges();
     },
 
     // 每日任务
     initDailyMissions: function() {
+        const today = new Date().toDateString();
+        if (this.userData.missionDate !== today) {
+            this.resetDailyMissions(today);
+            this.saveUserData();
+        }
         this.updateMissionsUI();
     },
 
@@ -347,9 +464,7 @@ const App = {
             Math.min(this.userData.missions.speak, 3);
         
         const gameProgress = document.getElementById('gameProgress');
-        if (this.userData.missions.game) {
-            gameProgress.textContent = '已完成 ✓';
-        }
+        gameProgress.textContent = this.userData.missions.game ? '已完成 ✓' : '未完成';
 
         // 更新任务完成状态
         document.querySelectorAll('.mission-item').forEach(item => {
@@ -366,6 +481,10 @@ const App = {
     // 成就徽章
     checkBadges: function() {
         const data = this.userData;
+        const grades = Object.keys(LEARNING_DATA);
+        const isGradeDone = grade => Object.keys(LEARNING_DATA[grade].units)
+            .every(unit => data.completedUnits.includes(`${grade}-${unit}`));
+
         const checks = {
             first_word: data.totalWords >= 1,
             word_10: data.totalWords >= 10,
@@ -377,20 +496,24 @@ const App = {
             game_10: data.totalGames >= 10,
             day_3: data.streak >= 3,
             day_7: data.streak >= 7,
+            grade_complete: grades.some(isGradeDone),
+            grade_5: grades.every(isGradeDone),
         };
 
-        let newBadge = null;
+        const newBadges = [];
         for (const [id, unlocked] of Object.entries(checks)) {
             if (unlocked && !data.badges.includes(id)) {
                 data.badges.push(id);
-                newBadge = BADGES_DATA.find(b => b.id === id);
+                const badge = BADGES_DATA.find(b => b.id === id);
+                if (badge) newBadges.push(badge);
             }
         }
 
-        if (newBadge) {
+        if (newBadges.length) {
             this.saveUserData();
             this.updateBadges();
-            this.showModal('🎖️', '获得新徽章！', `你解锁了「${newBadge.name}」`, () => {});
+            const names = newBadges.map(badge => `「${badge.name}」`).join('、');
+            this.showModal('🎖️', '获得新徽章！', `你解锁了 ${names}`);
         }
     },
 
@@ -409,24 +532,47 @@ const App = {
         }).join('');
     },
 
-    // 弹窗
+    // 弹窗（排队显示，避免后一个弹窗覆盖前一个的回调）
+    modalQueue: [],
+    modalActive: false,
+    modalCallback: null,
+
     showModal: function(emoji, title, message, onClose) {
-        const overlay = document.getElementById('modalOverlay');
-        document.getElementById('modalEmoji').textContent = emoji;
-        document.getElementById('modalTitle').textContent = title;
-        document.getElementById('modalMessage').textContent = message;
-        document.getElementById('modalBtn').onclick = () => {
-            overlay.classList.remove('show');
-            if (onClose) onClose();
-        };
-        overlay.classList.add('show');
+        this.modalQueue.push({ emoji, title, message, onClose: onClose || null });
+        if (!this.modalActive) this.showNextModal();
+    },
+
+    showNextModal: function() {
+        const next = this.modalQueue.shift();
+        if (!next) return;
+
+        this.modalActive = true;
+        this.modalCallback = next.onClose;
+        document.getElementById('modalEmoji').textContent = next.emoji;
+        document.getElementById('modalTitle').textContent = next.title;
+        document.getElementById('modalMessage').textContent = next.message;
+        document.getElementById('modalBtn').onclick = () => this.closeModal();
+        document.getElementById('modalOverlay').classList.add('show');
+    },
+
+    // 按钮、遮罩、Esc 统一走这里，保证 onClose 一定执行
+    closeModal: function() {
+        if (!this.modalActive) return;
+
+        this.modalActive = false;
+        document.getElementById('modalOverlay').classList.remove('show');
+        const callback = this.modalCallback;
+        this.modalCallback = null;
+        if (callback) callback();
+        this.showNextModal();
     },
 
     initModal: function() {
         document.getElementById('modalOverlay').addEventListener('click', (e) => {
-            if (e.target.id === 'modalOverlay') {
-                document.getElementById('modalOverlay').classList.remove('show');
-            }
+            if (e.target.id === 'modalOverlay') this.closeModal();
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') this.closeModal();
         });
     },
 

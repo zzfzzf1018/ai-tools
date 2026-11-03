@@ -1121,7 +1121,7 @@ html, body {
     .card-emoji { font-size: 72px; }
     .section-title { font-size: 26px; }
     .learn-header { padding: 12px 16px; }
-    .game-options { grid-template-columns: 1fr; }
+    .guess-options { grid-template-columns: 1fr; }
     .memory-grid { grid-template-columns: repeat(3, 1fr); }
     .match-container { flex-direction: column; gap: 16px; }
     #learnTitle { font-size: 18px; }

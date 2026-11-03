@@ -17,7 +17,7 @@ const LEARNING_DATA = {
                     { word: 'hello', cn: '你好', emoji: '👋', phonetic: '/həˈləʊ/', sentence: 'Hello! I\'m Tom.', sentenceCn: '你好！我是汤姆。' },
                     { word: 'hi', cn: '嗨', emoji: '🖐️', phonetic: '/haɪ/', sentence: 'Hi, Alice!', sentenceCn: '嗨，爱丽丝！' },
                     { word: 'goodbye', cn: '再见', emoji: '👋', phonetic: '/ˌɡʊdˈbaɪ/', sentence: 'Goodbye, friends!', sentenceCn: '再见，朋友们！' },
-                    { word: 'bye', cn: '再见', emoji: '✋', phonetic: '/baɪ/', sentence: 'Bye bye!', sentenceCn: '拜拜！' },
+                    { word: 'bye', cn: '拜拜', emoji: '✋', phonetic: '/baɪ/', sentence: 'Bye bye!', sentenceCn: '拜拜！' },
                     { word: 'morning', cn: '早上', emoji: '🌅', phonetic: '/ˈmɔːnɪŋ/', sentence: 'Good morning!', sentenceCn: '早上好！' },
                     { word: 'afternoon', cn: '下午', emoji: '☀️', phonetic: '/ˌɑːftəˈnuːn/', sentence: 'Good afternoon!', sentenceCn: '下午好！' },
                     { word: 'evening', cn: '晚上', emoji: '🌙', phonetic: '/ˈiːvnɪŋ/', sentence: 'Good evening!', sentenceCn: '晚上好！' },
@@ -149,7 +149,7 @@ const LEARNING_DATA = {
                     { word: 'window', cn: '窗户', emoji: '🪟', phonetic: '/ˈwɪndəʊ/', sentence: 'Close the window.', sentenceCn: '关上窗户。' },
                     { word: 'kitchen', cn: '厨房', emoji: '🍳', phonetic: '/ˈkɪtʃɪn/', sentence: 'In the kitchen.', sentenceCn: '在厨房里。' },
                     { word: 'bathroom', cn: '浴室', emoji: '🛁', phonetic: '/ˈbɑːθruːm/', sentence: 'Use the bathroom.', sentenceCn: '使用浴室。' },
-                    { word: 'living', cn: '客厅', emoji: '🛋️', phonetic: '/ˈlɪvɪŋ/', sentence: 'In the living room.', sentenceCn: '在客厅里。' },
+                    { word: 'living room', cn: '客厅', emoji: '🛋️', phonetic: '/ˈlɪvɪŋ ruːm/', sentence: 'In the living room.', sentenceCn: '在客厅里。' },
                 ]
             }
         }
@@ -314,7 +314,7 @@ const LEARNING_DATA = {
                 title: 'Unit 1 节日庆典',
                 words: [
                     { word: 'Christmas', cn: '圣诞节', emoji: '🎄', phonetic: '/ˈkrɪsməs/', sentence: 'Merry Christmas!', sentenceCn: '圣诞快乐！' },
-                    { word: 'Spring', cn: '春节', emoji: '🧧', phonetic: '/sprɪŋ ˈfestɪvl/', sentence: 'Happy Spring Festival!', sentenceCn: '春节快乐！' },
+                    { word: 'Spring Festival', cn: '春节', emoji: '🧧', phonetic: '/sprɪŋ ˈfestɪvl/', sentence: 'Happy Spring Festival!', sentenceCn: '春节快乐！' },
                     { word: 'festival', cn: '节日', emoji: '🎊', phonetic: '/ˈfestɪvl/', sentence: 'A great festival.', sentenceCn: '一个很棒的节日。' },
                     { word: 'birthday', cn: '生日', emoji: '🎂', phonetic: '/ˈbɜːθdeɪ/', sentence: 'Happy birthday!', sentenceCn: '生日快乐！' },
                     { word: 'dinner', cn: '正餐', emoji: '🍽️', phonetic: '/ˈdɪnə/', sentence: 'Family dinner.', sentenceCn: '家庭晚餐。' },

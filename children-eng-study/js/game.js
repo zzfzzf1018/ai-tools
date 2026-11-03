@@ -34,9 +34,9 @@ const Game = {
         }
     },
 
-    // 获取游戏用的单词数据
+    // 获取游戏用的单词数据（跟随当前选择的年级）
     getGameWords: function(count = 8) {
-        const grade = LEARNING_DATA[this.currentGrade];
+        const grade = LEARNING_DATA[this.currentGrade] || LEARNING_DATA[1];
         const allWords = [];
         
         Object.values(grade.units).forEach(unit => {
@@ -53,7 +53,11 @@ const Game = {
     startGame: function(gameType) {
         this.currentGame = gameType;
         this.gameScore = 0;
-        
+        // 游戏词汇跟随学习页选择的年级，未选择时默认一年级
+        this.currentGrade = App.currentGrade || 1;
+
+        SpeechHelper.stop();
+
         // 切换显示
         document.querySelector('.game-selector').style.display = 'none';
         const gameArea = document.getElementById('gameArea');
@@ -176,10 +180,11 @@ const Game = {
                 this.updateScore(10);
                 App.createConfetti();
                 matchedCount++;
-                
-                // 播放发音
-                const word = words.find(w => String(col1.querySelector('.match-item.matched:last-of-type')?.dataset.id) === String(w.id));
-                
+
+                // 配对成功时朗读该单词
+                const matchedWord = words.find(w => String(w.id) === String(selectedEn));
+                if (matchedWord) SpeechHelper.speakWord(matchedWord.word);
+
                 if (matchedCount === words.length) {
                     setTimeout(() => {
                         this.completeGame();
@@ -315,11 +320,24 @@ const Game = {
                 SpeechHelper.speakWord(currentWord.word);
             });
 
+            // solved 防止答对后 1.2 秒内重复提交，导致连跳多题
+            let solved = false;
+
             const checkAnswer = () => {
+                if (solved) return;
+
                 const answer = input.value.trim().toLowerCase();
                 const correct = currentWord.word.toLowerCase();
-                
+
+                if (!answer) {
+                    input.focus();
+                    return;
+                }
+
                 if (answer === correct) {
+                    solved = true;
+                    input.disabled = true;
+                    document.getElementById('spellCheckBtn').disabled = true;
                     input.style.borderColor = 'var(--color-green)';
                     input.style.color = 'var(--color-green)';
                     this.updateScore(15);
@@ -329,14 +347,14 @@ const Game = {
                         currentIndex++;
                         renderQuestion();
                     }, 1200);
-                } else if (answer.length >= correct.length) {
+                } else {
                     input.style.borderColor = '#EF4444';
                     input.style.color = '#EF4444';
                     SpeechHelper.speak('Almost! Listen again.');
                     setTimeout(() => {
                         input.style.borderColor = 'var(--color-blue)';
                         input.style.color = 'var(--color-text)';
-                        SpeechHelper.speakWord(currentWord.word);
+                        if (!solved) SpeechHelper.speakWord(currentWord.word);
                     }, 800);
                 }
             };
