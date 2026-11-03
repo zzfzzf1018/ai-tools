@@ -8,7 +8,7 @@
   "license": "MIT",
   "scripts": {
     "desktop": "electron .",
-    "package": "electron-packager . \"Kids English Wonderland\" --platform=win32 --arch=x64 --out=dist --overwrite --icon=desktop/icon.ico --app-version=1.0.1 --ignore=\"^/node_modules\" --ignore=\"^/dist\" --ignore=\"^/release-assets\" --ignore=\"^/.screenshots\" --ignore=\"^/.trae-html-share-packages\" --ignore=\"^/package-lock.json\""
+    "package": "electron-packager . \"Kids English Wonderland\" --platform=win32 --arch=x64 --out=dist --overwrite --icon=desktop/icon.ico --ignore=\"^/node_modules\" --ignore=\"^/dist\" --ignore=\"^/release-assets\" --ignore=\"^/.screenshots\" --ignore=\"^/.trae-html-share-packages\" --ignore=\"^/package-lock.json\""
   },
   "devDependencies": {
     "electron": "^45.2.1",

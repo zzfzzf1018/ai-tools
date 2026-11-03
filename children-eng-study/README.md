@@ -77,6 +77,29 @@ npm run desktop     # 开发模式启动
 npm run package     # 生成 dist/Kids English Wonderland-win32-x64/
 ```
 
+### 自动发布（GitHub Actions）
+
+工作流 `.github/workflows/children-eng-study-release.yml`：
+
+- **Pull Request**：改动了 `children-eng-study/**` 时做 JS 语法与清单校验
+- **Tag 推送**：推送 `children-eng-study-v*` 标签时自动打包 Windows 便携版并发布 Release
+
+发版步骤：
+
+```bash
+# 1. 先改 package.json 里的 version（必须与 tag 一致，否则构建失败）
+# 2. 提交并推送
+git add children-eng-study
+git commit -m "feat(children-eng-study): <变更说明>"
+git push origin main
+
+# 3. 打 tag 推送，触发自动发布
+git tag -a children-eng-study-v1.0.2 -m "children-eng-study v1.0.2"
+git push origin children-eng-study-v1.0.2
+```
+
+产物：`Kids-English-Wonderland-<version>-windows-x64.zip` + `SHA256SUMS.txt`。
+
 
 ## 💡 使用说明
 

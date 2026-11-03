@@ -1,0 +1,132 @@
+name: Kids English Wonderland CI and Release
+
+on:
+  push:
+    tags:
+      - "children-eng-study-v*"
+  pull_request:
+    branches: [main]
+    paths:
+      - "children-eng-study/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kids-english-wonderland-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: children-eng-study
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+      - name: Syntax check JavaScript
+        run: |
+          for file in js/*.js desktop/main.js; do
+            node --check "$file"
+          done
+      - name: Validate workflow, package manifest and release notes
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('package.json', 'utf8'))"
+          test -f index.html
+          test -f desktop/icon.ico
+
+  build:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/children-eng-study-v')
+    runs-on: windows-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    defaults:
+      run:
+        working-directory: children-eng-study
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: children-eng-study/package-lock.json
+      - name: Resolve and validate version
+        id: version
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^children-eng-study-v', ''
+          $pkgVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($pkgVersion -ne $version) {
+            throw "package.json version ($pkgVersion) does not match tag ($env:GITHUB_REF_NAME)"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Output "Building Kids English Wonderland $version"
+      - run: npm ci --no-audit --no-fund
+      - run: npm run package
+      - name: Package portable zip and checksum
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          New-Item -ItemType Directory -Path release-assets -Force | Out-Null
+          $out = "dist/Kids English Wonderland-win32-x64"
+          if (-not (Test-Path "$out/Kids English Wonderland.exe")) {
+            throw "Packaged executable not found"
+          }
+          $zip = "release-assets/Kids-English-Wonderland-$env:RELEASE_VERSION-windows-x64.zip"
+          Compress-Archive -Path "$out/*" -DestinationPath $zip -CompressionLevel Optimal
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  Kids-English-Wonderland-$env:RELEASE_VERSION-windows-x64.zip" |
+            Out-File -FilePath "release-assets/SHA256SUMS.txt" -Encoding ascii
+          Get-Content "release-assets/SHA256SUMS.txt"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: kids-english-wonderland-${{ steps.version.outputs.version }}
+          path: children-eng-study/release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: kids-english-wonderland-${{ needs.build.outputs.version }}
+          path: downloads
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd downloads
+          sha256sum --check SHA256SUMS.txt
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo 'Release already exists; refusing to overwrite published downloads.' >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" ./* \
+            --target "$RELEASE_SHA" \
+            --draft \
+            --title "Kids English Wonderland $RELEASE_VERSION" \
+            --notes $'Windows x64: extract the ZIP and run Kids English Wonderland.exe. No installation required.\nUnsigned build: Windows may warn about an unknown publisher; check SHA256SUMS.txt before running.\nSpeech uses the English voices installed in Windows; learning progress and window state stay on the device.\nThe web version still works by opening children-eng-study/index.html in a browser.'
+          gh release edit "$RELEASE_TAG" --draft=false --latest
