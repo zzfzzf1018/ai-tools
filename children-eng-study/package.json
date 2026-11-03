@@ -8,6 +8,7 @@
   "license": "MIT",
   "scripts": {
     "desktop": "electron .",
+    "desktop:runtime": "node node_modules/electron/install.js",
     "package": "electron-builder --win portable --x64"
   },
   "devDependencies": {

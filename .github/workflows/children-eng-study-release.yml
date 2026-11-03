@@ -74,6 +74,8 @@ jobs:
           "version=$version" >> $env:GITHUB_OUTPUT
           Write-Output "Building Kids English Wonderland $version"
       - run: npm ci --no-audit --no-fund
+      - name: Download Electron runtime
+        run: npm run desktop:runtime
       - run: npm run package
       - name: Collect portable exe and web zip
         env:
