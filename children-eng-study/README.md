@@ -66,8 +66,8 @@ python -m http.server 8080
 
 ### 方式三：Windows 桌面版（Electron）
 
-从 Release 下载 `Kids-English-Wonderland-*-windows-x64.zip`，解压整个文件夹后双击
-`Kids English Wonderland.exe` 即可使用，无需安装、无需浏览器。
+从 Release 下载 `Kids-English-Wonderland-*-desktop-windows-x64.zip`，解压整个文件夹后双击
+`Kids English Wonderland.exe` 即可使用，无需安装、无需浏览器（exe 依赖同目录运行时文件，不能单独拷出）。
 
 自行打包：
 
@@ -98,7 +98,11 @@ git tag -a children-eng-study-v1.0.2 -m "children-eng-study v1.0.2"
 git push origin children-eng-study-v1.0.2
 ```
 
-产物：`Kids-English-Wonderland-<version>-windows-x64.zip` + `SHA256SUMS.txt`。
+产物（两个独立压缩包 + 校验文件）：
+
+- `Kids-English-Wonderland-<version>-desktop-windows-x64.zip` — 桌面版，解压后运行 exe
+- `Kids-English-Wonderland-<version>-web.zip` — Web 版，解压后用浏览器打开 `index.html`
+- `SHA256SUMS.txt` — 两个包的 SHA256 校验值
 
 
 ## 💡 使用说明
@@ -144,6 +148,9 @@ MIT
 ---
 
 ## 📌 版本记录
+
+### v1.0.3 (2026-11-03)
+- 📦 Release 产物拆分为桌面版 zip 与 Web 版 zip 两个独立下载
 
 ### v1.0.2 (2026-11-03)
 - 🔁 验证 GitHub Actions 自动打包发布链路（无功能变更）
