@@ -1,7 +1,9 @@
 # 🌈 趣味英语乐园 (Kids English Wonderland)
 
-> 面向上海小学一至五年级的趣味英语学习 Web 应用
-> 图文结合 · 标准发音 · 四个小游戏 · 成就激励
+> 面向上海小学一至五年级的趣味英语学习应用
+> 图文结合 · 标准发音 · 四个小游戏 · 成就激励 · 单文件 Windows 便携版
+
+**当前稳定版：v1.0.4** ・ 仓库：https://github.com/zzfzzf1018/ai-tools/tree/main/children-eng-study ・ 发布：https://github.com/zzfzzf1018/ai-tools/releases
 
 ---
 
@@ -16,6 +18,37 @@
 | ⭐ **激励系统** | 星星奖励、连续学习天数、成就徽章、彩色纸屑庆祝动画 |
 | 💾 **本地持久化** | 学习进度自动保存到浏览器 localStorage |
 | 🎨 **生动界面** | 漂浮气泡背景、卡片翻转动画、表情弹跳、按钮微交互 |
+| 🖥️ **桌面版** | Electron 单文件便携 exe，双击即用、无需安装 |
+
+---
+
+## 📦 下载安装（推荐普通用户使用）
+
+前往 [Releases](https://github.com/zzfzzf1018/ai-tools/releases/tag/children-eng-study-v1.0.4) 选择你需要的形态：
+
+| 形态 | 文件 | 大小 | 使用方式 |
+|------|------|------|----------|
+| 🖥️ **Windows 便携版** | `Kids-English-Wonderland-1.0.4-x64-portable.exe` | ~105 MB | 双击即用，无需安装、无需浏览器 |
+| 🌐 **Web 版** | `Kids-English-Wonderland-1.0.4-web.zip` | ~30 KB | 解压后用浏览器打开 `index.html` |
+
+### 桌面版使用说明
+
+1. 双击 `Kids-English-Wonderland-1.0.4-x64-portable.exe`
+2. 首次启动会解压到临时目录（约 30 秒），后续启动几乎瞬时
+3. 未签名：Windows 可能提示"未知发布者"，核对 `SHA256SUMS.txt` 中的校验值后可继续运行
+4. 学习数据保存在本机，不会上传任何服务器
+5. 发音使用 Windows 内置英语语音（建议设置 → 时间和语言 → 语音中确认已安装英文语音包）
+
+### Web 版使用说明
+
+**方式一**：双击 `index.html` 直接在浏览器打开（最简单）
+
+**方式二**：本地 HTTP 服务器（推荐，语音加载更稳定）
+
+```bash
+python -m http.server 8080
+# 然后访问 http://localhost:8080
+```
 
 ---
 
@@ -35,11 +68,12 @@ children-eng-study/
 │   ├── main.js             # 主进程：单实例、窗口记忆、外链转系统浏览器
 │   ├── icon.png
 │   └── icon.ico
-├── package.json            # Electron 依赖与打包脚本
+├── package.json            # Electron 依赖、electron-builder 配置与打包脚本
 ├── .gitignore
 └── README.md
 ```
 
+---
 
 ## 📖 学习内容（沪教版风格）
 
@@ -51,58 +85,7 @@ children-eng-study/
 
 每个年级 5 个单元，每单元 8–10 个单词，含音标、例句与中文翻译。
 
-## 🚀 快速开始
-
-### 方式一：直接打开
-用现代浏览器直接打开 `index.html` 即可。
-
-### 方式二：本地 HTTP 服务器（推荐，语音加载更稳定）
-```bash
-# Python 3
-python -m http.server 8080
-
-# 然后访问 http://localhost:8080
-```
-
-### 方式三：Windows 桌面版（Electron）
-
-从 Release 下载 `Kids-English-Wonderland-*-portable.exe`，双击即可使用；首次启动会解压到临时目录，无需安装、无需浏览器。
-
-自行打包：
-
-```bash
-npm install
-npm run desktop     # 开发模式启动
-npm run package     # 生成 release/Kids-English-Wonderland-<version>-x64-portable.exe
-```
-
-### 自动发布（GitHub Actions）
-
-工作流 `.github/workflows/children-eng-study-release.yml`：
-
-- **Pull Request**：改动了 `children-eng-study/**` 时做 JS 语法与清单校验
-- **Tag 推送**：推送 `children-eng-study-v*` 标签时自动打包 Windows 便携版并发布 Release
-
-发版步骤：
-
-```bash
-# 1. 先改 package.json 里的 version（必须与 tag 一致，否则构建失败）
-# 2. 提交并推送
-git add children-eng-study
-git commit -m "feat(children-eng-study): <变更说明>"
-git push origin main
-
-# 3. 打 tag 推送，触发自动发布
-git tag -a children-eng-study-v1.0.2 -m "children-eng-study v1.0.2"
-git push origin children-eng-study-v1.0.2
-```
-
-产物（两个独立文件 + 校验文件）：
-
-- `Kids-English-Wonderland-<version>-x64-portable.exe` — 桌面版单文件便携 exe，双击运行
-- `Kids-English-Wonderland-<version>-web.zip` — Web 版，解压后用浏览器打开 `index.html`
-- `SHA256SUMS.txt` — 两个文件的 SHA256 校验值
-
+---
 
 ## 💡 使用说明
 
@@ -115,6 +98,8 @@ git push origin children-eng-study-v1.0.2
 4. **玩游戏**：导航到「🎮 游戏」Tab，选择四个小游戏之一
 5. **成就追踪**：「📊 成就」Tab 查看已学单词数、朗读次数、徽章解锁
 
+---
+
 ## 🌐 浏览器兼容性
 
 | 浏览器 | 语音合成 | 备注 |
@@ -126,15 +111,70 @@ git push origin children-eng-study-v1.0.2
 
 语音合成依赖浏览器内置的 Web Speech API，首次点击发音时浏览器会加载对应语言的语音包。
 
+---
+
 ## 🛠️ 技术栈
 
 - **纯前端** — 零依赖、零构建，浏览器直接打开即用
-- **HTML5** — 语义化标签
-- **CSS3** — Flex/Grid 布局、CSS 变量、`@keyframes` 动画
-- **原生 JavaScript (ES6+)** — 模块化组织（`const` / 模板字符串 / Promise）
+- **HTML5 / CSS3 / 原生 JavaScript (ES6+)**
 - **Web Speech API** — `speechSynthesis` 语音合成
 - **localStorage** — 进度持久化
 - **Electron 45 + electron-builder** — Windows 单文件便携版打包
+- **GitHub Actions** — 自动构建与发布
+
+---
+
+## 🔧 开发者指南
+
+### 本地开发
+
+```bash
+# Web 版：直接打开 index.html，或起本地服务
+python -m http.server 8080
+
+# 桌面版：开发模式启动 Electron
+npm install
+npm run desktop
+```
+
+### 本地打包桌面版
+
+```bash
+npm install
+npm run desktop:runtime   # 首次需要，下载 Electron 运行时
+npm run package           # 产出 release/Kids-English-Wonderland-<version>-x64-portable.exe
+```
+
+### 自动发布（GitHub Actions）
+
+工作流：[children-eng-study-release.yml](../.github/workflows/children-eng-study-release.yml)
+
+| 触发 | 行为 |
+|------|------|
+| Pull Request 改动 `children-eng-study/**` | 校验 JS 语法与 manifest |
+| 推送 `children-eng-study-v*` tag | 自动打包便携 exe + Web zip → 发布 GitHub Release |
+
+### 发版步骤
+
+```bash
+# 1. 修改 package.json 的 version（必须与将要打的 tag 一致）
+# 2. 提交并推送 main
+git add children-eng-study
+git commit -m "feat(children-eng-study): <变更说明>"
+git push origin main
+
+# 3. 打 tag 推送，触发自动发布
+git tag -a children-eng-study-v1.0.5 -m "children-eng-study v1.0.5"
+git push origin children-eng-study-v1.0.5
+```
+
+### 产物清单
+
+- `Kids-English-Wonderland-<version>-x64-portable.exe` — Windows 单文件便携版
+- `Kids-English-Wonderland-<version>-web.zip` — Web 版
+- `SHA256SUMS.txt` — 上述两文件的 SHA256 校验值
+
+---
 
 ## 📝 数据说明
 
@@ -148,9 +188,11 @@ MIT
 
 ## 📌 版本记录
 
-### v1.0.4 (2026-11-03)
+### v1.0.4 (2026-11-03) — 🎯 当前稳定版
 - 🖥️ 桌面版改为单文件便携 exe（electron-builder portable），双击即用，无需解压
 - 📦 Release 产物：便携 exe + Web 版 zip
+- 🔧 CI 修复：补 Electron runtime 下载步骤
+- ✅ 已通过本地冒烟与 CI 全链路验证
 
 ### v1.0.3 (2026-11-03)
 - 📦 Release 产物拆分为桌面版 zip 与 Web 版 zip 两个独立下载
@@ -170,4 +212,3 @@ MIT
 - ✅ 四个趣味小游戏
 - ✅ 星星 / 徽章 / 连续天数激励系统
 - ✅ localStorage 进度持久化
-
