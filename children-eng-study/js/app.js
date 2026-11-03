@@ -12,7 +12,7 @@ const App = {
     
     // 用户进度数据
     userData: {
-        schemaVersion: 2,
+        schemaVersion: 3,
         stars: 0,
         streak: 0,
         lastVisitDate: null,
@@ -29,7 +29,10 @@ const App = {
             speak: 0,
             game: false
         },
-        badges: []
+        badges: [],
+        favorites: [],   // 收藏的单词，键为 "年级-单元-单词"
+        weakWords: [],   // 不熟的单词，键同上
+        recordings: {}   // 录音，键为 "年级-单元-单词" -> data URL
     },
 
     // 发音代次，用于丢弃上一张卡片迟到的回调
@@ -49,7 +52,9 @@ const App = {
         this.initSettings();
         this.initDataTransfer();
         this.startDayWatcher();
-        
+        this.initDictSearch();
+        this.initWordListNav();
+
         // 打印支持信息
         console.log('🎪 趣味英语乐园已启动！');
         console.log('🔊 语音支持:', SpeechHelper.isSupported() ? '是' : '否');
@@ -79,9 +84,12 @@ const App = {
     // 兼容旧版本存档：补齐缺失字段，并把纯单词迁移成 "年级-单元-单词"
     normalizeUserData: function() {
         const data = this.userData;
-        ['learnedWords', 'completedGames', 'completedUnits', 'badges'].forEach(key => {
+        ['learnedWords', 'completedGames', 'completedUnits', 'badges', 'favorites', 'weakWords'].forEach(key => {
             if (!Array.isArray(data[key])) data[key] = [];
         });
+        if (!data.recordings || typeof data.recordings !== 'object' || Array.isArray(data.recordings)) {
+            data.recordings = {};
+        }
         ['stars', 'streak', 'totalWords', 'totalSpeak', 'totalGames', 'totalDays'].forEach(key => {
             if (!Number.isFinite(data[key])) data[key] = 0;
         });
@@ -89,7 +97,7 @@ const App = {
             { learn: 0, speak: 0, game: false },
             data.missions && typeof data.missions === 'object' ? data.missions : {}
         );
-        data.schemaVersion = 2;
+        data.schemaVersion = 3;
         this.migrateLearnedWords();
     },
 
@@ -228,6 +236,7 @@ const App = {
     // 统一切换页面：停止发音、作废旧语音回调、恢复学习控制条、刷新成就数据
     showPage: function(tab) {
         SpeechHelper.stop();
+        this.stopRecordingQuiet();
         // 代次递增：让切换前未完成的单词回调和 800ms 句子朗读全部失效
         this.speechToken++;
         if (this.autoSpeakTimer) {
@@ -247,7 +256,10 @@ const App = {
         document.getElementById('cardControls').style.display =
             (tab === 'learn' && this.currentGrade) ? 'flex' : 'none';
 
-        if (tab === 'progress') this.updateStats();
+        if (tab === 'progress') {
+            this.updateStats();
+            this.updateWordList();
+        }
     },
 
     // 年级选择
@@ -293,11 +305,11 @@ const App = {
         // 生成单元选择器
         const unitSelector = document.getElementById('unitSelector');
         unitSelector.innerHTML = '';
-        Object.keys(gradeData.units).forEach((unitKey, idx) => {
+        Object.keys(gradeData.units).forEach((unitKey) => {
             const unit = gradeData.units[unitKey];
             const btn = document.createElement('button');
             btn.className = 'unit-btn';
-            btn.textContent = `U${idx + 1}`;
+            btn.textContent = unitKey === '0' ? '🔤' : `U${unitKey}`;
             btn.title = unit.title;
             btn.addEventListener('click', () => {
                 this.selectUnit(unitKey);
@@ -339,17 +351,42 @@ const App = {
             return;
         }
 
+        // 重绘 DOM 前，如果录音还在进行，先静默停掉避免 stream 泄漏
+        this.stopRecordingQuiet();
+
         // 渲染新卡片前清掉上一张卡片未触发的自动朗读
         if (this.autoSpeakTimer) {
             clearTimeout(this.autoSpeakTimer);
             this.autoSpeakTimer = null;
         }
 
+        const unitKey = `${this.currentGrade}-${this.currentUnit}`;
+        const isLetterUnit = LEARNING_DATA[this.currentGrade].units[this.currentUnit].isLetterUnit;
+        const wordKey = `${this.currentGrade}-${this.currentUnit}-${isLetterUnit ? card.letterLower : card.word}`;
+        const isFav = this.userData.favorites.includes(wordKey);
+        const isWeak = this.userData.weakWords.includes(wordKey);
+        const hasRecording = !!this.userData.recordings[wordKey];
+
+        // 字母卡片特殊布局
+        let letterExtra = '';
+        if (isLetterUnit) {
+            letterExtra = `
+                <div class="letter-display">
+                    <span class="letter-upper">${card.letterUpper}</span>
+                    <span class="letter-lower">${card.letterLower}</span>
+                </div>
+                <div class="letter-examples">
+                    ${card.examples.map(ex => `<span class="letter-example">${ex}</span>`).join('')}
+                </div>
+            `;
+        }
+
         container.innerHTML = `
-            <div class="learning-card" data-type="word"
+            <div class="learning-card ${isLetterUnit ? 'letter-card' : ''}" data-type="${isLetterUnit ? 'letter' : 'word'}"
                  id="learningCard" role="button" tabindex="0"
                  aria-label="${card.word}，${card.cn}。点击再听一遍发音">
                 <span class="card-emoji">${card.emoji}</span>
+                ${letterExtra}
                 <div class="card-word">${card.word}</div>
                 <div class="card-phonetic">${card.phonetic}</div>
                 <div class="card-chinese">${card.cn}</div>
@@ -358,6 +395,22 @@ const App = {
                 <div style="margin-top: 20px;">
                     <span class="speak-icon" id="cardSpeakBtn" title="点击发音">🔊</span>
                 </div>
+                <!-- 收藏/不熟/录音/跟读按钮 -->
+                <div class="card-action-bar">
+                    <button class="card-action-btn ${isFav ? 'active' : ''}" id="favBtn" title="收藏这个单词" aria-label="收藏">
+                        ${isFav ? '⭐' : '☆'}
+                    </button>
+                    <button class="card-action-btn ${isWeak ? 'active' : ''}" id="weakBtn" title="标记为不熟" aria-label="不熟">
+                        ${isWeak ? '❌' : '✓'}
+                    </button>
+                    <button class="card-action-btn" id="recordBtn" title="录制你的朗读" aria-label="录音">
+                        ${hasRecording ? '🔁' : '🎙️'}
+                    </button>
+                    <button class="card-action-btn" id="playRecBtn" title="播放我的录音" aria-label="播放录音"
+                            ${hasRecording ? '' : 'disabled'}>▶️</button>
+                    <button class="card-action-btn" id="followBtn" title="跟我读（需要麦克风）" aria-label="跟读">🗣️</button>
+                </div>
+                <div class="card-follow-hint" id="followHint" hidden></div>
                 <div class="card-progress" style="margin-top: 16px; font-size: 13px; color: #6B7280;">
                     ${this.currentCardIndex + 1} / ${this.currentCards.length}
                 </div>
@@ -367,10 +420,13 @@ const App = {
         // 绑定发音按钮（整张卡片点击/回车也能重听）
         const cardEl = document.getElementById('learningCard');
         const speakBtn = document.getElementById('cardSpeakBtn');
-        speakBtn.addEventListener('click', () => {
+        speakBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
             this.speakCurrentCard(true);
         });
         cardEl.addEventListener('click', (e) => {
+            // 如果点的是 action bar 里的按钮，跳过
+            if (e.target.closest('.card-action-bar')) return;
             if (e.target.closest('.speak-icon')) return;
             this.speakCurrentCard(true);
         });
@@ -379,6 +435,32 @@ const App = {
                 e.preventDefault();
                 this.speakCurrentCard(true);
             }
+        });
+
+        // 收藏 / 不熟
+        document.getElementById('favBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.toggleWordList('favorites', wordKey);
+        });
+        document.getElementById('weakBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.toggleWordList('weakWords', wordKey);
+        });
+
+        // 录音
+        document.getElementById('recordBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.toggleRecording(wordKey, card.word);
+        });
+        document.getElementById('playRecBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.playRecording(wordKey);
+        });
+
+        // 跟读
+        document.getElementById('followBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.startFollowRead(card);
         });
 
         // 自动发音（不计入朗读次数，可在语音设置里关闭）
@@ -778,6 +860,332 @@ const App = {
                 fileInput.value = '';
             });
         };
+    },
+
+    // ============== 收藏 / 不熟 ==============
+    toggleWordList: function(listName, wordKey) {
+        const arr = this.userData[listName];
+        const idx = arr.indexOf(wordKey);
+        if (idx >= 0) {
+            arr.splice(idx, 1);
+        } else {
+            arr.push(wordKey);
+        }
+        this.saveUserData();
+        // 重渲染当前卡片上的按钮状态
+        this.renderCard();
+        // 如果在成就页也刷新列表
+        if (document.getElementById('page-progress').classList.contains('active')) {
+            this.updateWordList();
+        }
+    },
+
+    // ============== 录音 / 回放 ==============
+    mediaRecorder: null,
+    mediaStream: null,
+    recordedChunks: [],
+
+    // 静默停止录音（页面切换/重绘时调用，不触发 onstop 里的保存逻辑）
+    stopRecordingQuiet: function() {
+        if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+            // 清掉 onstop，避免重绘 DOM 后回调找按钮失败
+            this.mediaRecorder.onstop = null;
+            this.mediaRecorder.stop();
+        }
+        if (this.mediaStream) {
+            this.mediaStream.getTracks().forEach(t => t.stop());
+            this.mediaStream = null;
+        }
+    },
+
+    toggleRecording: function(wordKey, word) {
+        if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+            // 停止录音
+            this.mediaRecorder.stop();
+            return;
+        }
+
+        // 先检查浏览器支持
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            this.showModal('⚠️', '录音不可用', '你的浏览器不支持录音功能，可以用 Chrome 或 Edge 桌面版试试！');
+            return;
+        }
+        if (!window.MediaRecorder) {
+            this.showModal('⚠️', '录音不可用', '浏览器不支持 MediaRecorder API');
+            return;
+        }
+
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then((stream) => {
+                this.mediaStream = stream;
+                this.recordedChunks = [];
+                this.mediaRecorder = new MediaRecorder(stream);
+                this.mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) this.recordedChunks.push(e.data);
+                };
+                this.mediaRecorder.onstop = () => {
+                    // 清理 stream
+                    if (this.mediaStream) {
+                        this.mediaStream.getTracks().forEach(t => t.stop());
+                        this.mediaStream = null;
+                    }
+                    if (this.recordedChunks.length === 0) return;
+                    const blob = new Blob(this.recordedChunks, { type: 'audio/webm' });
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        this.userData.recordings[wordKey] = reader.result;
+                        this.saveUserData();
+                        // 重渲染以更新按钮状态
+                        this.renderCard();
+                    };
+                    reader.readAsDataURL(blob);
+                };
+                this.mediaRecorder.start();
+                // 最多录 10 秒自动停
+                setTimeout(() => {
+                    if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+                        this.mediaRecorder.stop();
+                    }
+                }, 10000);
+                // 更新按钮
+                const btn = document.getElementById('recordBtn');
+                if (btn) {
+                    btn.textContent = '⏹️';
+                    btn.title = '停止录音（最长10秒）';
+                }
+            })
+            .catch(() => {
+                this.showModal('⚠️', '无法录音', '请允许浏览器使用麦克风权限');
+            });
+    },
+
+    playRecording: function(wordKey) {
+        const dataUrl = this.userData.recordings[wordKey];
+        if (!dataUrl) return;
+        const audio = new Audio(dataUrl);
+        audio.play();
+    },
+
+    // ============== 跟读（SpeechRecognition） ==============
+    // 仅 Chrome / Edge 支持；失败时给用户友好提示
+    startFollowRead: function(card) {
+        const hint = document.getElementById('followHint');
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+        if (!SpeechRecognition) {
+            hint.textContent = '😢 你的浏览器不支持语音识别，试试 Chrome 桌面版！';
+            hint.hidden = false;
+            setTimeout(() => { hint.hidden = true; }, 4000);
+            return;
+        }
+
+        hint.textContent = '🎤 请跟我读：' + card.word;
+        hint.hidden = false;
+
+        // 先播放标准音
+        SpeechHelper.speakWord(card.word);
+
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'en-US';
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 3;
+
+        let heard = '';
+        recognition.onresult = (e) => {
+            heard = e.results[0][0].transcript.trim().toLowerCase();
+        };
+        recognition.onerror = () => {
+            hint.textContent = '😢 识别出错了，再试一次吧';
+            hint.hidden = false;
+        };
+        recognition.onend = () => {
+            if (!heard) {
+                hint.textContent = '😢 没有听到你说话，再试试';
+            } else if (heard.includes(card.word.toLowerCase()) || heard.includes(card.word.toLowerCase().replace(/[^a-z]/g, ''))) {
+                hint.textContent = `🎉 太棒了！你说的是 "${heard}"，跟 "${card.word}" 一致！`;
+                // 跟读也算一次朗读
+                this.userData.totalSpeak++;
+                this.userData.missions.speak++;
+                this.saveUserData();
+                this.updateMissionsUI();
+                this.updateStats();
+            } else {
+                hint.textContent = `💪 加油！你说的是 "${heard}"，再听听标准音试试`;
+            }
+            hint.hidden = false;
+        };
+
+        // 等标准音播完 1 秒后开始录音
+        setTimeout(() => {
+            try { recognition.start(); } catch(e) {}
+        }, 1500);
+    },
+
+    // ============== 词典查询 ==============
+    initDictSearch: function() {
+        const input = document.getElementById('dictInput');
+        const result = document.getElementById('dictResult');
+        if (!input) return;
+
+        let debounceTimer = null;
+        input.addEventListener('input', () => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                const q = input.value.trim().toLowerCase();
+                if (!q) { result.hidden = true; result.innerHTML = ''; return; }
+                this.searchDict(q);
+            }, 300);
+        });
+        // 点击外部关闭
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.dict-search')) {
+                result.hidden = true;
+            }
+        });
+    },
+
+    searchDict: function(query) {
+        const result = document.getElementById('dictResult');
+        const matches = [];
+        for (const grade of Object.keys(LEARNING_DATA)) {
+            const units = LEARNING_DATA[grade].units;
+            for (const unitKey of Object.keys(units)) {
+                for (const w of units[unitKey].words) {
+                    const haystack = w.word.toLowerCase() + ' ' + (w.cn || '');
+                    if (haystack.includes(query)) {
+                        matches.push({ ...w, grade, unitKey });
+                        if (matches.length >= 8) break;
+                    }
+                }
+                if (matches.length >= 8) break;
+            }
+            if (matches.length >= 8) break;
+        }
+
+        if (matches.length === 0) {
+            result.innerHTML = '<div class="dict-empty">未找到相关单词</div>';
+        } else {
+            result.innerHTML = matches.map(m => `
+                <div class="dict-item" data-grade="${m.grade}" data-unit="${m.unitKey}" data-word="${m.word}">
+                    <span class="dict-emoji">${m.emoji}</span>
+                    <span class="dict-word">${m.word}</span>
+                    <span class="dict-cn">${m.cn}</span>
+                    <span class="dict-loc">G${m.grade}-U${m.unitKey}</span>
+                </div>
+            `).join('');
+            result.querySelectorAll('.dict-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const grade = parseInt(item.dataset.grade);
+                    const unitKey = item.dataset.unit;
+                    const word = item.dataset.word;
+                    this.enterGrade(grade);
+                    this.selectUnit(unitKey);
+                    // 翻到目标卡片
+                    const idx = this.currentCards.findIndex(c => c.word === word);
+                    if (idx >= 0) {
+                        this.currentCardIndex = idx;
+                        this.renderCard();
+                    }
+                    document.getElementById('dictInput').value = '';
+                    result.hidden = true;
+                });
+            });
+        }
+        result.hidden = false;
+    },
+
+    // ============== 成就页 收藏/不熟 Tab ==============
+    initWordListNav: function() {
+        const nav = document.getElementById('wordListNav');
+        if (!nav) return;
+        nav.querySelectorAll('.mini-tab').forEach(btn => {
+            btn.addEventListener('click', () => {
+                nav.querySelectorAll('.mini-tab').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.updateWordList();
+            });
+        });
+    },
+
+    updateWordList: function() {
+        const nav = document.getElementById('wordListNav');
+        const list = document.getElementById('wordList');
+        if (!nav || !list) return;
+
+        const activeTab = nav.querySelector('.mini-tab.active');
+        const listName = activeTab ? activeTab.dataset.list : 'favorites';
+        const keys = this.userData[listName] || [];
+
+        // 从 key 解析并取数据
+        const items = [];
+        for (const key of keys) {
+            const parts = key.split('-');
+            if (parts.length < 3) continue;
+            const grade = parts[0];
+            const unitKey = parts[1];
+            const word = parts.slice(2).join('-');
+            const gradeData = LEARNING_DATA[grade];
+            if (!gradeData) continue;
+            const unit = gradeData.units[unitKey];
+            if (!unit) continue;
+            const card = unit.words.find(w =>
+                (w.letterLower || '').toLowerCase() === word.toLowerCase() ||
+                w.word.toLowerCase() === word.toLowerCase()
+            );
+            if (card) items.push({ card, grade, unitKey, key });
+        }
+
+        // 更新计数
+        const favBtn = nav.querySelector('[data-list="favorites"]');
+        const weakBtn = nav.querySelector('[data-list="weak"]');
+        if (favBtn) favBtn.querySelector('span').textContent = this.userData.favorites.length;
+        if (weakBtn) weakBtn.querySelector('span').textContent = this.userData.weakWords.length;
+
+        if (items.length === 0) {
+            const emptyMsg = listName === 'favorites'
+                ? '还没有收藏单词哦 ⭐ 快去学习页点一下卡片上的收藏按钮吧！'
+                : '没有不熟的单词，太棒了！🎉';
+            list.innerHTML = `<div class="word-list-empty">${emptyMsg}</div>`;
+            return;
+        }
+
+        list.innerHTML = items.map(it => `
+            <div class="word-list-item" data-key="${it.key}">
+                <span class="wli-emoji">${it.card.emoji}</span>
+                <span class="wli-word">${it.card.word}</span>
+                <span class="wli-cn">${it.card.cn}</span>
+                <span class="wli-loc">G${it.grade}-U${it.unitKey}</span>
+                <button class="wli-remove" data-remove="${it.key}" title="移除">✕</button>
+            </div>
+        `).join('');
+
+        // 绑定移除
+        list.querySelectorAll('[data-remove]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const key = btn.dataset.remove;
+                this.toggleWordList(listName, key);
+            });
+        });
+        // 点击定位跳转
+        list.querySelectorAll('.word-list-item').forEach(el => {
+            el.addEventListener('click', (e) => {
+                if (e.target.closest('.wli-remove')) return;
+                const key = el.dataset.key;
+                const parts = key.split('-');
+                const grade = parseInt(parts[0]);
+                const unitKey = parts[1];
+                const word = parts.slice(2).join('-');
+                this.showPage('learn');
+                this.enterGrade(grade);
+                this.selectUnit(unitKey);
+                const idx = this.currentCards.findIndex(c => {
+                    const lw = c.letterLower || '';
+                    return lw.toLowerCase() === word.toLowerCase() || c.word.toLowerCase() === word.toLowerCase();
+                });
+                if (idx >= 0) { this.currentCardIndex = idx; this.renderCard(); }
+            });
+        });
     },
 
     // 彩色纸屑庆祝效果

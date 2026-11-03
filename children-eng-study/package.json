@@ -1,6 +1,6 @@
 {
   "name": "kids-english-wonderland",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "private": true,
   "description": "趣味英语乐园 · 儿童小学英语学习工具（一至五年级）",
   "main": "desktop/main.js",

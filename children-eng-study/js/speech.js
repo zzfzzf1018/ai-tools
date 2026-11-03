@@ -8,6 +8,12 @@ const SpeechHelper = {
     settings: { autoSpeak: true, rate: 0.8, voiceName: '' },
     settingsKey: 'kidsEnglishSpeechSettings',
 
+    // 发音请求队列 + 去重：避免快速重复点击时堆叠合成请求
+    speakQueue: [],
+    queueProcessing: false,
+    lastSpeakKey: '',
+    lastSpeakTime: 0,
+
     // 检查浏览器是否支持语音合成
     isSupported: function() {
         return 'speechSynthesis' in window;
@@ -72,11 +78,34 @@ const SpeechHelper = {
         return voices.find(v => v.lang && v.lang.startsWith('en')) || null;
     },
 
+    // 生成缓存键（text + rate + voice 组成的唯一标识）
+    makeKey: function(text, rate) {
+        return `${text.toLowerCase()}|${rate || this.settings.rate}|${this.settings.voiceName || 'auto'}`;
+    },
+
+    // 检查是否应该跳过（600ms 内相同请求直接跳过）
+    shouldSkip: function(key) {
+        const now = Date.now();
+        if (key === this.lastSpeakKey && now - this.lastSpeakTime < 600) {
+            return true;
+        }
+        this.lastSpeakKey = key;
+        this.lastSpeakTime = now;
+        return false;
+    },
+
     // 朗读文本
     speak: function(text, options = {}) {
         return new Promise((resolve, reject) => {
             if (!this.isSupported()) {
                 resolve();  // 不支持时静默结束，调用方无需处理拒绝
+                return;
+            }
+
+            // 600ms 内相同请求跳过，避免快速连点堆叠
+            const key = this.makeKey(text, options.rate);
+            if (this.shouldSkip(key)) {
+                resolve();
                 return;
             }
 
@@ -112,6 +141,11 @@ const SpeechHelper = {
     // 朗读单词（带高亮回调）
     speakWord: function(word, onStart, onEnd) {
         if (!this.isSupported()) return;
+
+        // 600ms 内相同请求跳过
+        const key = this.makeKey('word:' + word, this.settings.rate * 0.95);
+        if (this.shouldSkip(key)) return;
+
         window.speechSynthesis.cancel();
         
         const utterance = new SpeechSynthesisUtterance(word);

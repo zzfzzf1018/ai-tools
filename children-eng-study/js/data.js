@@ -11,6 +11,38 @@ const LEARNING_DATA = {
         emoji: '🐣',
         theme: '单词启蒙',
         units: {
+            0: {
+                title: 'Unit 0 字母大冒险',
+                isLetterUnit: true,
+                words: [
+                    { word: 'Aa', cn: '字母 A', emoji: '🅰️', phonetic: '/eɪ/', sentence: 'A is for apple.', sentenceCn: 'A 代表苹果。', letterLower: 'a', letterUpper: 'A', examples: ['apple', 'ant', 'alligator'] },
+                    { word: 'Bb', cn: '字母 B', emoji: '🅱️', phonetic: '/biː/', sentence: 'B is for ball.', sentenceCn: 'B 代表球。', letterLower: 'b', letterUpper: 'B', examples: ['ball', 'bear', 'book'] },
+                    { word: 'Cc', cn: '字母 C', emoji: '🅲', phonetic: '/siː/', sentence: 'C is for cat.', sentenceCn: 'C 代表猫。', letterLower: 'c', letterUpper: 'C', examples: ['cat', 'car', 'cake'] },
+                    { word: 'Dd', cn: '字母 D', emoji: '🅳', phonetic: '/diː/', sentence: 'D is for dog.', sentenceCn: 'D 代表狗。', letterLower: 'd', letterUpper: 'D', examples: ['dog', 'duck', 'doll'] },
+                    { word: 'Ee', cn: '字母 E', emoji: '🅴', phonetic: '/iː/', sentence: 'E is for egg.', sentenceCn: 'E 代表鸡蛋。', letterLower: 'e', letterUpper: 'E', examples: ['egg', 'elephant', 'eye'] },
+                    { word: 'Ff', cn: '字母 F', emoji: '🅵', phonetic: '/ef/', sentence: 'F is for fish.', sentenceCn: 'F 代表鱼。', letterLower: 'f', letterUpper: 'F', examples: ['fish', 'flower', 'foot'] },
+                    { word: 'Gg', cn: '字母 G', emoji: '🅶', phonetic: '/dʒiː/', sentence: 'G is for gift.', sentenceCn: 'G 代表礼物。', letterLower: 'g', letterUpper: 'G', examples: ['gift', 'goat', 'green'] },
+                    { word: 'Hh', cn: '字母 H', emoji: '🅷', phonetic: '/eɪtʃ/', sentence: 'H is for hat.', sentenceCn: 'H 代表帽子。', letterLower: 'h', letterUpper: 'H', examples: ['hat', 'house', 'hand'] },
+                    { word: 'Ii', cn: '字母 I', emoji: '🅸', phonetic: '/aɪ/', sentence: 'I is for ice cream.', sentenceCn: 'I 代表冰淇淋。', letterLower: 'i', letterUpper: 'I', examples: ['ice', 'igloo', 'ink'] },
+                    { word: 'Jj', cn: '字母 J', emoji: '🅹', phonetic: '/dʒeɪ/', sentence: 'J is for juice.', sentenceCn: 'J 代表果汁。', letterLower: 'j', letterUpper: 'J', examples: ['juice', 'jump', 'jacket'] },
+                    { word: 'Kk', cn: '字母 K', emoji: '🅺', phonetic: '/keɪ/', sentence: 'K is for kite.', sentenceCn: 'K 代表风筝。', letterLower: 'k', letterUpper: 'K', examples: ['kite', 'king', 'kitchen'] },
+                    { word: 'Ll', cn: '字母 L', emoji: '🅻', phonetic: '/el/', sentence: 'L is for lion.', sentenceCn: 'L 代表狮子。', letterLower: 'l', letterUpper: 'L', examples: ['lion', 'leg', 'lemon'] },
+                    { word: 'Mm', cn: '字母 M', emoji: '🅼', phonetic: '/em/', sentence: 'M is for monkey.', sentenceCn: 'M 代表猴子。', letterLower: 'm', letterUpper: 'M', examples: ['monkey', 'milk', 'moon'] },
+                    { word: 'Nn', cn: '字母 N', emoji: '🅽', phonetic: '/en/', sentence: 'N is for nose.', sentenceCn: 'N 代表鼻子。', letterLower: 'n', letterUpper: 'N', examples: ['nose', 'net', 'night'] },
+                    { word: 'Oo', cn: '字母 O', emoji: '🅾️', phonetic: '/əʊ/', sentence: 'O is for orange.', sentenceCn: 'O 代表橙子。', letterLower: 'o', letterUpper: 'O', examples: ['orange', 'octopus', 'owl'] },
+                    { word: 'Pp', cn: '字母 P', emoji: '🅿️', phonetic: '/piː/', sentence: 'P is for pig.', sentenceCn: 'P 代表猪。', letterLower: 'p', letterUpper: 'P', examples: ['pig', 'pen', 'pink'] },
+                    { word: 'Qq', cn: '字母 Q', emoji: '🅠', phonetic: '/kjuː/', sentence: 'Q is for queen.', sentenceCn: 'Q 代表女王。', letterLower: 'q', letterUpper: 'Q', examples: ['queen', 'question', 'quilt'] },
+                    { word: 'Rr', cn: '字母 R', emoji: '🅡', phonetic: '/ɑː/', sentence: 'R is for rabbit.', sentenceCn: 'R 代表兔子。', letterLower: 'r', letterUpper: 'R', examples: ['rabbit', 'red', 'rain'] },
+                    { word: 'Ss', cn: '字母 S', emoji: '🅢', phonetic: '/es/', sentence: 'S is for sun.', sentenceCn: 'S 代表太阳。', letterLower: 's', letterUpper: 'S', examples: ['sun', 'snake', 'star'] },
+                    { word: 'Tt', cn: '字母 T', emoji: '🅣', phonetic: '/tiː/', sentence: 'T is for tiger.', sentenceCn: 'T 代表老虎。', letterLower: 't', letterUpper: 'T', examples: ['tiger', 'tree', 'toy'] },
+                    { word: 'Uu', cn: '字母 U', emoji: '🅤', phonetic: '/juː/', sentence: 'U is for umbrella.', sentenceCn: 'U 代表雨伞。', letterLower: 'u', letterUpper: 'U', examples: ['umbrella', 'up', 'unicorn'] },
+                    { word: 'Vv', cn: '字母 V', emoji: '🅥', phonetic: '/viː/', sentence: 'V is for van.', sentenceCn: 'V 代表面包车。', letterLower: 'v', letterUpper: 'V', examples: ['van', 'violin', 'violet'] },
+                    { word: 'Ww', cn: '字母 W', emoji: '🅦', phonetic: '/ˈdʌbljuː/', sentence: 'W is for water.', sentenceCn: 'W 代表水。', letterLower: 'w', letterUpper: 'W', examples: ['water', 'whale', 'window'] },
+                    { word: 'Xx', cn: '字母 X', emoji: '🅧', phonetic: '/eks/', sentence: 'X is for box.', sentenceCn: 'X 代表盒子。', letterLower: 'x', letterUpper: 'X', examples: ['box', 'fox', 'xylophone'] },
+                    { word: 'Yy', cn: '字母 Y', emoji: '🅨', phonetic: '/waɪ/', sentence: 'Y is for yellow.', sentenceCn: 'Y 代表黄色。', letterLower: 'y', letterUpper: 'Y', examples: ['yellow', 'yacht', 'yes'] },
+                    { word: 'Zz', cn: '字母 Z', emoji: '🅩', phonetic: '/ziː/', sentence: 'Z is for zebra.', sentenceCn: 'Z 代表斑马。', letterLower: 'z', letterUpper: 'Z', examples: ['zebra', 'zoo', 'zero'] },
+                ]
+            },
             1: {
                 title: 'Unit 1 打招呼',
                 words: [

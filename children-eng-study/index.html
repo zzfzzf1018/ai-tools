@@ -115,6 +115,10 @@
                 <button class="back-btn" id="learnBack">← 返回</button>
                 <h2 id="learnTitle">选择学习内容</h2>
                 <div class="unit-selector" id="unitSelector"></div>
+                <div class="dict-search">
+                    <input type="text" id="dictInput" placeholder="🔍 查单词…" autocomplete="off">
+                    <div class="dict-result" id="dictResult" hidden></div>
+                </div>
             </div>
 
             <div class="card-container" id="cardContainer">
@@ -161,6 +165,11 @@
                         <div class="game-name">记忆翻牌</div>
                         <div class="game-desc">翻牌配对记忆</div>
                     </div>
+                    <div class="game-card" data-game="fillword">
+                        <div class="game-icon">🧱</div>
+                        <div class="game-name">字母拼拼乐</div>
+                        <div class="game-desc">用打乱的字母拼词</div>
+                    </div>
                 </div>
             </div>
 
@@ -203,6 +212,15 @@
                         <div class="big-stat-num" id="totalDays">0</div>
                         <div class="big-stat-label">学习天数</div>
                     </div>
+                </div>
+
+                <!-- 收藏夹 / 错题本 Tab -->
+                <div class="mini-tab-nav" id="wordListNav">
+                    <button class="mini-tab active" data-list="favorites">⭐ 收藏 <span id="favCount">0</span></button>
+                    <button class="mini-tab" data-list="weak">❌ 不熟 <span id="weakCount">0</span></button>
+                </div>
+                <div class="word-list-container" id="wordListContainer">
+                    <div class="word-list" id="wordList"></div>
                 </div>
 
                 <h3 class="badges-title">📈 年级进度</h3>

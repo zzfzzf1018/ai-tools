@@ -82,7 +82,8 @@ const Game = {
             match: '🧩 单词连连看',
             guess: '🎯 听音选词',
             spell: '✏️ 拼写大师',
-            memory: '🃏 记忆翻牌'
+            memory: '🃏 记忆翻牌',
+            fillword: '🧱 字母拼拼乐'
         };
         document.getElementById('gameTitle').textContent = titles[gameType] || '游戏';
         document.getElementById('gameScore').textContent = '0';
@@ -93,6 +94,7 @@ const Game = {
             case 'guess': this.initGuessGame(); break;
             case 'spell': this.initSpellGame(); break;
             case 'memory': this.initMemoryGame(); break;
+            case 'fillword': this.initFillWordGame(); break;
         }
     },
 
@@ -498,6 +500,179 @@ const Game = {
                 }
             });
         });
+    },
+
+    // ============== 字母拼拼乐游戏 ==============
+    initFillWordGame: function() {
+        // 从当前单元或同年级取 6 个纯字母单词（过滤掉空格的短语）
+        const words = this.getGameWords(10).filter(w => /^[a-zA-Z]+$/.test(w.word)).slice(0, 6);
+        if (words.length < 3) {
+            App.showModal('😅', '词汇不够', '当前年级适合的单词太少，换个年级试试吧');
+            return;
+        }
+
+        let currentIndex = 0;
+        let firstTryCorrect = 0;
+        let mistakes = 0;
+        const content = document.getElementById('gameContent');
+
+        const renderQuestion = () => {
+            if (currentIndex >= words.length) {
+                setTimeout(() => {
+                    const stars = this.completeGame(mistakes);
+                    App.showModal('🎉', '拼词完成！', `一次拼对 ${firstTryCorrect}/${words.length}，得分 ${this.gameScore}，获得 ${stars} 颗星星！`);
+                }, 500);
+                return;
+            }
+
+            const currentWord = words[currentIndex];
+            const target = currentWord.word.toLowerCase();
+            const targetLetters = target.split('');
+
+            // 生成干扰字母池（从同年级其他单词里随机取）
+            const otherWords = words.filter(w => w.word !== currentWord.word);
+            const extraLetters = [];
+            for (let i = 0; i < Math.min(2, otherWords.length); i++) {
+                const lw = otherWords[i].word.toLowerCase();
+                if (lw && /^[a-z]+$/.test(lw)) {
+                    // 取第一个不重复的字母
+                    for (const ch of lw) {
+                        if (!targetLetters.includes(ch) && !extraLetters.includes(ch)) {
+                            extraLetters.push(ch);
+                            break;
+                        }
+                    }
+                }
+            }
+            // 把干扰字母凑到至少 2 个
+            const allUsed = new Set(targetLetters);
+            const alphabet = 'abcdefghijklmnopqrstuvwxyz';
+            while (extraLetters.length < 2) {
+                const ch = alphabet[Math.floor(Math.random() * 26)];
+                if (!allUsed.has(ch) && !extraLetters.includes(ch)) extraLetters.push(ch);
+            }
+
+            // 打乱
+            const pool = [...targetLetters, ...extraLetters].sort(() => Math.random() - 0.5);
+
+            content.innerHTML = `
+                <div class="fillword-container">
+                    <h3 style="margin-bottom: 16px; color: #6B7280;">第 ${currentIndex + 1} / ${words.length} 题</h3>
+                    <div style="font-size: 80px; margin-bottom: 8px;">${currentWord.emoji}</div>
+                    <p style="font-size: 24px; margin-bottom: 8px;">${currentWord.cn}</p>
+                    <button class="guess-audio-btn" id="fillAudioBtn" style="font-size: 40px; padding: 16px;">🔊</button>
+
+                    <!-- 答案槽 -->
+                    <div class="fillword-slots" id="fillSlots">
+                        ${targetLetters.map((_, i) => `<div class="fill-slot" data-slot="${i}"></div>`).join('')}
+                    </div>
+
+                    <!-- 字母池 -->
+                    <div class="fillword-pool" id="fillPool">
+                        ${pool.map((ch, i) => `<button class="fill-letter" data-letter="${ch}" data-pool-idx="${i}">${ch}</button>`).join('')}
+                    </div>
+
+                    <button class="fillword-undo" id="fillUndoBtn">↩️ 撤回</button>
+                </div>
+            `;
+
+            // 自动播放发音
+            if (SpeechHelper.settings.autoSpeak) {
+                setTimeout(() => SpeechHelper.speakWord(currentWord.word), 300);
+            }
+            document.getElementById('fillAudioBtn').onclick = () => SpeechHelper.speakWord(currentWord.word);
+
+            // 游戏状态
+            const answerSlots = Array(targetLetters.length).fill(null);
+            const usedPoolIdx = new Set();
+            let solved = false;
+            let triedWrong = false;
+
+            const renderSlots = () => {
+                const slots = document.querySelectorAll('.fill-slot');
+                slots.forEach((el, i) => {
+                    el.textContent = answerSlots[i] || '';
+                    el.classList.toggle('filled', !!answerSlots[i]);
+                    el.classList.toggle('correct', solved && answerSlots[i] === targetLetters[i]);
+                });
+            };
+
+            const checkFull = () => {
+                if (solved) return;
+                if (answerSlots.every(s => s !== null)) {
+                    const spelled = answerSlots.join('');
+                    if (spelled === target) {
+                        solved = true;
+                        renderSlots();
+                        // 禁用所有剩余字母按钮
+                        document.querySelectorAll('.fill-letter').forEach(b => {
+                            if (!usedPoolIdx.has(Number(b.dataset.poolIdx))) b.disabled = true;
+                        });
+                        this.updateScore(triedWrong ? 8 : 15);
+                        if (!triedWrong) firstTryCorrect++;
+                        SpeechHelper.speak('Excellent!');
+                        setTimeout(() => {
+                            currentIndex++;
+                            renderQuestion();
+                        }, 1200);
+                    } else {
+                        triedWrong = true;
+                        mistakes++;
+                        // 全槽闪红，然后清空重来
+                        document.querySelectorAll('.fill-slot').forEach(s => s.classList.add('shake'));
+                        SpeechHelper.speak('Almost!');
+                        setTimeout(() => {
+                            document.querySelectorAll('.fill-slot').forEach(s => s.classList.remove('shake'));
+                            answerSlots.fill(null);
+                            usedPoolIdx.clear();
+                            document.querySelectorAll('.fill-letter').forEach(b => {
+                                b.classList.remove('used');
+                                b.disabled = false;
+                            });
+                            renderSlots();
+                        }, 600);
+                    }
+                }
+            };
+
+            // 点击字母 → 填入第一个空槽
+            document.querySelectorAll('.fill-letter').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    if (solved) return;
+                    const poolIdx = Number(btn.dataset.poolIdx);
+                    if (usedPoolIdx.has(poolIdx)) return;
+                    // 找第一个空槽
+                    const emptyIdx = answerSlots.findIndex(s => s === null);
+                    if (emptyIdx === -1) return;
+                    answerSlots[emptyIdx] = btn.dataset.letter;
+                    usedPoolIdx.add(poolIdx);
+                    btn.classList.add('used');
+                    btn.disabled = true;
+                    renderSlots();
+                    checkFull();
+                });
+            });
+
+            // 撤回最后一个字母
+            document.getElementById('fillUndoBtn').addEventListener('click', () => {
+                if (solved) return;
+                const lastFilled = answerSlots.map((s, i) => s !== null ? i : -1).filter(i => i >= 0).pop();
+                if (lastFilled === undefined) return;
+                const letter = answerSlots[lastFilled];
+                answerSlots[lastFilled] = null;
+                // 找回对应按钮
+                document.querySelectorAll('.fill-letter').forEach(b => {
+                    if (b.dataset.letter === letter && b.classList.contains('used')) {
+                        usedPoolIdx.delete(Number(b.dataset.poolIdx));
+                        b.classList.remove('used');
+                        b.disabled = false;
+                    }
+                });
+                renderSlots();
+            });
+        };
+
+        renderQuestion();
     }
 };
 

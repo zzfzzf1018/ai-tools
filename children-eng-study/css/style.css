@@ -1291,3 +1291,323 @@ html, body {
     }
     .confetti { display: none; }
 }
+
+/* ============== 词典搜索框 ============== */
+.dict-search {
+    position: relative;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+.dict-search input {
+    padding: 8px 14px;
+    border: 2px solid #E5E7EB;
+    border-radius: 100px;
+    font-size: 14px;
+    outline: none;
+    width: 180px;
+    transition: all 0.3s;
+}
+.dict-search input:focus {
+    border-color: var(--color-blue);
+    width: 220px;
+    box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.15);
+}
+.dict-result {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 6px;
+    width: 340px;
+    max-height: 380px;
+    overflow-y: auto;
+    background: white;
+    border-radius: var(--radius-md);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+    z-index: 100;
+    padding: 8px;
+}
+.dict-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.2s;
+    font-size: 14px;
+}
+.dict-item:hover { background: linear-gradient(135deg, #F5F3FF, #EDE9FE); }
+.dict-emoji { font-size: 20px; }
+.dict-word { font-weight: 700; color: var(--color-primary); flex: 1; }
+.dict-cn { color: var(--color-text-light); font-size: 13px; }
+.dict-loc { font-size: 11px; color: #9CA3AF; background: #F3F4F6; padding: 2px 8px; border-radius: 100px; }
+.dict-empty { padding: 20px; text-align: center; color: var(--color-text-light); }
+
+/* ============== 字母卡片 ============== */
+.letter-card { border-color: var(--color-green); }
+.letter-display {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    align-items: baseline;
+    margin-bottom: 12px;
+}
+.letter-upper {
+    font-family: 'Baloo 2', sans-serif;
+    font-size: 80px;
+    font-weight: 800;
+    color: var(--color-green);
+    line-height: 1;
+}
+.letter-lower {
+    font-family: 'Baloo 2', sans-serif;
+    font-size: 56px;
+    font-weight: 700;
+    color: var(--color-blue);
+    line-height: 1;
+}
+.letter-examples {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+}
+.letter-example {
+    background: linear-gradient(135deg, #D1FAE5, #A7F3D0);
+    color: #065F46;
+    padding: 6px 14px;
+    border-radius: 100px;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+/* ============== 卡片操作栏 ============== */
+.card-action-bar {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 16px;
+    flex-wrap: wrap;
+}
+.card-action-btn {
+    width: 42px;
+    height: 42px;
+    border: 2px solid #E5E7EB;
+    border-radius: 50%;
+    background: white;
+    font-size: 18px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+.card-action-btn:hover:not(:disabled) {
+    transform: scale(1.15);
+    border-color: var(--color-primary);
+}
+.card-action-btn.active {
+    background: linear-gradient(135deg, #FEF3C7, #FDE68A);
+    border-color: #F59E0B;
+}
+.card-action-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* 跟读提示 */
+.card-follow-hint {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, #E0F2FE, #BAE6FD);
+    border-radius: var(--radius-sm);
+    color: #075985;
+    font-size: 15px;
+    font-weight: 600;
+    text-align: center;
+}
+
+/* ============== 成就页 Tab 切换 ============== */
+.mini-tab-nav {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-bottom: 16px;
+}
+.mini-tab {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 100px;
+    font-family: 'Fredoka', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    background: #F3F4F6;
+    color: var(--color-text-light);
+    transition: all 0.3s;
+}
+.mini-tab.active {
+    background: linear-gradient(135deg, var(--color-primary), var(--color-pink));
+    color: white;
+    box-shadow: 0 4px 12px rgba(255, 107, 157, 0.3);
+}
+.mini-tab span {
+    display: inline-block;
+    background: rgba(255, 255, 255, 0.3);
+    padding: 0 8px;
+    border-radius: 100px;
+    font-size: 12px;
+    margin-left: 4px;
+}
+.mini-tab:not(.active) span {
+    background: #E5E7EB;
+    color: var(--color-text-light);
+}
+
+/* 收藏/不熟 单词列表 */
+.word-list-container {
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    box-shadow: var(--shadow-card);
+    margin-bottom: 24px;
+    max-height: 260px;
+    overflow-y: auto;
+}
+.word-list { display: flex; flex-direction: column; gap: 8px; }
+.word-list-empty {
+    padding: 32px 16px;
+    text-align: center;
+    color: var(--color-text-light);
+    font-size: 15px;
+}
+.word-list-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: linear-gradient(135deg, #FAFAFA, #F5F5F5);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 14px;
+}
+.word-list-item:hover {
+    background: linear-gradient(135deg, #F5F3FF, #EDE9FE);
+    transform: translateX(4px);
+}
+.wli-emoji { font-size: 22px; }
+.wli-word { font-weight: 700; color: var(--color-primary); }
+.wli-cn { color: var(--color-text-light); flex: 1; }
+.wli-loc { font-size: 11px; color: #9CA3AF; background: #F3F4F6; padding: 2px 8px; border-radius: 100px; }
+.wli-remove {
+    border: none;
+    background: transparent;
+    color: #D1D5DB;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 4px 8px;
+    border-radius: 50%;
+    transition: all 0.2s;
+}
+.wli-remove:hover { background: #FEE2E2; color: #EF4444; }
+
+/* ============== 字母拼拼乐游戏 ============== */
+.fillword-container { text-align: center; }
+.fillword-slots {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin: 20px 0;
+}
+.fill-slot {
+    width: 44px;
+    height: 52px;
+    background: #F9FAFB;
+    border: 3px dashed #D1D5DB;
+    border-radius: var(--radius-sm);
+    font-family: 'Baloo 2', sans-serif;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--color-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+.fill-slot.filled { border-style: solid; border-color: var(--color-blue); background: #EFF6FF; }
+.fill-slot.correct { border-color: var(--color-green); background: #D1FAE5; color: #065F46; }
+.fill-slot.shake { animation: shake 0.4s; border-color: #EF4444; background: #FEE2E2; }
+
+.fillword-pool {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin: 20px 0;
+}
+.fill-letter {
+    width: 48px;
+    height: 52px;
+    background: linear-gradient(135deg, var(--color-secondary), var(--color-blue));
+    border: none;
+    border-radius: var(--radius-sm);
+    font-family: 'Baloo 2', sans-serif;
+    font-size: 28px;
+    font-weight: 700;
+    color: white;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 4px 12px rgba(78, 205, 196, 0.3);
+    text-transform: lowercase;
+}
+.fill-letter:hover:not(:disabled) {
+    transform: translateY(-4px) scale(1.08);
+    box-shadow: 0 8px 20px rgba(78, 205, 196, 0.5);
+}
+.fill-letter.used { opacity: 0.3; transform: scale(0.9); }
+.fill-letter:disabled { cursor: default; }
+
+.fillword-undo {
+    margin-top: 12px;
+    padding: 10px 20px;
+    background: linear-gradient(135deg, #F3F4F6, #E5E7EB);
+    border: none;
+    border-radius: 100px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.fillword-undo:hover { transform: scale(1.05); }
+
+/* ============== 键盘焦点高亮 ============== */
+*:focus-visible {
+    outline: 3px solid var(--color-primary);
+    outline-offset: 2px;
+    border-radius: 6px;
+}
+.card-action-btn:focus-visible {
+    outline: 3px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+/* 响应式补充 */
+@media (max-width: 768px) {
+    .dict-search { width: 100%; margin-left: 0; margin-top: 8px; }
+    .dict-search input { width: 100%; }
+    .dict-search input:focus { width: 100%; }
+    .dict-result { width: 100%; right: auto; }
+    .fill-slot { width: 36px; height: 42px; font-size: 22px; }
+    .fill-letter { width: 40px; height: 44px; font-size: 22px; }
+    .letter-upper { font-size: 56px; }
+    .letter-lower { font-size: 40px; }
+}
+
+@media (max-width: 480px) {
+    .card-action-btn { width: 36px; height: 36px; font-size: 16px; }
+}
