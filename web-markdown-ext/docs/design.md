@@ -91,3 +91,27 @@ Manifest V3 扩展，四个运行时组件，无后端：
 4. **异常**：edge://extensions 页面 → 明确错误提示；未选中时点选区转换 → 明确提示
 5. **离线**：断网状态下功能正常；Network 面板零请求
 6. **快捷键**：Alt+M 转换选区并复制
+
+## 9. 构建与发布
+
+**版本控制（GitVersion）**
+
+- 配置：`GitVersion.yml`（GitHubFlow/v1，tag-prefix `^web-markdown-ext-v`，main 分支 Patch 递增）
+- 工具链：`.config/dotnet-tools.json` 固定 gitversion.tool 6.3.0，`dotnet tool restore` 安装
+- `scripts/versioning.py` 三个子命令：
+  - `version [--allow-fallback]`：计算构建版本（GitVersion 不可用时回退 manifest 版本 + `-local` 后缀）
+  - `apply --tag <tag>`：校验标签与 GitVersion 计算结果一致、工作区干净，然后把版本写入 manifest.json
+  - `prepare --archive <zip>`：校验 zip 完整性与包内 manifest 版本，产出 `release-assets/`（zip + SHA256SUMS.txt + release.json）
+
+**打包（tools/package.py）**
+
+语法检查（node --check 自有 JS）→ 校验 manifest 可解析、运行时文件与图标齐全 → 产出 `dist/web-markdown-ext-v<版本>.zip`（zip 内以 `web-markdown-ext/` 为根）→ 回读校验 zip 内容。
+
+不设 Node 行为测试：Readability/Turndown 依赖真实浏览器 DOM，转换管道的端到端验证在真实浏览器中完成（本文件第 8 节）。
+
+**CI / 自动发布（`.github/workflows/web-markdown-ext-release.yml`）**
+
+- 触发：main 推送（`web-markdown-ext/**` 路径过滤）、PR、`web-markdown-ext-v*` 标签
+- verify（windows）：checkout（全历史+标签）→ node/python/dotnet → GitVersion apply（仅标签）→ package.py → prepare 资产 → 上传 artifact
+- publish（ubuntu，仅标签）：下载 artifact → `sha256sum --check` 复核 → `gh release create`（草稿→转正，拒绝覆盖已存在 Release）
+- 全部第三方 Action 以 commit SHA 固定

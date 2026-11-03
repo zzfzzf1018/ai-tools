@@ -1,22 +1,45 @@
-# 依赖与构建产物
+# ---------- 依赖 ----------
 node_modules/
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---------- .NET / GitVersion ----------
+.dotnet/
+obj/
+bin/
+
+# ---------- 构建与发布产物 ----------
 dist/
-build/
+release-assets/
 *.zip
 *.crx
 *.pem
+*.pub
 
-# 操作系统
+# ---------- 操作系统 ----------
 Thumbs.db
+ehthumbs.db
 .DS_Store
 desktop.ini
+$RECYCLE.BIN/
 
-# 编辑器
+# ---------- 编辑器与 IDE ----------
 .vscode/
 .idea/
 *.swp
+*.swo
+*~
 
-# 日志与临时文件
+# ---------- 日志与临时文件 ----------
 *.log
 *.tmp
+*.bak
 ~$*

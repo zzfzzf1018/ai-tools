@@ -1,5 +1,7 @@
 # Web to Markdown
 
+[![CI and Release](https://github.com/zzfzzf1018/ai-tools/actions/workflows/web-markdown-ext-release.yml/badge.svg)](https://github.com/zzfzzf1018/ai-tools/actions/workflows/web-markdown-ext-release.yml)
+
 一个 Microsoft Edge / Chrome 浏览器扩展（Manifest V3），一键将网页内容转换为 Markdown 格式。
 
 ## 功能特性
@@ -32,6 +34,23 @@
 
 转换结果自动附带元信息头（标题、来源 URL、抓取时间），便于笔记归档溯源。
 
+## 构建与发布
+
+```powershell
+# 本地一键打包：语法检查 + manifest 校验 + 产出 zip
+python tools/package.py          # 输出 dist/web-markdown-ext-v<版本>.zip
+
+# 查询当前构建版本（GitVersion）
+python scripts/versioning.py version --allow-fallback
+```
+
+发布由 tag 驱动，推送标签后 GitHub Actions 自动校验、打包并创建 Release：
+
+```powershell
+git tag web-markdown-ext-v0.1.1
+git push origin web-markdown-ext-v0.1.1
+```
+
 ## 目录结构
 
 ```
@@ -50,6 +69,13 @@ web-markdown-ext/
 │   ├── turndown-plugin-gfm.js  # GFM 扩展 1.0.2
 │   └── markdown-convert.js  # 共享转换封装（页面与弹窗上下文通用）
 ├── icons/                   # 扩展图标（16/32/48/128）
+├── scripts/
+│   └── versioning.py        # GitVersion 版本计算、写入 manifest、发布资产准备
+├── tools/
+│   └── package.py           # 一键打包：语法检查 + 校验 + dist zip
+├── .config/
+│   └── dotnet-tools.json    # dotnet 工具清单（gitversion.tool 6.3.0）
+├── GitVersion.yml           # 版本计算配置（tag-prefix: web-markdown-ext-v）
 ├── docs/                    # 项目文档
 ├── CHANGELOG.md
 └── .gitignore

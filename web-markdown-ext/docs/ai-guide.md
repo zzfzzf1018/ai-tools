@@ -12,7 +12,7 @@ Edge/Chrome 浏览器扩展（Manifest V3），网页 → Markdown 转换。无�
 
 1. **文档同步**：每次代码修改必须同步更新相关文档（`docs/`、`README.md`），并在 `CHANGELOG.md` 追加变更记录
 2. **版本号**：小规模修改仅递增修订号（patch），如 0.1.0 → 0.1.1；不做无意义的版本跃升；版本号需同步修改 `manifest.json` 中的 `version`
-3. **Git 标签**：格式为 `web-markdown-ext-<版本号>`（如 `web-markdown-ext-0.1.1`）
+3. **Git 标签**：格式为 `web-markdown-ext-v<版本号>`（如 `web-markdown-ext-v0.1.1`，注意带 `v` 前缀，与全仓其他项目一致；GitVersion 通过 tag-prefix 识别）
 4. **无网络依赖**：禁止引入任何 CDN/远程资源；新增依赖必须本地打包到 `lib/` 并在 `README.md` 技术栈中登记
 5. **最小权限**：新增能力如需权限，先评估能否用现有 activeTab 模型解决；确需新增权限时在 `docs/requirements.md` NFR-3 处补充理由
 6. **显式错误**：任何失败路径必须有用户可感知的提示（弹窗状态栏 / 页面 Toast / 系统通知），禁止静默 catch
@@ -32,22 +32,27 @@ Edge/Chrome 浏览器扩展（Manifest V3），网页 → Markdown 转换。无�
 
 ## 4. 验证清单
 
-提交前按 `docs/design.md` 第 8 节执行手动测试。语法快速校验（可选）：
+提交前按 `docs/design.md` 第 8 节执行手动测试。一键校验与打包（会失败退出非零）：
 
 ```powershell
-node --check background.js
-node --check content/content.js
-node --check popup/popup.js
-node --check lib/markdown-convert.js
+python tools/package.py
 ```
 
-## 5. 已知限制
+## 5. 发布流程
+
+1. 完成功能修改，更新文档与 CHANGELOG，提交并推送 main
+2. 本地 `python tools/package.py` 验证通过
+3. 打标签并推送：`git tag web-markdown-ext-v<X.Y.Z>` → `git push origin web-markdown-ext-v<X.Y.Z>`
+4. GitHub Actions 自动执行：GitVersion 校验标签 → 打包 → 创建 GitHub Release（zip + SHA256SUMS.txt）
+5. 注意：manifest.json 的 `version` 由 CI 在发布时写入，本地保持与上一个发布版一致即可
+
+## 6. 已知限制
 
 - 选区转换基于 `window.getSelection()`，不支持跨 iframe 选区
 - 部分站点（强 CSP 或 Shadow DOM 封装组件）Readability 提取效果可能不佳，引导用户改用选区转换
 - 图片仅保留 URL，不做本地化下载（设计决策，见 design.md 第 5 节）
 
-## 6. 第三方库版本
+## 7. 第三方库版本
 
 | 库 | 版本 | 来源 |
 |---|---|---|

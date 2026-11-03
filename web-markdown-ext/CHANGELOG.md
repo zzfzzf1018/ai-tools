@@ -15,3 +15,7 @@ Git 标签格式：`web-markdown-ext-<版本号>`。
 - 转换结果自动附加元信息头（标题、来源 URL、抓取时间）
 - 显式错误提示：弹窗状态栏与页面 Toast（正文提取失败、无选区、受限页面等场景）
 - 项目文档：需求文档、设计文档、AI 开发指南、README
+- GitVersion 版本控制（tag-prefix `web-markdown-ext-v`，dotnet 工具清单固定 6.3.0）
+- `tools/package.py` 一键打包：node 语法检查 + manifest/图标/运行时文件校验 + zip 产物回读校验
+- `scripts/versioning.py`：GitVersion 计算、版本写入 manifest、发布资产准备（zip + SHA256SUMS）
+- GitHub Actions 自动发布：main/PR 校验，`web-markdown-ext-v*` 标签触发打包并创建 GitHub Release
