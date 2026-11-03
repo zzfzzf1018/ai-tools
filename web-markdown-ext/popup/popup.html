@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Web to Markdown</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <h1>Web &rarr; Markdown</h1>
+    <span id="word-count" class="word-count"></span>
+  </header>
+
+  <div class="actions">
+    <button id="btn-article" class="primary" title="提取页面正文并转换">转换正文</button>
+    <button id="btn-selection" title="转换鼠标选中的内容">转换选区</button>
+  </div>
+
+  <div id="status" class="status hidden"></div>
+
+  <textarea id="output" placeholder="点击上方按钮开始转换&#10;转换后可编辑、手动选择复制" spellcheck="false"></textarea>
+
+  <div class="actions">
+    <button id="btn-copy" disabled>复制</button>
+    <button id="btn-download" disabled>下载 .md</button>
+  </div>
+
+  <script src="../lib/turndown.js"></script>
+  <script src="../lib/turndown-plugin-gfm.js"></script>
+  <script src="../lib/markdown-convert.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
