@@ -51,6 +51,7 @@ python tools/package.py
 - 选区转换基于 `window.getSelection()`，不支持跨 iframe 选区
 - 部分站点（强 CSP 或 Shadow DOM 封装组件）Readability 提取效果可能不佳，引导用户改用选区转换
 - 图片仅保留 URL，不做本地化下载（设计决策，见 design.md 第 5 节）
+- **GITHUB_TOKEN 偶发 403**：v0.1.1 发布时 publish job 的 `gh release create` 遭 `HTTP 403 Resource not accessible by integration`（token 权限显示 Contents: write，重跑 3 次均失败；同仓其他项目同结构 workflow 正常）。若再遇到：下载 workflow 产出的 release-assets artifact，校验 SHA256SUMS 后用个人 token 调 API 创建 Release 并上传资产（tag、target_commitish、标题、RELEASE_NOTES.md 作为 body，资产为 zip + SHA256SUMS.txt + release.json）
 
 ## 7. 第三方库版本
 
