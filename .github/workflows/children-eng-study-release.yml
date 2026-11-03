@@ -75,19 +75,19 @@ jobs:
           Write-Output "Building Kids English Wonderland $version"
       - run: npm ci --no-audit --no-fund
       - run: npm run package
-      - name: Package desktop and web downloads
+      - name: Collect portable exe and web zip
         env:
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           New-Item -ItemType Directory -Path release-assets -Force | Out-Null
-          $out = "dist/Kids English Wonderland-win32-x64"
-          if (-not (Test-Path "$out/Kids English Wonderland.exe")) {
-            throw "Packaged executable not found"
-          }
 
-          # 桌面版：exe 所在文件夹整体压缩（Electron 运行时依赖无法单文件运行）
-          $desktopZip = "release-assets/Kids-English-Wonderland-$env:RELEASE_VERSION-desktop-windows-x64.zip"
-          Compress-Archive -Path "$out/*" -DestinationPath $desktopZip -CompressionLevel Optimal
+          # 桌面版：electron-builder 产出的单文件便携 exe
+          $portable = Get-ChildItem "release" -Filter "Kids-English-Wonderland-$env:RELEASE_VERSION-*-portable.exe" |
+            Select-Object -First 1
+          if (-not $portable) {
+            throw "Portable executable not found in release/"
+          }
+          Copy-Item $portable.FullName -Destination "release-assets/$($portable.Name)"
 
           # Web 版：仅收录纯前端文件，可用浏览器直接打开
           $webDir = "release-assets/web-temp"
@@ -99,7 +99,7 @@ jobs:
           Remove-Item $webDir -Recurse -Force
 
           $lines = @(
-            "$((Get-FileHash $desktopZip -Algorithm SHA256).Hash.ToLower())  $(Split-Path $desktopZip -Leaf)",
+            "$((Get-FileHash $portable.FullName -Algorithm SHA256).Hash.ToLower())  $($portable.Name)",
             "$((Get-FileHash $webZip -Algorithm SHA256).Hash.ToLower())  $(Split-Path $webZip -Leaf)"
           )
           $lines | Out-File -FilePath "release-assets/SHA256SUMS.txt" -Encoding ascii
@@ -143,5 +143,5 @@ jobs:
             --target "$RELEASE_SHA" \
             --draft \
             --title "Kids English Wonderland $RELEASE_VERSION" \
-            --notes $'Desktop (Windows x64): download the desktop ZIP, extract it and run Kids English Wonderland.exe. The whole folder is required; the exe cannot run alone.\nWeb version: download the web ZIP, extract it and open index.html in a browser; no installation needed.\nUnsigned build: Windows may warn about an unknown publisher; check SHA256SUMS.txt before running.\nSpeech uses the English voices installed in Windows; learning progress and window state stay on the device.'
+            --notes $'Desktop (Windows x64): download the single portable .exe and run it directly; it unpacks to a temp folder on first launch and needs no installation.\nWeb version: download the web ZIP, extract it and open index.html in a browser; no installation needed.\nUnsigned build: Windows may warn about an unknown publisher; check SHA256SUMS.txt before running.\nSpeech uses the English voices installed in Windows; learning progress and window state stay on the device.'
           gh release edit "$RELEASE_TAG" --draft=false --latest

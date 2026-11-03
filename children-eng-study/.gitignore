@@ -14,6 +14,7 @@ package-lock.json.bak
 
 # 桌面打包产物
 dist/
+release/
 release-assets/
 
 # 系统文件

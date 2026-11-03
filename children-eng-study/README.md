@@ -66,15 +66,14 @@ python -m http.server 8080
 
 ### 方式三：Windows 桌面版（Electron）
 
-从 Release 下载 `Kids-English-Wonderland-*-desktop-windows-x64.zip`，解压整个文件夹后双击
-`Kids English Wonderland.exe` 即可使用，无需安装、无需浏览器（exe 依赖同目录运行时文件，不能单独拷出）。
+从 Release 下载 `Kids-English-Wonderland-*-portable.exe`，双击即可使用；首次启动会解压到临时目录，无需安装、无需浏览器。
 
 自行打包：
 
 ```bash
 npm install
 npm run desktop     # 开发模式启动
-npm run package     # 生成 dist/Kids English Wonderland-win32-x64/
+npm run package     # 生成 release/Kids-English-Wonderland-<version>-x64-portable.exe
 ```
 
 ### 自动发布（GitHub Actions）
@@ -98,11 +97,11 @@ git tag -a children-eng-study-v1.0.2 -m "children-eng-study v1.0.2"
 git push origin children-eng-study-v1.0.2
 ```
 
-产物（两个独立压缩包 + 校验文件）：
+产物（两个独立文件 + 校验文件）：
 
-- `Kids-English-Wonderland-<version>-desktop-windows-x64.zip` — 桌面版，解压后运行 exe
+- `Kids-English-Wonderland-<version>-x64-portable.exe` — 桌面版单文件便携 exe，双击运行
 - `Kids-English-Wonderland-<version>-web.zip` — Web 版，解压后用浏览器打开 `index.html`
-- `SHA256SUMS.txt` — 两个包的 SHA256 校验值
+- `SHA256SUMS.txt` — 两个文件的 SHA256 校验值
 
 
 ## 💡 使用说明
@@ -135,7 +134,7 @@ git push origin children-eng-study-v1.0.2
 - **原生 JavaScript (ES6+)** — 模块化组织（`const` / 模板字符串 / Promise）
 - **Web Speech API** — `speechSynthesis` 语音合成
 - **localStorage** — 进度持久化
-- **Electron 45 + @electron/packager** — Windows 桌面便携版打包
+- **Electron 45 + electron-builder** — Windows 单文件便携版打包
 
 ## 📝 数据说明
 
@@ -148,6 +147,10 @@ MIT
 ---
 
 ## 📌 版本记录
+
+### v1.0.4 (2026-11-03)
+- 🖥️ 桌面版改为单文件便携 exe（electron-builder portable），双击即用，无需解压
+- 📦 Release 产物：便携 exe + Web 版 zip
 
 ### v1.0.3 (2026-11-03)
 - 📦 Release 产物拆分为桌面版 zip 与 Web 版 zip 两个独立下载
