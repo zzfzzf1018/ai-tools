@@ -45,8 +45,95 @@ chrome.commands.onCommand.addListener((command) => {
 let ruleWriteQueue = Promise.resolve();
 let stateWriteQueue = Promise.resolve();
 
-const ALL_KEYS = ['rules', 'masterEnabled', 'pausedSites'];
+/* 存储设计
+ *
+ * 双写：所有业务键同时存在 chrome.storage.local 和 chrome.storage.sync。
+ *       sync 数据会随 Chrome/Edge 账号自动上云，卸载扩展后重装会从云端自动拉回。
+ *       local 仍然是主读路径（快），local 为空时 fallback 到 sync（重装后第一次启动就是这个场景）。
+ *       未登录 / 断网 / sync 配额超限 → sync 写入静默降级，local 不受影响。
+ *
+ * 隐藏键 __autoBackup_v1（还原前自动备份）不进 sync——它是一次性撤销用的，不需要跨设备同步。
+ *
+ * 业务键只有三个：
+ */
+const BLK_KEYS = ['rules', 'masterEnabled', 'pausedSites'];
 const AUTO_BACKUP_KEY = '__autoBackup_v1';
+
+/* ---------- 存储工具（local + sync 双写封装） ---------- */
+
+function localGet(keys) {
+  return new Promise((resolve) => chrome.storage.local.get(keys, resolve));
+}
+function localSet(data) {
+  return new Promise((resolve) => chrome.storage.local.set(data, resolve));
+}
+function localRemove(keys) {
+  return new Promise((resolve) => chrome.storage.local.remove(keys, resolve));
+}
+function syncGet(keys) {
+  return new Promise((resolve) => chrome.storage.sync.get(keys, resolve));
+}
+function syncSet(data) {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.sync.set(data, () => {
+        resolve(!chrome.runtime.lastError);
+      });
+    } catch { resolve(false); }
+  });
+}
+function syncRemove(keys) {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.sync.remove(keys, () => resolve(!chrome.runtime.lastError));
+    } catch { resolve(false); }
+  });
+}
+
+// local 优先读，local 没有则 fallback sync 拉回（卸载重装后首次启动走这里）
+async function getPersisted(keys) {
+  const localRes = await localGet(keys);
+  const result = {};
+  let needPull = [];
+  (Array.isArray(keys) ? keys : [keys]).forEach((k) => {
+    if (localRes && Object.prototype.hasOwnProperty.call(localRes, k)) {
+      result[k] = localRes[k];
+    } else {
+      needPull.push(k);
+    }
+  });
+  if (needPull.length) {
+    const syncRes = await syncGet(needPull);
+    const merged = {};
+    let pullOne = false;
+    needPull.forEach((k) => {
+      if (syncRes && Object.prototype.hasOwnProperty.call(syncRes, k)) {
+        result[k] = syncRes[k];
+        merged[k] = syncRes[k];
+        pullOne = true;
+      }
+    });
+    if (pullOne) await localSet(merged); // 同步回 local，后续读就快了
+  }
+  return result;
+}
+
+// 写 local，同时镜像写 sync（sync 失败静默降级）
+async function setPersisted(data) {
+  await localSet(data);
+  const syncData = {};
+  Object.keys(data).forEach((k) => { if (BLK_KEYS.includes(k)) syncData[k] = data[k]; });
+  if (Object.keys(syncData).length) {
+    await syncSet(syncData); // 返回 boolean 表示 sync 成功与否，不影响主流程
+  }
+}
+
+// 删 local，同时镜像删 sync
+async function removePersisted(keys) {
+  await localRemove(keys);
+  const syncKeys = keys.filter((k) => BLK_KEYS.includes(k));
+  if (syncKeys.length) await syncRemove(syncKeys);
+}
 
 function mutateRules(op) {
   const run = ruleWriteQueue.then(() => applyRuleOp(op || {}));
@@ -58,32 +145,34 @@ function mutateRules(op) {
 }
 
 function applyRuleOp(op) {
-  return new Promise((resolve) => {
-    chrome.storage.local.get({ rules: [] }, (saved) => {
-      let rules = saved && Array.isArray(saved.rules) ? saved.rules : [];
-      let changed = 0;
-      if (op.kind === 'add' && op.rule) {
-        rules = rules.concat([op.rule]);
-        changed = 1;
-      } else if (op.kind === 'addMany' && Array.isArray(op.rules)) {
-        const known = new Set(rules.map((r) => r && r.id));
-        const fresh = op.rules.filter((r) => r && r.id && !known.has(r.id));
-        rules = rules.concat(fresh);
-        changed = fresh.length;
-      } else if (op.kind === 'update' && op.id && op.patch) {
-        rules = rules.map((r) => (r && r.id === op.id ? Object.assign({}, r, op.patch) : r));
-        changed = 1;
-      } else if (op.kind === 'remove') {
-        const before = rules.length;
-        rules = rules.filter((r) => !r || r.id !== op.id);
-        changed = before - rules.length;
-      } else if (op.kind === 'removeHost') {
-        const before = rules.length;
-        rules = rules.filter((r) => !r || r.host !== op.host);
-        changed = before - rules.length;
-      }
-      chrome.storage.local.set({ rules: rules }, () => resolve({ rules: rules, changed: changed }));
-    });
+  return getPersisted(['rules']).then((saved) => {
+    let rules = saved.rules && Array.isArray(saved.rules) ? saved.rules : [];
+    let changed = 0;
+    if (op.kind === 'add' && op.rule) {
+      // 新规则默认启用，兼容旧代码点选时没填 enabled 的情况
+      if (op.rule.enabled === undefined) op.rule.enabled = true;
+      rules = rules.concat([op.rule]);
+      changed = 1;
+    } else if (op.kind === 'addMany' && Array.isArray(op.rules)) {
+      const known = new Set(rules.map((r) => r && r.id));
+      const fresh = op.rules
+        .filter((r) => r && r.id && !known.has(r.id))
+        .map((r) => (r.enabled === undefined ? Object.assign({}, r, { enabled: true }) : r));
+      rules = rules.concat(fresh);
+      changed = fresh.length;
+    } else if (op.kind === 'update' && op.id && op.patch) {
+      rules = rules.map((r) => (r && r.id === op.id ? Object.assign({}, r, op.patch) : r));
+      changed = 1;
+    } else if (op.kind === 'remove') {
+      const before = rules.length;
+      rules = rules.filter((r) => !r || r.id !== op.id);
+      changed = before - rules.length;
+    } else if (op.kind === 'removeHost') {
+      const before = rules.length;
+      rules = rules.filter((r) => !r || r.host !== op.host);
+      changed = before - rules.length;
+    }
+    return setPersisted({ rules: rules }).then(() => ({ rules: rules, changed: changed }));
   });
 }
 
@@ -95,20 +184,12 @@ function applyRuleOp(op) {
  *       导致数据全无。
  */
 function exportBackup() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(null, (all) => {
-      const snap = {};
-      ALL_KEYS.forEach((k) => {
-        if (k in all) snap[k] = all[k];
-      });
-      resolve({
-        format: 'web-blocker-backup',
-        version: 1,
-        createdAt: new Date().toISOString(),
-        data: snap,
-      });
-    });
-  });
+  return getPersisted(BLK_KEYS).then((snap) => ({
+    format: 'web-blocker-backup',
+    version: 1,
+    createdAt: new Date().toISOString(),
+    data: snap,
+  }));
 }
 
 function importBackup(payload) {
@@ -117,52 +198,43 @@ function importBackup(payload) {
   return run;
 }
 
-function doImport(payload) {
-  return new Promise((resolve, reject) => {
-    if (!payload || !payload.data || typeof payload.data !== 'object') {
-      reject(new Error('备份文件缺少 data 字段'));
-      return;
-    }
-    // 还原前自动备份，留一条后悔路
-    chrome.storage.local.get(null, (before) => {
-      const autoSnap = { format: 'web-blocker-rollback', createdAt: new Date().toISOString(), data: {} };
-      ALL_KEYS.forEach((k) => { if (k in before) autoSnap.data[k] = before[k]; });
-      const setData = { [AUTO_BACKUP_KEY]: autoSnap };
-      ALL_KEYS.forEach((k) => { if (k in payload.data) setData[k] = payload.data[k]; });
-      chrome.storage.local.set(setData, () => {
-        // 清掉用户可能残留的旧 autoBackup，只保留最新一份
-        chrome.storage.local.remove(['__autoBackup_v0'], () => {
-          const snap = {};
-          ALL_KEYS.forEach((k) => { if (k in payload.data) snap[k] = payload.data[k]; });
-          // 回填默认值，避免某些键缺失时 content 拿到 undefined
-          chrome.storage.local.get({ masterEnabled: true, rules: [], pausedSites: [] }, (final) => {
-            resolve({
-              ok: true,
-              restoredKeys: ALL_KEYS.filter((k) => k in payload.data),
-              preRestoreBackup: { createdAt: autoSnap.createdAt, rollbackKey: AUTO_BACKUP_KEY },
-              rulesCount: (final.rules || []).length,
-              pausedSitesCount: (final.pausedSites || []).length,
-              masterEnabled: final.masterEnabled !== false,
-            });
-          });
-        });
-      });
-    });
-  });
+async function doImport(payload) {
+  if (!payload || !payload.data || typeof payload.data !== 'object') {
+    throw new Error('备份文件缺少 data 字段');
+  }
+  // 还原前自动备份，留一条后悔路（autoBackup 是 local-only，不进 sync）
+  const before = await localGet(null);
+  const autoSnap = { format: 'web-blocker-rollback', createdAt: new Date().toISOString(), data: {} };
+  BLK_KEYS.forEach((k) => { if (k in before) autoSnap.data[k] = before[k]; });
+  await localSet({ [AUTO_BACKUP_KEY]: autoSnap });
+  await localRemove(['__autoBackup_v0']); // 清掉旧残留
+
+  // 写业务键 → setPersisted 会同时写 local + sync
+  const setData = {};
+  BLK_KEYS.forEach((k) => { if (k in payload.data) setData[k] = payload.data[k]; });
+  if (Object.keys(setData).length) await setPersisted(setData);
+
+  const final = await getPersisted(['masterEnabled', 'rules', 'pausedSites']);
+  return {
+    ok: true,
+    restoredKeys: BLK_KEYS.filter((k) => k in payload.data),
+    preRestoreBackup: { createdAt: autoSnap.createdAt, rollbackKey: AUTO_BACKUP_KEY },
+    rulesCount: (final.rules || []).length,
+    pausedSitesCount: (final.pausedSites || []).length,
+    masterEnabled: final.masterEnabled !== false,
+  };
 }
 
-function rollbackBackup() {
-  return new Promise((resolve, reject) => {
-    chrome.storage.local.get(AUTO_BACKUP_KEY, (snap) => {
-      if (!snap[AUTO_BACKUP_KEY]) { reject(new Error('没有可撤销的还原')); return; }
-      const data = snap[AUTO_BACKUP_KEY].data || {};
-      const setData = {};
-      ALL_KEYS.forEach((k) => { if (k in data) setData[k] = data[k]; });
-      chrome.storage.local.set(setData, () => {
-        chrome.storage.local.remove([AUTO_BACKUP_KEY], () => resolve({ ok: true, rolledBackKeys: Object.keys(data) }));
-      });
-    });
-  });
+async function rollbackBackup() {
+  const snap = await localGet(AUTO_BACKUP_KEY);
+  const s = snap[AUTO_BACKUP_KEY];
+  if (!s) throw new Error('没有可撤销的还原');
+  const data = s.data || {};
+  const setData = {};
+  BLK_KEYS.forEach((k) => { if (k in data) setData[k] = data[k]; });
+  await setPersisted(setData);
+  await localRemove([AUTO_BACKUP_KEY]);
+  return { ok: true, rolledBackKeys: Object.keys(data) };
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -199,10 +271,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg && msg.type === 'blk:backup:hasAuto') {
-    chrome.storage.local.get(AUTO_BACKUP_KEY, (snap) => {
+    localGet(AUTO_BACKUP_KEY).then((snap) => {
       const s = snap[AUTO_BACKUP_KEY];
       sendResponse({ ok: true, has: !!s, createdAt: s && s.createdAt });
     });
+    return true;
+  }
+  if (msg && msg.type === 'blk:state:get') {
+    getPersisted(BLK_KEYS).then((state) => sendResponse({ ok: true, state }));
+    return true;
+  }
+  if (msg && msg.type === 'blk:state:setMaster') {
+    setPersisted({ masterEnabled: !!msg.value }).then(() => sendResponse({ ok: true }));
     return true;
   }
 });

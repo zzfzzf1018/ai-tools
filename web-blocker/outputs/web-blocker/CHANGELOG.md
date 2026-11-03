@@ -2,6 +2,29 @@
 
 遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.4.6] - 2026-11-03
+
+### 新增
+
+- **自动云端同步（卸载重装规则不丢）**：所有业务存储键（`rules` / `masterEnabled` / `pausedSites`）同时双写 `chrome.storage.local` 和 `chrome.storage.sync`。只要浏览器登录了账号（Chrome / Edge 默认都登录），sync 数据自动上云。**卸载扩展后重装**，Chrome 会自动从云端拉回 sync 数据——之前手动备份都不需要了。不同电脑登录同一账号还能自动同步规则。
+  - 读路径：local 优先（快），local 为空时自动 fallback sync 拉回并写回 local 缓存
+  - 写路径：每次写 local 后并行写 sync，未登录 / 断网 / 配额超 → sync 静默降级，local 不受影响
+  - 隐藏键 `__autoBackup_v1`（还原前自动备份）是 local-only，不进 sync
+  - onChanged 监听去抖：sync 和 local 双写会触发两次回调，加了 100ms 去抖避免重复 apply
+- **单条规则开关**（1.4.x 已在 UI 层实现，本次补齐后端一致性）：新增规则默认 `enabled: true`，旧规则没有 `enabled` 字段时视为启用。禁用的规则在 content.js 中自动跳过不生效，但保留在列表里可随时重新启用。
+
+### 技术重构
+
+- background.js 新增统一存储封装：`getPersisted()` / `setPersisted()` / `removePersisted()` —— 所有业务读写都走这三个函数，local/sync 双写逻辑集中一处
+- popup.js 删除全部 direct `chrome.storage.local` 调用，统一通过 background 消息 `blk:state:get` / `blk:state:setMaster` 通信
+- 新增 background 消息：`blk:state:get`（读完整 state）、`blk:state:setMaster`（写全局开关）
+- 全项目 raw `chrome.storage.local/sync` 调用从 11+ 处收敛到 background.js 的 6 个封装函数 + content.js 降级路径
+
+### BUG 修复（本轮 review 发现）
+
+- **pausedSites 写入遗漏 sync**：content.js `blk:toggleSite` 和 `blk:setSitePaused` 两个暂停站点的写路径之前只写 `storage.local`，没有镜像写 sync。用户暂停站点后卸载重装，暂停列表会丢失。现已补双写。
+- **sync 不可用时的崩溃**：content.js `readStorage` 的 sync fallback 没有处理 `chrome.runtime.lastError`（未登录、企业策略禁用 sync 时回调里有 lastError），会导致拿到 undefined。background.js 的 `syncSet`/`syncRemove` 同样缺 try-catch。现已全加防御。
+
 ## [1.4.5] - 2026-11-03
 
 ### 新增

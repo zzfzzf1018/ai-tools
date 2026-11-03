@@ -16,13 +16,14 @@
   if (window.__blkLoaded) return;
   window.__blkLoaded = true;
 
-  const VERSION = '1.4.5';
+  const VERSION = '1.4.6';
   const ATTR = 'data-blk';
   const STYLE_ID = 'blk-injected-style';
   const TOAST_ID = 'blk-toast';
   const DEFAULTS = { masterEnabled: true, rules: [], pausedSites: [] };
 
   const STORAGE = chrome.storage && chrome.storage.local ? chrome.storage.local : null;
+  const SYNC = chrome.storage && chrome.storage.sync ? chrome.storage.sync : null;
 
   let state = { masterEnabled: true, rules: [], pausedSites: [] };
   let tabPaused = false; // 只影响当前这份文档，刷新即恢复
@@ -860,7 +861,11 @@
       const rules = (saved && saved.rules) || [];
       rules.push(rule);
       state.rules = rules;
-      STORAGE.set({ rules: rules }, () => then());
+      STORAGE.set({ rules: rules }, () => {
+        // 降级路径也镜像写 sync（静默降级）
+        if (SYNC) SYNC.set({ rules: rules }, () => {});
+        then();
+      });
     });
   }
 
@@ -871,12 +876,47 @@
       if (!STORAGE) return resolve(state);
       try {
         STORAGE.get(DEFAULTS, (saved) => {
-          const s = Object.assign({}, DEFAULTS, saved || {});
-          resolve({
-            masterEnabled: s.masterEnabled !== false,
-            rules: Array.isArray(s.rules) ? s.rules : [],
-            pausedSites: Array.isArray(s.pausedSites) ? s.pausedSites : [],
-          });
+          const localHas = saved && ('rules' in saved || 'masterEnabled' in saved || 'pausedSites' in saved);
+          if (localHas || !SYNC) {
+            const s = Object.assign({}, DEFAULTS, saved || {});
+            resolve({
+              masterEnabled: s.masterEnabled !== false,
+              rules: Array.isArray(s.rules) ? s.rules : [],
+              pausedSites: Array.isArray(s.pausedSites) ? s.pausedSites : [],
+            });
+            return;
+          }
+          // local 空的 —— 卸载重装后首次启动，尝试从 sync 拉回
+          try {
+            SYNC.get(DEFAULTS, (synced) => {
+              if (chrome.runtime.lastError) {
+                // sync 不可用（未登录 / 企业策略禁用），用默认值
+                const s = Object.assign({}, DEFAULTS, saved || {});
+                resolve({
+                  masterEnabled: s.masterEnabled !== false,
+                  rules: Array.isArray(s.rules) ? s.rules : [],
+                  pausedSites: Array.isArray(s.pausedSites) ? s.pausedSites : [],
+                });
+                return;
+              }
+              const s = Object.assign({}, DEFAULTS, synced || {});
+              // 拉回后立即同步回 local，后续读就快了
+              try { STORAGE.set(s, () => {}); } catch {}
+              resolve({
+                masterEnabled: s.masterEnabled !== false,
+                rules: Array.isArray(s.rules) ? s.rules : [],
+                pausedSites: Array.isArray(s.pausedSites) ? s.pausedSites : [],
+              });
+            });
+          } catch (e) {
+            // sync API 调用本身抛异常（极端环境），用默认值
+            const s = Object.assign({}, DEFAULTS, saved || {});
+            resolve({
+              masterEnabled: s.masterEnabled !== false,
+              rules: Array.isArray(s.rules) ? s.rules : [],
+              pausedSites: Array.isArray(s.pausedSites) ? s.pausedSites : [],
+            });
+          }
         });
       } catch (err) {
         resolve(state);
@@ -891,9 +931,14 @@
   });
 
   if (chrome.storage && chrome.storage.onChanged) {
+    let lastChangedAt = 0;
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area && area !== 'local') return;
+      if (area && area !== 'local' && area !== 'sync') return;
       if (!changes.rules && !changes.masterEnabled && !changes.pausedSites) return;
+      // sync 和 local 都会触发（双写），做个简单去抖避免重复 apply
+      const now = Date.now();
+      if (now - lastChangedAt < 100) return;
+      lastChangedAt = now;
       readStorage().then((loaded) => {
         state = loaded;
         schedule(true);
@@ -944,7 +989,10 @@
       if (i >= 0) list.splice(i, 1);
       else list.push(host);
       state.pausedSites = list;
-      if (STORAGE) STORAGE.set({ pausedSites: list });
+      if (STORAGE) {
+        STORAGE.set({ pausedSites: list });
+        if (SYNC) SYNC.set({ pausedSites: list }, () => {});
+      }
       apply();
       toast(
         list.indexOf(host) >= 0
@@ -965,7 +1013,10 @@
       if (msg.paused && i === -1) list.push(host);
       if (!msg.paused && i >= 0) list.splice(i, 1);
       state.pausedSites = list;
-      if (STORAGE) STORAGE.set({ pausedSites: list });
+      if (STORAGE) {
+        STORAGE.set({ pausedSites: list });
+        if (SYNC) SYNC.set({ pausedSites: list }, () => {});
+      }
       apply();
       sendResponse({ ok: true, pausedSites: list, sitePaused: isSitePaused(location.hostname) });
     } else if (msg.type === 'blk:apply') {

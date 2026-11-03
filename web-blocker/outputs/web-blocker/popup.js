@@ -146,13 +146,22 @@ function sortRules() {
   rules.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
 
-/* 初始化 */
-chrome.storage.local.get({ masterEnabled: true, rules: [] }, (saved) => {
-  rules = Array.isArray(saved.rules) ? saved.rules : [];
-  sortRules();
-  $('master').checked = saved.masterEnabled !== false;
-  render();
-});
+/* 初始化 —— 通过 background 统一读取（local 优先，重装后自动 fallback sync） */
+function loadState(then) {
+  chrome.runtime.sendMessage({ type: 'blk:state:get' }, (res) => {
+    if (chrome.runtime.lastError || !res || !res.ok) {
+      setStatus('读取设置失败：' + ((chrome.runtime.lastError && chrome.runtime.lastError.message) || (res && res.error) || '后台无响应'), 'err');
+      return;
+    }
+    const s = res.state || {};
+    rules = Array.isArray(s.rules) ? s.rules : [];
+    sortRules();
+    $('master').checked = s.masterEnabled !== false;
+    render();
+    if (then) then(s);
+  });
+}
+loadState();
 
 function renderPause() {
   const el = $('pauseState');
@@ -218,7 +227,8 @@ $('pauseSite').addEventListener('click', async () => {
 });
 
 $('master').addEventListener('change', (e) => {
-  chrome.storage.local.set({ masterEnabled: e.target.checked }, () => {
+  chrome.runtime.sendMessage({ type: 'blk:state:setMaster', value: e.target.checked }, () => {
+    // 发消息给 background，它会同时写 local + sync
     setStatus(e.target.checked ? '已全局启用' : '已全局停用，页面恢复原样');
   });
 });
@@ -303,13 +313,8 @@ $('clearSite').addEventListener('click', () => {
 /* ---------------- 完整备份 / 还原 ---------------- */
 
 function reloadAfterBackup() {
-  // 重新从 storage 拉一遍，保证 masterEnabled / rules 与还原结果一致
-  chrome.storage.local.get({ masterEnabled: true, rules: [] }, (saved) => {
-    rules = Array.isArray(saved.rules) ? saved.rules : [];
-    sortRules();
-    $('master').checked = saved.masterEnabled !== false;
-    render();
-  });
+  // 重新通过 background 拉 state，保证 local / sync 都同步过了
+  loadState();
   // 让 content script 重新应用规则（可能切换了 masterEnabled 或加了规则）
   activeTab().then(([tab]) => tab && send(tab.id, { type: 'blk:apply' }).catch(() => {}));
   refreshRollbackButton();
