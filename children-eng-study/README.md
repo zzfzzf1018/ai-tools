@@ -3,7 +3,7 @@
 > 面向上海小学一至五年级的趣味英语学习应用
 > 图文结合 · 标准发音 · 四个小游戏 · 成就激励 · 单文件 Windows 便携版
 
-**当前稳定版：v1.0.6** ・ 仓库：https://github.com/zzfzzf1018/ai-tools/tree/main/children-eng-study ・ 发布：https://github.com/zzfzzf1018/ai-tools/releases
+**当前稳定版：v1.0.7** ・ 仓库：https://github.com/zzfzzf1018/ai-tools/tree/main/children-eng-study ・ 发布：https://github.com/zzfzzf1018/ai-tools/releases
 
 ---
 
@@ -24,16 +24,16 @@
 
 ## 📦 下载安装（推荐普通用户使用）
 
-前往 [Releases](https://github.com/zzfzzf1018/ai-tools/releases/tag/children-eng-study-v1.0.6) 选择你需要的形态：
+前往 [Releases](https://github.com/zzfzzf1018/ai-tools/releases/tag/children-eng-study-v1.0.7) 选择你需要的形态：
 
 | 形态 | 文件 | 大小 | 使用方式 |
 |------|------|------|----------|
-| 🖥️ **Windows 便携版** | `Kids-English-Wonderland-1.0.6-x64-portable.exe` | ~105 MB | 双击即用，无需安装、无需浏览器 |
-| 🌐 **Web 版** | `Kids-English-Wonderland-1.0.6-web.zip` | ~30 KB | 解压后用浏览器打开 `index.html` |
+| 🖥️ **Windows 便携版** | `Kids-English-Wonderland-1.0.7-x64-portable.exe` | ~105 MB | 双击即用，无需安装、无需浏览器 |
+| 🌐 **Web 版** | `Kids-English-Wonderland-1.0.7-web.zip` | ~30 KB | 解压后用浏览器打开 `index.html` |
 
 ### 桌面版使用说明
 
-1. 双击 `Kids-English-Wonderland-1.0.6-x64-portable.exe`
+1. 双击 `Kids-English-Wonderland-1.0.7-x64-portable.exe`
 2. 首次启动会解压到临时目录（约 30 秒），后续启动几乎瞬时
 3. 未签名：Windows 可能提示"未知发布者"，核对 `SHA256SUMS.txt` 中的校验值后可继续运行
 4. 学习数据保存在本机，不会上传任何服务器
@@ -164,8 +164,8 @@ git commit -m "feat(children-eng-study): <变更说明>"
 git push origin main
 
 # 3. 打 tag 推送，触发自动发布
-git tag -a children-eng-study-v1.0.6 -m "children-eng-study v1.0.6"
-git push origin children-eng-study-v1.0.6
+git tag -a children-eng-study-v1.0.7 -m "children-eng-study v1.0.7"
+git push origin children-eng-study-v1.0.7
 ```
 
 ### 版本号规则
@@ -197,7 +197,7 @@ MIT
 
 ## 📌 版本记录
 
-### v1.0.7 (2026-11-03) — 🚧 待发布
+### v1.0.7 (2026-11-03) — 🎯 当前稳定版
 - 🐛 修复单元完成奖励：最后一张卡片可点击「完成 ✓」，首次完成奖励 5 星，重复学习不再重复发星
 - 🐛 修复学习天数始终为 0、每日任务从不跨天重置
 - 🐛 修复游戏始终使用一年级词汇，改为跟随当前选择的年级
@@ -212,7 +212,7 @@ MIT
 - 🐛 修复移动端 `.game-options` 类名写错，听音选词仍为两列
 - 📝 内容修正：`living` → `living room`；`Spring` → `Spring Festival`；重复的「再见」改为「拜拜」
 
-### v1.0.6 (2026-11-03) — 当前稳定版
+### v1.0.6 (2026-11-03)
 - 🔧 CI 修复：发布步骤遇到 draft Release 时不再硬失败，改为补传资产并正式发布
 
 ### v1.0.5 (2026-11-03)
