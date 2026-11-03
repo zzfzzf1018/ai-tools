@@ -1,4 +1,4 @@
-# 网页屏蔽器（Edge / Chrome 扩展）v1.4.0
+# 网页屏蔽器（Edge / Chrome 扩展）v1.4.3
 
 点一下网页上任何区域 → 记住「这个站点 + 这个区域」→ 以后每次打开都自动屏蔽它，并**收回父级为它预留的空白**，其余内容自动补位。支持多条规则、整站或单页生效、批量屏蔽同类区域、快捷键暂停、隐藏或真删节点、规则导入导出。纯本地存储，不联网、不上传任何数据。
 
@@ -96,7 +96,7 @@
 
 1. `#id`
 2. `tag[data-xxx="值"]`（知乎、B 站等大量使用 `data-test-id`、`data-za-*`）
-3. 可读 class（`.AppAside`、`div.Card`）
+3. 可读 class（`.AppAside`、`div.Card`；含 `: /` 等特殊字符的 class 如 Tailwind 的 `sm:w-1/2` 会经 `CSS.escape` 转义后正常使用）
 4. 哈希 class 组合（`div.css-1a2b3c.css-4d5e6f`）——比结构路径抗重排
 5. 结构路径 `body > div:nth-child(2) > section:nth-child(1)`——最后兜底，改版最容易失效
 
@@ -120,7 +120,7 @@
 | 文件 | 作用 |
 | --- | --- |
 | `manifest.json` | MV3 清单，注入 http/https，声明两个快捷键，权限只有 `storage` + 主机访问 |
-| `background.js` | 接收快捷键命令转发给页面、维护图标上的 ⏸ 角标 |
+| `background.js` | 接收快捷键命令转发给页面、维护图标上的 ⏸ 角标、规则写入串行队列（防多标签页并发覆盖） |
 | `content.js` | 规则匹配与应用、点选拾取器、选择器生成、暂停状态、可逆还原 |
 | `popup.html` `popup.js` | 点选入口、暂停按钮、规则列表管理、导入导出 |
 | `icons/` | 捂眼小幽灵图标 16 / 32 / 48 / 128（透明底 PNG），另附 512 源图可做商店素材 |
@@ -135,7 +135,7 @@
 ```text
 web-blocker/
 ├── manifest.json          # 入口声明：注入范围、快捷键、图标
-├── background.js          # Service Worker：快捷键分发 + 角标
+├── background.js          # Service Worker：快捷键分发 + 角标 + 规则写入串行队列
 ├── content.js             # 核心逻辑（全部在这一个文件）
 ├── popup.html / popup.js  # 弹窗 UI
 ├── icons/                 # 各尺寸图标
@@ -159,7 +159,7 @@ web-blocker/
   cd web-blocker
   git init
   git add .
-  git commit -m "init: 网页屏蔽器 v1.4.0"
+  git commit -m "init: 网页屏蔽器 v1.4.3"
   ```
 
   `.gitignore` 已备好：编辑器目录、系统垃圾文件、`*.zip` 打包产物、`icons/preview-sizes.png` 预览图都不会进仓库，图标本体不受影响。

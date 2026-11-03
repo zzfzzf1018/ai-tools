@@ -16,10 +16,11 @@ const SRC = process.env.BLK_SRC || fileURLToPath(new URL('../content.js', import
 const camel = (k) => k.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 
 class Style {
-  constructor() { this.map = {}; }
-  setProperty(k, v) { this.map[k] = v; }
-  removeProperty(k) { delete this.map[k]; }
+  constructor() { this.map = {}; this.prio = {}; }
+  setProperty(k, v, p) { this.map[k] = v; this.prio[k] = p || ''; }
+  removeProperty(k) { delete this.map[k]; delete this.prio[k]; }
   getPropertyValue(k) { return this.map[k] || ''; }
+  getPropertyPriority(k) { return this.prio[k] || ''; }
 }
 
 class El {
@@ -103,17 +104,21 @@ class El {
   }
 }
 
+/* 选择器 ident 允许转义序列（\.:、\/ 等），与 content.js 的 CSS.escape 对应 */
+const IDENT = '(?:\\\\.|[\\w-])';
+const PART_RE = new RegExp('[#.]' + IDENT + '+|\\[[^\\]]+\\]|:nth-child\\(\\d+\\)', 'g');
+
 function matchSimple(el, rawSel) {
   const sel = rawSel.trim();
   if (sel === '*') return true;
-  if (!/^([a-zA-Z][\w-]*)?(?:[#.][\w-]+|\[[^\]]+\]|:nth-child\(\d+\))*$/.test(sel)) {
+  if (!new RegExp('^([a-zA-Z][\\w-]*)?(?:[#.]' + IDENT + '+|\\[[^\\]]+\\]|:nth-child\\(\\d+\\))*$').test(sel)) {
     throw new Error('harness 不支持的选择器: ' + sel);
   }
   const tagPart = sel.match(/^([a-zA-Z][\w-]*)?/)[1];
   if (tagPart && el.tagName !== tagPart.toUpperCase()) return false;
-  for (const p of sel.match(/[#.][\w-]+|\[[^\]]+\]|:nth-child\(\d+\)/g) || []) {
-    if (p.startsWith('#')) { if (el.id !== p.slice(1)) return false; }
-    else if (p.startsWith('.')) { if (!(' ' + el.className + ' ').includes(' ' + p.slice(1) + ' ')) return false; }
+  for (const p of sel.match(PART_RE) || []) {
+    if (p.startsWith('#')) { if (el.id !== p.slice(1).replace(/\\(.)/g, '$1')) return false; }
+    else if (p.startsWith('.')) { if (!(' ' + el.className + ' ').includes(' ' + p.slice(1).replace(/\\(.)/g, '$1') + ' ')) return false; }
     else if (p.startsWith(':')) {
       const idx = Number(p.match(/\d+/)[0]);
       const parent = el.parentElement;
@@ -175,6 +180,7 @@ const location = { hostname: 'example.com', origin: 'https://example.com', pathn
 const storageData = { rules: [], masterEnabled: true };
 const listeners = { onChanged: [], onMessage: null };
 let moCount = 0;
+let moCallback = null; // 捕获 content 挂的 MutationObserver 回调，测试手动触发
 const sentToBackground = [];
 
 const doc = {
@@ -202,13 +208,13 @@ function fireDoc(type, ev = {}) {
 const sandbox = {
   console, setTimeout, clearTimeout, setInterval: () => 0,
   Node: { DOCUMENT_FRAGMENT_NODE: 11 },
-  CSS: { escape: (s) => s },
+  CSS: { escape: (s) => String(s).replace(/[^a-zA-Z0-9_-]/g, (ch) => '\\' + ch) }, // 近似真实 CSS.escape，与 matchSimple 的反转义配套
   getComputedStyle: (el) => {
     const cs = Object.assign({}, el._cs);
     for (const [k, v] of Object.entries(el.style.map)) cs[camel(k)] = v;
     return cs;
   },
-  MutationObserver: class { constructor() { moCount++; } observe() {} disconnect() {} },
+  MutationObserver: class { constructor(cb) { moCount++; moCallback = cb; } observe() {} disconnect() {} },
   location,
   document: doc,
   chrome: {
@@ -221,7 +227,17 @@ const sandbox = {
     },
     runtime: {
       onMessage: { addListener: (fn) => { listeners.onMessage = fn; } },
-      sendMessage: (m, cb) => { sentToBackground.push(m); if (cb) cb(); },
+      sendMessage: (m, cb) => {
+        sentToBackground.push(m);
+        // 模拟 background 的规则串行写队列：get→改→set 后广播 onChanged
+        if (m && m.type === 'blk:rules:mutate' && m.op && m.op.kind === 'add' && m.op.rule) {
+          storageData.rules = (storageData.rules || []).concat([JSON.parse(JSON.stringify(m.op.rule))]);
+          listeners.onChanged.forEach((fn) => fn({ rules: { newValue: storageData.rules } }, 'local'));
+          if (cb) cb({ ok: true, rules: storageData.rules, changed: 1 });
+          return;
+        }
+        if (cb) cb();
+      },
     },
   },
 };
@@ -609,4 +625,100 @@ assert.equal(gridWrap.style.map['grid-template-columns'], undefined, '删除规�
 assert.equal(padWrap.style.map['padding-left'], undefined, '删除规则后应还原 padding');
 assert.ok(!side.hasAttribute('data-blk') && !nav2.hasAttribute('data-blk'), '元素应恢复显示');
 
-console.log('✅ 网页屏蔽器全部断言通过：作用域 / hide+remove / 真删插回 / 同类批量 / 全局开关 / body 护栏 / 预览→选中 / Ctrl多选增删 / 键盘微调 / Enter 确认 / 选择器分级 / 快捷键暂停 / 补位收回留白');
+/* ------------------------------------ 11. ↑/↓ 移不动时不得误删选区（BUG：叶子按 ↓ / 到顶按 ↑ 曾把选区删掉） */
+
+listeners.onMessage({ type: 'blk:pick' }, {}, () => {});
+await tick(50);
+const bar5 = body.children.find((c) => c.style.map['z-index'] === '2147483647');
+const sum5 = () => bar5.children[0].textContent;
+const pool5 = () => body.children.filter((c) => c.style.map['z-index'] === '2147483646').slice(1);
+
+fireDoc('mousedown', { target: cards[0], preventDefault() {}, stopPropagation() {} });
+assert.equal(pool5().length, 1, '前置：选中一张卡片');
+fireDoc('keydown', { key: 'ArrowDown' }); // 卡片没有子元素，↓ 移不动
+assert.equal(pool5().length, 1, '↓ 移不动时选区不能被删掉');
+assert.match(sum5(), /div\[data-row="1"\]/, '↓ 移不动时应保持原选择');
+
+fireDoc('mousedown', { target: app, preventDefault() {}, stopPropagation() {} });
+assert.equal(pool5().length, 1, '前置：改选 #app');
+fireDoc('keydown', { key: 'ArrowUp' }); // #app 的父级是 body，到顶移不动
+assert.equal(pool5().length, 1, '↑ 到顶时选区不能被删掉');
+assert.match(sum5(), /#app/, '↑ 到顶时应保持原选择');
+fireDoc('keydown', { key: 'Escape' });
+await tick(50);
+
+/* ------------------------------------ 12. remove 模式也要回收 grid 固定轨道（BUG：先删后补位导致轨道判断永远失效） */
+
+setRules([mkRule({ selectors: ['.Side'], mode: 'remove' })]);
+await tick(400);
+assert.ok(!gridWrap.children.includes(side), 'remove 模式应把侧栏从 DOM 摘除');
+assert.equal(gridWrap.style.map['grid-template-columns'], '0px 900px', 'remove 模式下 grid 固定轨道同样要回收');
+setRules([]);
+await tick(400);
+assert.ok(gridWrap.children.includes(side), '删除规则后侧栏应插回');
+assert.equal(gridWrap.style.map['grid-template-columns'], undefined, '删除规则后轨道应还原');
+
+/* -------------------- 13. 节流窗口内的 DOM 变更应顺延补跑（BUG：窗口内变更曾被直接丢弃，SPA 新内容漏屏蔽） */
+
+setRules([mkRule({ selectors: ['.LateCard'] })]);
+await tick(400); // apply 已完成；此刻距上次 apply 约 250ms，仍在 600ms 节流窗口内
+const late = new El('div', { className: 'LateCard', rect: { left: 200, top: 60, width: 600, height: 80 }, text: '晚到的卡片' });
+feed.appendChild(late);
+moCallback([{ target: app, addedNodes: [late], removedNodes: [] }]); // 模拟 SPA 深层插入（走 schedule(false) 节流分支）
+assert.ok(!late.hasAttribute('data-blk'), '节流窗口内不应立即重扫（先确认防抖还在）');
+await tick(900);
+assert.ok(late.hasAttribute('data-blk'), '节流窗口内的变更应顺延补跑，新插入的匹配内容不能漏屏蔽');
+setRules([]);
+await tick(400);
+
+/* -------------------- 14. 「重新应用」必须返回最新命中数（BUG：回包早于真正 apply，弹窗看到旧统计） */
+
+const statA = new El('div', { className: 'StatCard', rect: { left: 0, top: 0, width: 300, height: 60 } });
+app.appendChild(statA);
+const rStat = mkRule({ selectors: ['.StatCard'] });
+setRules([rStat]);
+await tick(400);
+const statB = new El('div', { className: 'StatCard', rect: { left: 0, top: 0, width: 300, height: 60 } });
+app.appendChild(statB); // 不经任何触发器，stats 还是旧的 1
+const applyRes = await msg({ type: 'blk:apply' });
+assert.equal(applyRes.stats[rStat.id], 2, '重新应用应同步重扫并返回最新命中数，而不是上一次的统计');
+setRules([]);
+await tick(400);
+
+/* ------------------------------------ 15. 补丁还原不能丢 !important 优先级 */
+
+const impWrap = new El('div', { className: 'ImpWrap', rect: { left: 0, top: 0, width: 1200, height: 800 } });
+impWrap.style.setProperty('padding-left', '300px', 'important');
+const impNav = new El('div', { className: 'ImpNav', rect: { left: 0, top: 0, width: 280, height: 700 }, text: '导航' });
+impWrap.appendChild(impNav);
+body.appendChild(impWrap);
+
+setRules([mkRule({ selectors: ['.ImpNav'] })]);
+await tick(400);
+assert.equal(impWrap.style.getPropertyValue('padding-left'), '0px', '带 !important 的预留同样应被回收');
+setRules([]);
+await tick(400);
+assert.equal(impWrap.style.getPropertyValue('padding-left'), '300px', '还原应恢复原值');
+assert.equal(impWrap.style.getPropertyPriority('padding-left'), 'important', '还原应恢复 !important 优先级');
+
+/* -------------------- 16. Tailwind 特殊字符 class 的选择器转义（: / 等不转义会退化成结构路径） */
+
+const tw = new El('div', { className: 'sm:w-1/2', rect: { left: 0, top: 0, width: 300, height: 60 }, text: 'TW' });
+app.appendChild(tw);
+
+listeners.onMessage({ type: 'blk:pick' }, {}, () => {});
+await tick(50);
+const bar6 = body.children.find((c) => c.style.map['z-index'] === '2147483647');
+const sum6 = () => bar6.children[0].textContent.split('：')[1].trim();
+fireDoc('mousedown', { target: tw, preventDefault() {}, stopPropagation() {} });
+assert.equal(sum6(), '.sm\\:w-1\\/2', '含 : / 的 class 应转义后生成选择器，实际：' + sum6());
+fireDoc('keydown', { key: 'Escape' });
+await tick(50);
+
+setRules([mkRule({ selectors: ['.sm\\:w-1\\/2'] })]);
+await tick(400);
+assert.ok(tw.hasAttribute('data-blk'), '转义后的选择器应能真实命中元素');
+setRules([]);
+await tick(400);
+
+console.log('✅ 网页屏蔽器全部断言通过：作用域 / hide+remove / 真删插回 / 同类批量 / 全局开关 / body 护栏 / 预览→选中 / Ctrl多选增删 / 键盘微调（含边界保护）/ Enter 确认 / 选择器分级（含转义）/ 快捷键暂停 / 补位收回留白（含 remove 模式与 !important 还原）/ 节流顺延 / 最新命中数');

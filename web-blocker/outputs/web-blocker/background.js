@@ -35,8 +35,64 @@ chrome.commands.onCommand.addListener((command) => {
   });
 });
 
-chrome.runtime.onMessage.addListener((msg, sender) => {
+/* ---------------------------------------------------------------- 规则写入串行队列
+ *
+ * content（点选确认）和 popup（启停 / 删除 / 导入 / 清空）都会写
+ * chrome.storage.local.rules。它们各自 get→改→set，两个页面同时写就会用旧快照
+ * 覆盖对方，规则静默丢失。这里把所有写操作收进 SW 的 Promise 链排队执行——
+ * 任何时刻只有一个「读改写」在进行。
+ */
+let ruleWriteQueue = Promise.resolve();
+
+function mutateRules(op) {
+  const run = ruleWriteQueue.then(() => applyRuleOp(op || {}));
+  ruleWriteQueue = run.then(
+    () => {},
+    () => {}
+  );
+  return run;
+}
+
+function applyRuleOp(op) {
+  return new Promise((resolve) => {
+    chrome.storage.local.get({ rules: [] }, (saved) => {
+      let rules = saved && Array.isArray(saved.rules) ? saved.rules : [];
+      let changed = 0;
+      if (op.kind === 'add' && op.rule) {
+        rules = rules.concat([op.rule]);
+        changed = 1;
+      } else if (op.kind === 'addMany' && Array.isArray(op.rules)) {
+        const known = new Set(rules.map((r) => r && r.id));
+        const fresh = op.rules.filter((r) => r && r.id && !known.has(r.id));
+        rules = rules.concat(fresh);
+        changed = fresh.length;
+      } else if (op.kind === 'update' && op.id && op.patch) {
+        rules = rules.map((r) => (r && r.id === op.id ? Object.assign({}, r, op.patch) : r));
+        changed = 1;
+      } else if (op.kind === 'remove') {
+        const before = rules.length;
+        rules = rules.filter((r) => !r || r.id !== op.id);
+        changed = before - rules.length;
+      } else if (op.kind === 'removeHost') {
+        const before = rules.length;
+        rules = rules.filter((r) => !r || r.host !== op.host);
+        changed = before - rules.length;
+      }
+      chrome.storage.local.set({ rules: rules }, () => resolve({ rules: rules, changed: changed }));
+    });
+  });
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.type === 'blk:state' && sender.tab) {
     setBadge(sender.tab.id, !!(msg.tabPaused || msg.sitePaused || msg.masterOff));
+    return;
+  }
+  if (msg && msg.type === 'blk:rules:mutate') {
+    mutateRules(msg.op).then(
+      (res) => sendResponse({ ok: true, rules: res.rules, changed: res.changed }),
+      (err) => sendResponse({ ok: false, error: String(err) }) // 明确失败，调用方不必等端口超时
+    );
+    return true; // 异步回复，保持消息通道
   }
 });

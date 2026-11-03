@@ -6,7 +6,6 @@ const listEl = $('list');
 let rules = [];
 let stats = {};
 let siteHost = '';
-let siteUrl = '';
 let showAll = false;
 let pauseState = { tabPaused: false, sitePaused: false };
 
@@ -28,10 +27,19 @@ function send(tabId, payload) {
   });
 }
 
-function persist(then) {
-  chrome.storage.local.set({ rules: rules }, () => {
+/* 所有规则写操作都走 background 的串行队列（content 点选入库也走同一条队列），
+ * 避免弹窗拿着旧快照整组回写，把别的页面刚加的规则覆盖掉。 */
+function mutate(op, then) {
+  chrome.runtime.sendMessage({ type: 'blk:rules:mutate', op }, (res) => {
+    if (chrome.runtime.lastError || !res || !res.ok) {
+      setStatus('写入失败：' + ((chrome.runtime.lastError && chrome.runtime.lastError.message) || (res && res.error) || '后台无响应'), 'err');
+      render(); // 回滚勾选框/下拉框等控件到改动前状态，避免界面与存储脱节
+      return;
+    }
+    rules = res.rules || [];
+    sortRules();
     render();
-    if (then) then();
+    if (then) then(res);
   });
 }
 
@@ -79,8 +87,7 @@ function render() {
     enableBox.type = 'checkbox';
     enableBox.checked = rule.enabled !== false;
     enableBox.addEventListener('change', () => {
-      rule.enabled = enableBox.checked;
-      persist();
+      mutate({ kind: 'update', id: rule.id, patch: { enabled: enableBox.checked } });
     });
     enable.appendChild(enableBox);
     enable.appendChild(document.createTextNode('启用'));
@@ -94,8 +101,7 @@ function render() {
       mode.appendChild(o);
     });
     mode.addEventListener('change', () => {
-      rule.mode = mode.value;
-      persist();
+      mutate({ kind: 'update', id: rule.id, patch: { mode: mode.value } });
     });
 
     const reflow = document.createElement('label');
@@ -105,8 +111,7 @@ function render() {
     reflowBox.type = 'checkbox';
     reflowBox.checked = rule.reflow !== false;
     reflowBox.addEventListener('change', () => {
-      rule.reflow = reflowBox.checked;
-      persist();
+      mutate({ kind: 'update', id: rule.id, patch: { reflow: reflowBox.checked } });
     });
     reflow.appendChild(reflowBox);
     reflow.appendChild(document.createTextNode('收回留白'));
@@ -121,8 +126,7 @@ function render() {
     del.className = 'danger';
     del.style.marginLeft = 'auto';
     del.addEventListener('click', () => {
-      rules = rules.filter((r) => r.id !== rule.id);
-      persist(() => setStatus('已删除 1 条规则，页面已还原。', 'ok'));
+      mutate({ kind: 'remove', id: rule.id }, () => setStatus('已删除 1 条规则，页面已还原。', 'ok'));
     });
 
     acts.appendChild(enable);
@@ -283,19 +287,17 @@ $('import').addEventListener('click', () => {
     setStatus('导入内容必须是数组。', 'err');
     return;
   }
-  const clean = parsed.filter((r) => r && Array.isArray(r.selectors) && r.selectors.length);
+  const clean = parsed.filter((r) => r && r.id && Array.isArray(r.selectors) && r.selectors.length);
   const skipped = parsed.length - clean.length;
-  const known = new Set(rules.map((r) => r.id));
-  const added = clean.filter((r) => !known.has(r.id));
-  rules = rules.concat(added);
-  sortRules();
-  persist(() => setStatus('导入成功 ' + added.length + ' 条' + (skipped ? '，跳过 ' + skipped + ' 条无效规则' : ''), 'ok'));
+  mutate({ kind: 'addMany', rules: clean }, (res) =>
+    setStatus('导入成功 ' + (res.changed || 0) + ' 条' + (skipped ? '，跳过 ' + skipped + ' 条无效规则' : ''), 'ok')
+  );
 });
 
 $('clearSite').addEventListener('click', () => {
-  const before = rules.length;
-  rules = rules.filter((r) => r.host !== siteHost);
-  persist(() => setStatus('已清空本站 ' + (before - rules.length) + ' 条规则。', 'ok'));
+  mutate({ kind: 'removeHost', host: siteHost }, (res) =>
+    setStatus('已清空本站 ' + (res.changed || 0) + ' 条规则。', 'ok')
+  );
 });
 
 /* 拉取当前标签页与命中统计 */
@@ -306,7 +308,6 @@ $('clearSite').addEventListener('click', () => {
       try {
         const u = new URL(tab.url);
         siteHost = u.hostname;
-        siteUrl = u.origin + u.pathname;
       } catch (err) {
         siteHost = '';
       }

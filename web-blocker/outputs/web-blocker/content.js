@@ -16,7 +16,7 @@
   if (window.__blkLoaded) return;
   window.__blkLoaded = true;
 
-  const VERSION = '1.4.0';
+  const VERSION = '1.4.3';
   const ATTR = 'data-blk';
   const STYLE_ID = 'blk-injected-style';
   const TOAST_ID = 'blk-toast';
@@ -57,6 +57,10 @@
   }
 
   /* ------------------------------------------------------ 选择器生成 */
+
+  /* class 名进选择器前必须转义：Tailwind 的 sm:w-1/2、md:block 含 : / 等字符，
+   * 不转义 querySelectorAll 直接抛异常，只能退化成脆弱的结构路径 */
+  const escCss = (s) => (window.CSS && CSS.escape ? CSS.escape(s) : s);
 
   function isHashy(cls) {
     return (
@@ -121,14 +125,15 @@
     }
     const stable = stableClasses(el);
     for (const cls of stable) {
-      if (isUnique('.' + cls, el)) return '.' + cls;
+      const sel = '.' + escCss(cls);
+      if (isUnique(sel, el)) return sel;
     }
-    if (stable.length && isUnique(tag + '.' + stable.join('.'), el)) {
-      return tag + '.' + stable.join('.');
+    if (stable.length && isUnique(tag + '.' + stable.map(escCss).join('.'), el)) {
+      return tag + '.' + stable.map(escCss).join('.');
     }
     const all = classList(el);
-    if (all.length && isUnique(tag + '.' + all.join('.'), el)) {
-      return tag + '.' + all.join('.'); // 只剩哈希 class，也比结构路径稳
+    if (all.length && isUnique(tag + '.' + all.map(escCss).join('.'), el)) {
+      return tag + '.' + all.map(escCss).join('.'); // 只剩哈希 class，也比结构路径稳
     }
     return pathSelector(el);
   }
@@ -149,8 +154,8 @@
     const tag = el.tagName.toLowerCase();
     const stable = stableClasses(el).slice().sort();
     const candidates = [];
-    if (stable.length) candidates.push(tag + '.' + stable.join('.'));
-    if (stable.length) candidates.push('.' + stable.join('.'));
+    if (stable.length) candidates.push(tag + '.' + stable.map(escCss).join('.'));
+    if (stable.length) candidates.push('.' + stable.map(escCss).join('.'));
     if (el.parentElement) candidates.push(buildSelector(el.parentElement) + ' > ' + tag);
     for (const sel of candidates) {
       const hits = queryAll(sel);
@@ -234,7 +239,13 @@
     if (!patched.has(el)) patched.set(el, {});
     const rec = patched.get(el);
     for (const key of Object.keys(props)) {
-      if (!(key in rec)) rec[key] = el.style.getPropertyValue(key);
+      if (!(key in rec)) {
+        // 值和优先级都要备份：原内联样式带 !important 时，还原不能把它弄丢
+        rec[key] = {
+          value: el.style.getPropertyValue(key),
+          priority: el.style.getPropertyPriority ? el.style.getPropertyPriority(key) : '',
+        };
+      }
       el.style.setProperty(key, props[key], 'important');
     }
   }
@@ -243,7 +254,7 @@
     for (const [el, rec] of patched.entries()) {
       for (const key of Object.keys(rec)) {
         const original = rec[key];
-        if (original) el.style.setProperty(key, original);
+        if (original.value) el.style.setProperty(key, original.value, original.priority || '');
         else el.style.removeProperty(key);
       }
     }
@@ -356,20 +367,23 @@
       }));
       const doReflow = rule.reflow !== false;
       for (const s of shots) {
+        // 先补位再隐藏/删除：remove 之后 firstElementChild 判断失效，grid 轨道会收不回来
+        if (doReflow) reclaim(s.el, s.rect, s.parent);
         if (rule.mode === 'remove') removeEl(s.el);
         else {
           s.el.setAttribute(ATTR, rule.id);
           hiddenEls.set(s.el, rule.id);
         }
-        if (doReflow) reclaim(s.el, s.rect, s.parent);
       }
     }
     watchSpa();
   }
 
   function schedule(force) {
-    if (!force && Date.now() - lastApplyAt < 600) return;
-    if (scheduled) return;
+    if (scheduled) return; // 已排队的 apply 会全量重扫，重复排队无意义
+    // 节流窗口内不再直接丢弃：顺延到窗口边缘补跑一次，避免动态页面漏屏蔽新内容
+    const sinceApply = Date.now() - lastApplyAt;
+    const wait = force || sinceApply >= 600 ? 150 : 600 - sinceApply + 150;
     scheduled = true;
     setTimeout(() => {
       scheduled = false;
@@ -378,7 +392,7 @@
       } catch (err) {
         console.error('[blk] apply failed', err);
       }
-    }, 150);
+    }, wait);
   }
 
   /** 只有存在规则时才挂 MutationObserver，避免在所有网站上白耗性能 */
@@ -678,6 +692,7 @@
       } else if (n.firstElementChild) {
         n = n.firstElementChild;
       }
+      if (n === from) return; // 已到顶 / 叶子节点移不动：保持原选择，别误删选区
       const i = pick.sel.findIndex((s) => s.el === from);
       if (findSel(n)) {
         if (i >= 0) pick.sel.splice(i, 1); // 目标已在选区里，去掉旧的避免重复
@@ -816,6 +831,26 @@
   }
 
   function saveRule(rule, then) {
+    /* 写规则统一交给 background 的串行队列：多标签页各自 get→改→set 会互相覆盖丢规则 */
+    if (chrome.runtime && chrome.runtime.sendMessage) {
+      try {
+        chrome.runtime.sendMessage({ type: 'blk:rules:mutate', op: { kind: 'add', rule: rule } }, (res) => {
+          if (chrome.runtime.lastError || !res || !res.ok) {
+            saveRuleLocal(rule, then); // 后台不可用的极端情况退回直写
+            return;
+          }
+          state.rules = res.rules;
+          then();
+        });
+        return;
+      } catch (err) {
+        /* 落入直写 */
+      }
+    }
+    saveRuleLocal(rule, then);
+  }
+
+  function saveRuleLocal(rule, then) {
     if (!STORAGE) {
       state.rules = state.rules.concat([rule]);
       then();
@@ -936,9 +971,10 @@
     } else if (msg.type === 'blk:apply') {
       readStorage().then((loaded) => {
         state = loaded;
-        schedule(true);
+        apply(); // 用户显式触发：同步应用，回包里的 stats 才是最新的
         sendResponse({ ok: true, stats: stats });
       });
+      return true; // 异步回包，保持消息通道
     } else if (msg.type === 'blk:pick') {
       startPick(sendResponse);
       return true; // 异步回复
