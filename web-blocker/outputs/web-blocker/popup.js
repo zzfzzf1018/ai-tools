@@ -300,6 +300,128 @@ $('clearSite').addEventListener('click', () => {
   );
 });
 
+/* ---------------- 完整备份 / 还原 ---------------- */
+
+function reloadAfterBackup() {
+  // 重新从 storage 拉一遍，保证 masterEnabled / rules 与还原结果一致
+  chrome.storage.local.get({ masterEnabled: true, rules: [] }, (saved) => {
+    rules = Array.isArray(saved.rules) ? saved.rules : [];
+    sortRules();
+    $('master').checked = saved.masterEnabled !== false;
+    render();
+  });
+  // 让 content script 重新应用规则（可能切换了 masterEnabled 或加了规则）
+  activeTab().then(([tab]) => tab && send(tab.id, { type: 'blk:apply' }).catch(() => {}));
+  refreshRollbackButton();
+}
+
+function refreshRollbackButton() {
+  chrome.runtime.sendMessage({ type: 'blk:backup:hasAuto' }, (res) => {
+    const btn = $('rollback');
+    if (chrome.runtime.lastError || !res) { btn.style.display = 'none'; return; }
+    btn.style.display = res.has ? '' : 'none';
+    if (res.has && res.createdAt) {
+      const t = new Date(res.createdAt);
+      btn.title = '这是还原前自动保存的状态（' + t.toLocaleString() + '），点击回到它';
+    }
+  });
+}
+
+$('exportAll').addEventListener('click', () => {
+  chrome.runtime.sendMessage({ type: 'blk:backup:export' }, (res) => {
+    if (chrome.runtime.lastError || !res || !res.ok) {
+      setStatus('导出失败：' + ((chrome.runtime.lastError && chrome.runtime.lastError.message) || (res && res.error) || '后台无响应'), 'err');
+      return;
+    }
+    const json = JSON.stringify(res.backup, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const now = new Date();
+    const stamp = now.getFullYear().toString()
+      + String(now.getMonth() + 1).padStart(2, '0')
+      + String(now.getDate()).padStart(2, '0')
+      + '-' + String(now.getHours()).padStart(2, '0')
+      + String(now.getMinutes()).padStart(2, '0')
+      + String(now.getSeconds()).padStart(2, '0');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'web-blocker-backup-' + stamp + '.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const data = res.backup.data || {};
+    setStatus('已导出完整备份：' + (data.rules || []).length + ' 条规则 · 全局启用=' + (data.masterEnabled !== false) + ' · 暂停 ' + (data.pausedSites || []).length + ' 个站。', 'ok');
+  });
+});
+
+function tryParseBackupText(text) {
+  let parsed;
+  try { parsed = JSON.parse(text); } catch { return null; }
+  // 兼容两种格式：新的完整备份（带 format/version），旧的纯规则数组
+  if (parsed && parsed.format === 'web-blocker-backup' && parsed.data && typeof parsed.data === 'object') {
+    return parsed;
+  }
+  if (Array.isArray(parsed)) {
+    return { format: 'web-blocker-backup', version: 0, createdAt: null, data: { rules: parsed } };
+  }
+  return null;
+}
+
+$('importAll').addEventListener('click', () => {
+  $('backupFile').click();
+});
+
+$('backupFile').addEventListener('change', (e) => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = ''; // 清空，让同一文件可再次选择
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const backup = tryParseBackupText(reader.result);
+    if (!backup) {
+      setStatus('备份文件格式无法识别，必须是本扩展导出的 .json 或旧版规则数组。', 'err');
+      return;
+    }
+    const data = backup.data || {};
+    const rulesCount = Array.isArray(data.rules) ? data.rules.length : 0;
+    const pausedCount = Array.isArray(data.pausedSites) ? data.pausedSites.length : 0;
+    const scope = [];
+    if (rulesCount) scope.push(rulesCount + ' 条规则');
+    if ('masterEnabled' in data) scope.push('全局开关=' + (data.masterEnabled ? '启用' : '关闭'));
+    if (pausedCount) scope.push(pausedCount + ' 个暂停站点');
+    if (!scope.length) { setStatus('备份里没有可恢复的内容。', 'err'); return; }
+    const ok = window.confirm('将还原以下内容：\n  • ' + scope.join('\n  • ') + '\n\n还原前会自动备份当前状态，后悔可点「撤销刚才的还原」。确定继续？');
+    if (!ok) return;
+    chrome.runtime.sendMessage({ type: 'blk:backup:import', backup }, (res) => {
+      if (chrome.runtime.lastError || !res || !res.ok) {
+        setStatus('还原失败：' + ((chrome.runtime.lastError && chrome.runtime.lastError.message) || (res && res.error) || '后台无响应'), 'err');
+        return;
+      }
+      setStatus('还原完成：' + res.rulesCount + ' 条规则 · 全局启用=' + res.masterEnabled + ' · 暂停 ' + res.pausedSitesCount + ' 个站。（已自动备份还原前状态）', 'ok');
+      reloadAfterBackup();
+    });
+  };
+  reader.onerror = () => setStatus('读取文件失败。', 'err');
+  reader.readAsText(file, 'utf-8');
+});
+
+$('rollback').addEventListener('click', () => {
+  const ok = window.confirm('撤销刚才的还原，回到还原前自动保存的状态。确定？');
+  if (!ok) return;
+  chrome.runtime.sendMessage({ type: 'blk:backup:rollback' }, (res) => {
+    if (chrome.runtime.lastError || !res || !res.ok) {
+      setStatus('撤销失败：' + ((chrome.runtime.lastError && chrome.runtime.lastError.message) || (res && res.error) || '没有可撤销的还原'), 'err');
+      return;
+    }
+    setStatus('已撤销，恢复到还原前状态。', 'ok');
+    reloadAfterBackup();
+  });
+});
+
+/* 启动时检查是否有待撤销的还原 */
+refreshRollbackButton();
+
 /* 拉取当前标签页与命中统计 */
 (async () => {
   try {

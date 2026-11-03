@@ -152,6 +152,17 @@
     </div>
   </details>
 
+  <details open>
+    <summary>完整备份 / 还原（含所有设置）</summary>
+    <div class="hint" style="margin-top:4px">包含规则、全局开关、暂停站点列表——换电脑 / 重装扩展前先备份一份。还原前会自动备份当前状态，后悔了点下面的撤销按钮。</div>
+    <div class="btns">
+      <button id="exportAll">导出完整备份（.json）</button>
+      <button id="importAll">从备份文件还原</button>
+      <button id="rollback" style="display:none" class="danger">撤销刚才的还原</button>
+    </div>
+    <input type="file" id="backupFile" accept=".json" style="display:none" />
+  </details>
+
   <div id="status"></div>
 
   <script src="popup.js"></script>
