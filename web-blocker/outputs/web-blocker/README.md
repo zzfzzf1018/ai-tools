@@ -153,6 +153,7 @@ web-blocker/
   - 行为：`node tests/blocker-harness.mjs` —— 全绿表示规则匹配、点选、补位、暂停等行为未回归；故意改坏某处再跑一次应当报错，说明断言没白写
   - 图标：`python tools/gen_icons.py`（重绘到 `icons/`，也可传参输出到别处）
 - **一键打包**：双击 `一键打包.bat`，或命令行 `python tools/package.py`（`--skip-tests` 跳测试、`--out 目录` 指定输出）。流程＝语法检查 → 集成测试 → manifest 与图标校验 → 产出 `dist/web-blocker-v<版本>.zip`；**只装浏览器运行需要的 10 个文件**，tests / tools / 文档不进包，打包后还会回读 zip 校验内容一致。任一步失败都会列出问题并以非零码退出。
+- **发布**：推送 `web-blocker-v<版本>` tag 触发发布流水线（`.github/workflows/web-blocker-release.yml`）：GitVersion 校验 → 测试 → 打包 → 创建 GitHub Release。**发布说明自动取自 `CHANGELOG.md` 对应版本小节**（`scripts/versioning.py` 生成 `RELEASE_NOTES.md`），小节缺失或为空会直接让发布失败——以此强制「每次改动必留记录」。
 - **纳入 git**：
 
   ```bash

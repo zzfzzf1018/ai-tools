@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 TAG_PREFIX = "web-blocker-v"
 MANIFEST_PATH = "outputs/web-blocker/manifest.json"
 PLUGIN_DIR = "outputs/web-blocker"
+CHANGELOG_PATH = "outputs/web-blocker/CHANGELOG.md"
 ARCHIVE_PREFIX = "web-blocker"
 STABLE = re.compile(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)")
 SEMVER = re.compile(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?")
@@ -48,6 +49,36 @@ def source_version(root: Path) -> str:
         raise VersionError(f"{MANIFEST_PATH} has no version field.")
     stable_version(version)
     return version
+
+
+def changelog_notes(root: Path, semver: str) -> str:
+    """Return the body of the ``## [semver]`` section of the changelog.
+
+    Every release must ship with its changes recorded, so a missing or empty
+    section is a hard error instead of silently using generic release notes.
+    """
+    changelog = root / CHANGELOG_PATH
+    if not changelog.is_file():
+        raise VersionError(f"Changelog not found: {changelog}")
+    lines = changelog.read_text(encoding="utf-8-sig").splitlines()
+    heading = re.compile(r"^## \[" + re.escape(semver) + r"\](?:\s|$)")
+    start = None
+    end = len(lines)
+    for index, line in enumerate(lines):
+        if not line.startswith("## ["):
+            continue
+        if start is None:
+            if heading.match(line):
+                start = index + 1
+        else:
+            end = index
+            break
+    if start is None:
+        raise VersionError(f"{CHANGELOG_PATH} has no entry for {semver}.")
+    section = "\n".join(lines[start:end]).strip()
+    if not section:
+        raise VersionError(f"{CHANGELOG_PATH} entry for {semver} is empty.")
+    return section
 
 
 def tool_environment(env: Mapping[str, str] | None) -> dict[str, str]:
@@ -241,6 +272,10 @@ def prepare_assets(root: Path, version: dict, archive: Path) -> list[dict]:
     }
     (destination / "release.json").write_text(
         json.dumps(release, indent=2) + "\n", encoding="utf-8", newline="\n"
+    )
+    notes = changelog_notes(root, semver)
+    (destination / "RELEASE_NOTES.md").write_text(
+        notes + "\n", encoding="utf-8", newline="\n"
     )
     return assets
 

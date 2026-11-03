@@ -52,6 +52,8 @@ jobs:
         run: python scripts/versioning.py apply --tag "${{ github.ref_name }}"
       - name: Syntax check, integration test and package
         run: python outputs/web-blocker/tools/package.py
+      - name: Test release tooling
+        run: python -m unittest discover -s scripts/tests -v
       - name: Prepare release assets
         if: startsWith(github.ref, 'refs/tags/web-blocker-v')
         env:
@@ -93,7 +95,13 @@ jobs:
             echo 'Release already exists; refusing to overwrite published downloads.' >&2
             exit 1
           fi
+          body_file="$(mktemp)"
+          {
+            printf '网页屏蔽器 Edge/Chrome 扩展\n\n安装方式：\n1. 下载 zip 并解压\n2. 浏览器访问 edge://extensions 或 chrome://extensions\n3. 开启"开发人员模式"\n4. 点击"加载解压缩的扩展"选择解压后的 web-blocker 文件夹\n\n功能：点选网页任意区域并记住规则，自动屏蔽；支持整站或单页生效、快捷键暂停、导入导出。\n\n---\n\n## 版本 %s 改动内容\n\n' "${RELEASE_TAG#web-blocker-v}"
+            cat RELEASE_NOTES.md
+            printf '\n---\n\nSHA256SUMS.txt 记录了各下载文件的校验哈希。\n'
+          } > "$body_file"
           gh release create "$RELEASE_TAG" ./* \
             --target "$RELEASE_SHA" --draft --title "Web Blocker ${RELEASE_TAG#web-blocker-v}" \
-            --notes $'网页屏蔽器 Edge/Chrome 扩展\n\n安装方式：\n1. 下载 zip 并解压\n2. 浏览器访问 edge://extensions 或 chrome://extensions\n3. 开启"开发人员模式"\n4. 点击"加载解压缩的扩展"选择解压后的 web-blocker 文件夹\n\n功能：点选网页任意区域并记住规则，自动屏蔽；支持整站或单页生效、快捷键暂停、导入导出。\n\nSHA256SUMS.txt 记录了各下载文件的校验哈希。'
+            --notes-file "$body_file"
           gh release edit "$RELEASE_TAG" --draft=false --latest
