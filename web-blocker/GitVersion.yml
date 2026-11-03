@@ -1,0 +1,13 @@
+workflow: GitHubFlow/v1
+tag-prefix: '^web-blocker-v'
+update-build-number: false
+commit-message-incrementing: Disabled
+branches:
+  main:
+    increment: Patch
+    label: ''
+    prevent-increment:
+      when-current-commit-tagged: true
+  unknown:
+    prevent-increment:
+      when-current-commit-tagged: true
