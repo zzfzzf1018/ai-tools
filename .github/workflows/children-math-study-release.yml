@@ -1,0 +1,170 @@
+name: Math Wonder Island CI and Release
+
+on:
+  push:
+    tags:
+      - "children-math-study-v*"
+  # 手动补发：在 Actions 页面「Run workflow」选择 main 分支，填入已存在的 tag 名。
+  # 适用于 tag 早于 workflow 建立的情况（例如 children-math-study-v1.0.0）。
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要发布的已存在 tag（如 children-math-study-v1.0.0）"
+        required: true
+        type: string
+  pull_request:
+    branches: [main]
+    paths:
+      - "children-math-study/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: math-wonder-island-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: children-math-study
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+      - name: Syntax check JavaScript and content
+        run: |
+          for file in js/*.js content/*.js desktop/*.js; do
+            node --check "$file"
+          done
+      - name: Validate manifest and required assets
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('package.json', 'utf8'))"
+          test -f index.html
+          test -f desktop/icon.ico
+          test -f content/grade1.js
+          test -f content/grade5.js
+
+  build:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/children-math-study-v')
+    runs-on: windows-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    defaults:
+      run:
+        working-directory: children-math-study
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: children-math-study/package-lock.json
+      - name: Resolve and validate version
+        id: version
+        env:
+          TAG_NAME: ${{ inputs.tag || github.ref_name }}
+        run: |
+          $version = $env:TAG_NAME -replace '^children-math-study-v', ''
+          if ($env:TAG_NAME -notmatch '^children-math-study-v\d+\.\d+\.\d+$') {
+            throw "Unexpected tag name: $env:TAG_NAME"
+          }
+          $pkgVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($pkgVersion -ne $version) {
+            throw "package.json version ($pkgVersion) does not match tag ($env:TAG_NAME)"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Output "Building Math Wonder Island $version"
+      - run: npm ci --no-audit --no-fund
+      - name: Download Electron runtime
+        run: npm run desktop:runtime
+      - run: npm run package
+      - name: Collect portable exe and web zip
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          New-Item -ItemType Directory -Path release-assets -Force | Out-Null
+
+          # 桌面版：electron-builder 产出的单文件便携 exe
+          $portable = Get-ChildItem "release" -Filter "Math-Wonder-Island-$env:RELEASE_VERSION-*-portable.exe" |
+            Select-Object -First 1
+          if (-not $portable) {
+            throw "Portable executable not found in release/"
+          }
+          Copy-Item $portable.FullName -Destination "release-assets/$($portable.Name)"
+
+          # Web 版：纯前端文件，解压后双击 index.html 即可离线使用
+          $webDir = "release-assets/web-temp"
+          New-Item -ItemType Directory -Path $webDir -Force | Out-Null
+          Copy-Item "index.html", "CHANGELOG.md" -Destination $webDir
+          Copy-Item "css", "js", "content" -Destination $webDir -Recurse
+          $webZip = "release-assets/Math-Wonder-Island-$env:RELEASE_VERSION-web.zip"
+          Compress-Archive -Path "$webDir/*" -DestinationPath $webZip -CompressionLevel Optimal
+          Remove-Item $webDir -Recurse -Force
+
+          $lines = @(
+            "$((Get-FileHash $portable.FullName -Algorithm SHA256).Hash.ToLower())  $($portable.Name)",
+            "$((Get-FileHash $webZip -Algorithm SHA256).Hash.ToLower())  $(Split-Path $webZip -Leaf)"
+          )
+          $lines | Out-File -FilePath "release-assets/SHA256SUMS.txt" -Encoding ascii
+          Get-ChildItem release-assets | Select-Object Name, Length
+          Get-Content "release-assets/SHA256SUMS.txt"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: math-wonder-island-${{ steps.version.outputs.version }}
+          path: children-math-study/release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: math-wonder-island-${{ needs.build.outputs.version }}
+          path: downloads
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd downloads
+          sha256sum --check SHA256SUMS.txt
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            is_draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft')
+            if [ "$is_draft" != "true" ]; then
+              echo 'Release already published; refusing to overwrite published downloads.' >&2
+              exit 1
+            fi
+            echo "Draft release found; uploading assets and publishing it."
+            gh release upload "$RELEASE_TAG" ./* --clobber
+            gh release edit "$RELEASE_TAG" --draft=false --latest
+            exit 0
+          fi
+          gh release create "$RELEASE_TAG" ./* \
+            --draft \
+            --title "Math Wonder Island $RELEASE_VERSION" \
+            --notes $'Desktop (Windows x64): download the single portable .exe and run it directly; it unpacks to a temp folder on first launch and needs no installation.\nWeb version: download the web ZIP, extract it and open index.html in a browser; works fully offline, no installation needed.\nUnsigned build: Windows may warn about an unknown publisher; check SHA256SUMS.txt before running.\nLearning progress, stars and the wrong-answer notebook stay on the device; no account or network required.'
+          gh release edit "$RELEASE_TAG" --draft=false --latest

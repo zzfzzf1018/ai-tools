@@ -1,5 +1,6 @@
 node_modules/
 release/
+release-assets/
 dist/
 .superpowers/
 .trae-html-share-packages/
