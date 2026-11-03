@@ -27,6 +27,25 @@
     return out;
   }
 
+  // 存档可能被手工改坏或来自旧版本，做一次类型兜底，避免整页白屏
+  function normalize(d) {
+    if (!d.player || typeof d.player !== 'object') d.player = Object.assign({}, DEFAULT_SAVE.player);
+    if (typeof d.player.name !== 'string' || !d.player.name) d.player.name = DEFAULT_SAVE.player.name;
+    for (const key of ['stars', 'completed', 'exploreDone']) {
+      if (!d[key] || typeof d[key] !== 'object' || Array.isArray(d[key])) d[key] = {};
+    }
+    for (const k of Object.keys(d.stars)) {
+      const n = Number(d.stars[k]);
+      d.stars[k] = Number.isFinite(n) ? Math.max(0, Math.min(3, n)) : 0;
+    }
+    d.wrongBook = Array.isArray(d.wrongBook)
+      ? d.wrongBook.filter(w => w && typeof w === 'object' && w.lessonId && w.qid)
+      : [];
+    d.badges = Array.isArray(d.badges) ? d.badges : [];
+    if (!d.settings || typeof d.settings !== 'object') d.settings = { lastGrade: null };
+    return d;
+  }
+
   async function loadRaw() {
     if (window.mathwonder && window.mathwonder.isDesktop) {
       try {
@@ -52,7 +71,7 @@
     async init() {
       const raw = await loadRaw();
       this.isFresh = !raw;
-      this.data = deepMerge(DEFAULT_SAVE, raw || {});
+      this.data = normalize(deepMerge(DEFAULT_SAVE, raw || {}));
       if (!this.data.player.createdAt) {
         this.data.player.createdAt = new Date().toISOString();
         await this.write();
@@ -83,12 +102,17 @@
     addWrong(item) {
       const found = this.data.wrongBook.find(w => w.lessonId === item.lessonId && w.qid === item.qid);
       if (found) {
-        found.count += 1;
+        found.count = (Number(found.count) || 0) + 1;
         found.lastAt = new Date().toISOString().slice(0, 10);
-        found.wrongStreak = (found.wrongStreak || 0) + 1;
+        found.wrongStreak = (Number(found.wrongStreak) || 0) + 1;
+        found.rightStreak = 0;   // 再次答错，连击清零，必须先连续答对两次才会移出
+        if (item.options) found.options = item.options;
+        if (item.type) found.type = item.type;
+        if (item.visual) found.visual = item.visual;
+        if (item.prompt) found.prompt = item.prompt;
       } else {
         this.data.wrongBook.push(Object.assign({
-          count: 1, wrongStreak: 1,
+          count: 1, wrongStreak: 1, rightStreak: 0,
           lastAt: new Date().toISOString().slice(0, 10)
         }, item));
       }

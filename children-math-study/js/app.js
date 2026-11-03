@@ -28,6 +28,10 @@
     setTheme(name) {
       document.body.dataset.theme = name;
     },
+    esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g,
+        c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    },
     updateStars() {
       document.getElementById('star-count').textContent = Save.totalStars();
     }
@@ -43,13 +47,11 @@
       UI.updateStars();
 
       document.getElementById('btn-back').addEventListener('click', () => {
-        const h = location.hash;
-        if (h.startsWith('#lesson/')) {
-          const hit = Data.findLesson(h.slice(8));
+        const h = location.hash.replace(/^#\/?/, '');
+        if (h.startsWith('lesson/')) {
+          const hit = Data.findLesson(h.slice(7));
           this.navigate(hit ? 'grade/' + hit.grade.grade : 'home');
-        } else if (h.startsWith('#grade/') || h === '#wrong' || h === '#parent') {
-          this.navigate('home');
-        } else if (h !== '#home') {
+        } else {
           this.navigate('home');
         }
       });
@@ -61,7 +63,7 @@
       if (Save.isFresh) {
         this.showWelcome();
       } else {
-        this.navigate(location.hash.slice(1) || 'home');
+        this.route();
       }
     },
 
@@ -87,8 +89,10 @@
     },
 
     navigate(route) {
-      location.hash = '/' + route;
-      this.route();
+      const target = '#/' + route;
+      // hash 变化会触发 hashchange → route()，这里不再手动调用，避免同一次跳转渲染两遍
+      if (location.hash === target) this.route();
+      else location.hash = target;
     },
 
     route() {
@@ -112,8 +116,14 @@
       this.page.innerHTML = '';
 
       if (h === 'home') { topbar.classList.remove('hidden'); this.renderHome(); }
-      else if (gradeMatch) { topbar.classList.remove('hidden'); this.renderGrade(+gradeMatch[1]); }
-      else if (lessonMatch) { topbar.classList.remove('hidden'); Lesson.play(lessonMatch[1], this.page); }
+      else if (gradeMatch) {
+        if (!Data.grade(+gradeMatch[1])) { this.navigate('home'); return; }
+        topbar.classList.remove('hidden'); this.renderGrade(+gradeMatch[1]);
+      }
+      else if (lessonMatch) {
+        if (!Data.findLesson(lessonMatch[1])) { this.navigate('home'); return; }
+        topbar.classList.remove('hidden'); Lesson.play(lessonMatch[1], this.page);
+      }
       else if (h === 'parent') { topbar.classList.remove('hidden'); Parent.render(this.page); }
       else if (h === 'wrong') { topbar.classList.remove('hidden'); this.renderWrong(); }
       else { topbar.classList.remove('hidden'); this.renderHome(); }
@@ -234,9 +244,9 @@
         const item = document.createElement('div');
         item.className = 'card wrong-item';
         item.innerHTML = `
-          <div class="wq-visual">${w.visual || '📝'}</div>
+          <div class="wq-visual">${UI.esc(w.visual || '📝')}</div>
           <div class="wq-main">
-            <div class="wq-prompt">${w.prompt}</div>
+            <div class="wq-prompt">${UI.esc(w.prompt || '')}</div>
             <div class="wq-meta">${hit ? hit.grade.title + ' · ' + hit.lesson.title : ''} · 已错 ${w.count} 次</div>
           </div>`;
         const btn = document.createElement('button');
@@ -252,30 +262,55 @@
     },
 
     practiceWrong(w, itemEl) {
+      // 选择题用选项按钮复现，其余用输入框（答案可能是数字，也可能是文字）
+      const isChoice = Array.isArray(w.options) && w.options.length > 0;
+      const body = isChoice
+        ? `<div class="choice-row">${w.options.map(o =>
+            `<button class="choice-btn" data-opt="${UI.esc(o)}">${UI.esc(o)}</button>`).join('')}</div>`
+        : `<div style="margin:14px 0"><input id="wp-input" class="mock-input" style="
+            width:140px;font-size:26px;text-align:center;padding:8px;
+            border:3px solid var(--node-border);border-radius:14px;" autofocus></div>`;
+
+      const finish = () => {
+        UI.closeOverlay();
+        Rewards.float(itemEl, '🎉');
+        UI.toast(Rewards.praise() + ' 错题正在飞走～', 'var(--secondary)');
+        Save.resolveWrong(w.lessonId, w.qid).then(() => this.route());
+      };
+
       UI.overlay(`
         <div class="overlay-card">
           <div class="sparkle-guide">📝</div>
-          <div class="question-visual">${w.visual || ''}</div>
-          <h2 style="font-size:22px">${w.prompt}</h2>
-          <div style="margin:14px 0"><input id="wp-input" class="mock-input" style="
-            width:140px;font-size:26px;text-align:center;padding:8px;
-            border:3px solid var(--node-border);border-radius:14px;" autofocus></div>
+          <div class="question-visual">${UI.esc(w.visual || '')}</div>
+          <h2 style="font-size:22px">${UI.esc(w.prompt || '')}</h2>
+          ${body}
           <div class="overlay-actions">
-            <button class="btn-big" id="wp-ok">确认</button>
+            ${isChoice ? '' : '<button class="btn-big" id="wp-ok">确认</button>'}
           </div>
         </div>`, () => {
+        const expect = String(w.answer == null ? '' : w.answer).trim();
+
+        if (isChoice) {
+          document.querySelectorAll('#overlay .choice-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              if (btn.dataset.opt === expect) finish();
+              else UI.toast('再想一想哦～', '#f87171');
+            });
+          });
+          return;
+        }
+
         const input = document.getElementById('wp-input');
         input.focus();
         const submit = () => {
-          const v = parseFloat(input.value);
-          const ans = parseFloat(w.answer);
-          const ok = !isNaN(v) && Math.abs(v - ans) < 1e-9;
-          if (ok) {
-            UI.closeOverlay();
-            Rewards.float(itemEl, '🎉');
-            UI.toast(Rewards.praise() + ' 错题正在飞走～', 'var(--secondary)');
-            Save.resolveWrong(w.lessonId, w.qid).then(() => this.renderWrong());
-          } else {
+          const raw = input.value.trim();
+          if (!raw) { UI.toast('先写个答案吧～', '#f87171'); return; }
+          const num = Number(raw);
+          const expNum = Number(expect);
+          const ok = (raw === expect) ||
+            (!isNaN(num) && !isNaN(expNum) && Math.abs(num - expNum) < 1e-9);
+          if (ok) finish();
+          else {
             UI.toast('再想一想哦～', '#f87171');
             input.value = '';
             input.focus();

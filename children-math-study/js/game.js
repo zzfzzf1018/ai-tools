@@ -47,12 +47,14 @@
           v.innerHTML = q.visual.svg;
           stage.appendChild(v);
         }
-        stage.appendChild(el('div', 'question-prompt', q.prompt));
+        stage.appendChild(el('div', 'question-prompt',
+          q.prompt || (q.type === 'dragdrop' ? '把下面的数字拖进空格，让等式成立吧！' : '')));
 
         const hintArea = el('div');
         stage.appendChild(hintArea);
         let hintIdx = 0;
         let attempts = 0;
+        let finished = false;
 
         function showNextHint(force) {
           if (!q.hints || !q.hints.length) return;
@@ -68,12 +70,11 @@
         function markResult(correct, answerEl) {
           if (correct) {
             stats.correct++;
-            if (attempts === 0 && hintIdx === 0) { /* 首答即中 */ }
             Rewards.float(answerEl || stage, '⭐');
             UI.toast(Rewards.praise(), 'var(--secondary)');
             Save.resolveWrong(gameCfg.lessonId, q.id);
             dots[qi].classList.add('ok');
-            setTimeout(next, 900);
+            setTimeout(() => { if (stage.isConnected) next(); }, 900);
           } else {
             stats.wrong++;
             stats.perfect = false;
@@ -82,8 +83,11 @@
             Save.addWrong({
               lessonId: gameCfg.lessonId,
               qid: q.id,
+              type: q.type,
+              options: q.options || null,
+              template: q.template || null,
               visual: (q.visual && q.visual.emoji) || '',
-              prompt: q.prompt,
+              prompt: q.prompt || '',
               answer: q.answer
             });
             UI.toast(Rewards.encourage(), '#f87171');
@@ -91,8 +95,15 @@
           }
         }
 
+        // 答对一次后锁定本题，避免重复点击/重复提交把同一题计算两次
+        const safeJudge = (correct, answerEl) => {
+          if (finished) return;
+          if (correct) finished = true;
+          markResult(correct, answerEl);
+        };
+
         const api = renderers[q.type] || renderers.choice;
-        api(stage, q, (correct, answerEl) => markResult(correct, answerEl));
+        api(stage, q, safeJudge);
       }
 
       function next() {
@@ -183,6 +194,7 @@
       if (i < parts.length - 1) {
         const s = el('span', 'drop-slot');
         s.dataset.slotId = i;
+        s.dataset.value = '';
         line.appendChild(s);
         slots.push(s);
       }
@@ -226,13 +238,13 @@
           if (slot) {
             // 若槽已被占用，原筹码回库
             const prev = slot.dataset.value;
-            if (prev != null && chips[prev]) chips[prev].classList.remove('used');
+            if (prev && chips[prev]) chips[prev].classList.remove('used');
             slot.textContent = val;
             slot.dataset.value = val;
             slot.classList.add('filled');
             chip.classList.add('used');
             // 检查是否全部填满
-            if (slots.every(s => s.dataset.value != null)) {
+            if (slots.every(s => s.dataset.value !== '')) {
               setTimeout(() => {
                 const ok = slots.every(s => String(answers[+s.dataset.slotId]) === s.dataset.value);
                 if (ok) judge(true, slots[0]);

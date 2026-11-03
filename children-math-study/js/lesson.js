@@ -131,7 +131,7 @@
               UI.toast('零失误通关 ' + games[gi].title + '！', 'var(--secondary)');
             }
             gi++;
-            setTimeout(run, 600);
+            setTimeout(() => { if (card.isConnected) run(); }, 600);
           }
         });
       }
@@ -169,7 +169,9 @@
           this.play(L.id, document.getElementById('page'));
         };
         if (fresh.length) {
-          setTimeout(() => Rewards.showBadgeOverlay(fresh), 800);
+          setTimeout(() => {
+            if (document.getElementById('page').contains(panel)) Rewards.showBadgeOverlay(fresh);
+          }, 800);
         }
       });
     }

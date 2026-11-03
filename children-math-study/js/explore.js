@@ -188,6 +188,10 @@
   engines['number-line'] = function (box, cfg, done) {
     const min = cfg.min ?? 0, max = cfg.max ?? 10, step = cfg.step || 1;
     const target = cfg.target;
+    // 小数步长（如 0.1）累加会产生 0.7000000000000001 这类浮点误差，统一按步长精度取整
+    const decimals = Math.min(6, (String(step).split('.')[1] || '').length + 2);
+    const norm = (v) => Number(v.toFixed(decimals));
+    const eps = Math.abs(step) / 1000;
     const wrap = document.createElement('div');
     wrap.className = 'explore-workspace number-line-wrap';
     const nl = document.createElement('div');
@@ -195,7 +199,7 @@
     nl.innerHTML = '<div class="nl-track"></div>';
     const ticks = Math.round((max - min) / step);
     for (let i = 0; i <= ticks; i++) {
-      const v = min + i * step;
+      const v = norm(min + i * step);
       const pct = (i / ticks) * 100;
       const t = document.createElement('div');
       t.className = 'nl-tick';
@@ -217,20 +221,20 @@
     slider.min = 0; slider.max = ticks; slider.step = 1; slider.value = Math.round(((cfg.start ?? min) - min) / step);
     slider.addEventListener('input', () => {
       marker.style.left = (slider.value / ticks) * 100 + '%';
-      readout.textContent = '现在是：' + (min + slider.value * step);
+      readout.textContent = '现在是：' + norm(min + slider.value * step);
     });
     marker.style.left = (slider.value / ticks) * 100 + '%';
 
     const readout = document.createElement('div');
     readout.style.cssText = 'font-size:22px;font-weight:bold;color:var(--title);';
-    readout.textContent = '现在是：' + (min + slider.value * step);
+    readout.textContent = '现在是：' + norm(min + slider.value * step);
 
     const btn = document.createElement('button');
     btn.className = 'btn-big';
     btn.textContent = '🚀 出发！';
     btn.addEventListener('click', () => {
-      const v = min + slider.value * step;
-      if (v === target) {
+      const v = norm(min + slider.value * step);
+      if (Math.abs(v - target) <= eps) {
         showWrapUp(wrap, cfg.wrapup || `找到了 ${target}！数轴上每格一样宽，位置和数一一对应。`, done);
       } else {
         wrap.style.animation = 'shake .4s';
@@ -340,12 +344,13 @@
 
     function tilt() {
       const leftVal = [...leftPan.querySelectorAll('.weight-chip')].reduce((s, c) => s + (+c.textContent || 0), 0);
-      const rightVal = (cfg.rightValue ?? 0) + (cfg.rightItems || []).reduce((s, v) => s + v, 0);
+      const rightVal = (cfg.rightValue ?? 0) + (cfg.rightItems || []).reduce((s, v) => s + (+v || 0), 0);
+      const eq = Math.abs(leftVal - rightVal) < 1e-9 * Math.max(1, Math.abs(rightVal));
       if (leftVal === 0) beamRow.style.transform = 'rotate(0deg)';
       else if (leftVal < rightVal) beamRow.style.transform = 'rotate(4deg)';
       else if (leftVal > rightVal) beamRow.style.transform = 'rotate(-4deg)';
       else beamRow.style.transform = 'rotate(0deg)';
-      if (leftVal === rightVal && leftVal > 0) {
+      if (eq && leftVal > 0) {
         setTimeout(() => showWrapUp(ws, cfg.wrapup || `两边一样重！${cfg.leftLabel} = ${rightVal}。相等就是"平衡"。`, done), 500);
       }
     }

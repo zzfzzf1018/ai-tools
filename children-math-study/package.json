@@ -1,6 +1,6 @@
 {
   "name": "math-wonder-island",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "数学奇妙岛 · 儿童小学数学思维学习工具（一至五年级·上海教材）",
   "main": "desktop/main.js",
