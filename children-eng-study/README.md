@@ -31,9 +31,15 @@ children-eng-study/
 │   ├── speech.js           # Web Speech API 语音封装
 │   ├── app.js              # 主应用：导航、卡片、进度、弹窗、成就
 │   └── game.js             # 四个小游戏逻辑
+├── desktop/                # Electron 桌面版
+│   ├── main.js             # 主进程：单实例、窗口记忆、外链转系统浏览器
+│   ├── icon.png
+│   └── icon.ico
+├── package.json            # Electron 依赖与打包脚本
 ├── .gitignore
 └── README.md
 ```
+
 
 ## 📖 学习内容（沪教版风格）
 
@@ -51,13 +57,26 @@ children-eng-study/
 用现代浏览器直接打开 `index.html` 即可。
 
 ### 方式二：本地 HTTP 服务器（推荐，语音加载更稳定）
-
 ```bash
 # Python 3
 python -m http.server 8080
 
 # 然后访问 http://localhost:8080
 ```
+
+### 方式三：Windows 桌面版（Electron）
+
+从 Release 下载 `Kids-English-Wonderland-*-windows-x64.zip`，解压整个文件夹后双击
+`Kids English Wonderland.exe` 即可使用，无需安装、无需浏览器。
+
+自行打包：
+
+```bash
+npm install
+npm run desktop     # 开发模式启动
+npm run package     # 生成 dist/Kids English Wonderland-win32-x64/
+```
+
 
 ## 💡 使用说明
 
@@ -83,12 +102,13 @@ python -m http.server 8080
 
 ## 🛠️ 技术栈
 
-- **纯前端** — 零依赖、零构建、开箱即用
+- **纯前端** — 零依赖、零构建，浏览器直接打开即用
 - **HTML5** — 语义化标签
 - **CSS3** — Flex/Grid 布局、CSS 变量、`@keyframes` 动画
 - **原生 JavaScript (ES6+)** — 模块化组织（`const` / 模板字符串 / Promise）
 - **Web Speech API** — `speechSynthesis` 语音合成
 - **localStorage** — 进度持久化
+- **Electron 45 + @electron/packager** — Windows 桌面便携版打包
 
 ## 📝 数据说明
 
@@ -102,6 +122,11 @@ MIT
 
 ## 📌 版本记录
 
+### v1.0.1 (2026-11-03)
+- 🖥️ 新增 Windows Electron 桌面便携版（免安装、离线可用）
+- 🎨 新增应用图标（渐变圆角 + ABC）
+- 📄 补充桌面版构建与使用文档
+
 ### v1.0.0 (2026-11-02)
 - 🎉 首个正式版本
 - ✅ 一年级~五年级 25 个单元全部单词
@@ -109,3 +134,4 @@ MIT
 - ✅ 四个趣味小游戏
 - ✅ 星星 / 徽章 / 连续天数激励系统
 - ✅ localStorage 进度持久化
+
