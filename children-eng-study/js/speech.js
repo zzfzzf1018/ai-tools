@@ -43,6 +43,7 @@ const SpeechHelper = {
 
     // 获取英语语音
     getEnglishVoice: function() {
+        if (!this.isSupported()) return null;
         const voices = window.speechSynthesis.getVoices();
         if (this.settings.voiceName) {
             const chosen = voices.find(v => v.name === this.settings.voiceName);
@@ -68,14 +69,14 @@ const SpeechHelper = {
         }
         
         // 返回任何英语语音
-        return voices.find(v => v.lang.startsWith('en')) || null;
+        return voices.find(v => v.lang && v.lang.startsWith('en')) || null;
     },
 
     // 朗读文本
     speak: function(text, options = {}) {
         return new Promise((resolve, reject) => {
             if (!this.isSupported()) {
-                reject(new Error('浏览器不支持语音合成'));
+                resolve();  // 不支持时静默结束，调用方无需处理拒绝
                 return;
             }
 
@@ -95,7 +96,14 @@ const SpeechHelper = {
             }
 
             utterance.onend = () => resolve();
-            utterance.onerror = (e) => reject(e);
+            utterance.onerror = (e) => {
+                // 主动 cancel 触发的 canceled/interrupted 是正常中断，不算错误
+                if (e.error === 'canceled' || e.error === 'interrupted') {
+                    resolve();
+                } else {
+                    reject(e);
+                }
+            };
 
             window.speechSynthesis.speak(utterance);
         });
@@ -103,6 +111,7 @@ const SpeechHelper = {
 
     // 朗读单词（带高亮回调）
     speakWord: function(word, onStart, onEnd) {
+        if (!this.isSupported()) return;
         window.speechSynthesis.cancel();
         
         const utterance = new SpeechSynthesisUtterance(word);
@@ -129,6 +138,7 @@ const SpeechHelper = {
 
     // 朗读句子
     speakSentence: function(sentence, onStart, onEnd) {
+        if (!this.isSupported()) return;
         window.speechSynthesis.cancel();
         
         const utterance = new SpeechSynthesisUtterance(sentence);

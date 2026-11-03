@@ -3,7 +3,7 @@
 > 面向上海小学一至五年级的趣味英语学习应用
 > 图文结合 · 标准发音 · 四个小游戏 · 成就激励 · 单文件 Windows 便携版
 
-**当前稳定版：v1.1.0** ・ 仓库：https://github.com/zzfzzf1018/ai-tools/tree/main/children-eng-study ・ 发布：https://github.com/zzfzzf1018/ai-tools/releases
+**当前稳定版：v1.1.1** ・ 仓库：https://github.com/zzfzzf1018/ai-tools/tree/main/children-eng-study ・ 发布：https://github.com/zzfzzf1018/ai-tools/releases
 
 ---
 
@@ -25,16 +25,16 @@
 
 ## 📦 下载安装（推荐普通用户使用）
 
-前往 [Releases](https://github.com/zzfzzf1018/ai-tools/releases/tag/children-eng-study-v1.1.0) 选择你需要的形态：
+前往 [Releases](https://github.com/zzfzzf1018/ai-tools/releases/tag/children-eng-study-v1.1.1) 选择你需要的形态：
 
 | 形态 | 文件 | 大小 | 使用方式 |
 |------|------|------|----------|
-| 🖥️ **Windows 便携版** | `Kids-English-Wonderland-1.1.0-x64-portable.exe` | ~105 MB | 双击即用，无需安装、无需浏览器 |
-| 🌐 **Web 版** | `Kids-English-Wonderland-1.1.0-web.zip` | ~30 KB | 解压后用浏览器打开 `index.html` |
+| 🖥️ **Windows 便携版** | `Kids-English-Wonderland-1.1.1-x64-portable.exe` | ~110 MB | 双击即用，无需安装、无需浏览器 |
+| 🌐 **Web 版** | `Kids-English-Wonderland-1.1.1-web.zip` | ~38 KB | 解压后用浏览器打开 `index.html` |
 
 ### 桌面版使用说明
 
-1. 双击 `Kids-English-Wonderland-1.1.0-x64-portable.exe`
+1. 双击 `Kids-English-Wonderland-1.1.1-x64-portable.exe`
 2. 首次启动会解压到临时目录（约 30 秒），后续启动几乎瞬时
 3. 未签名：Windows 可能提示"未知发布者"，核对 `SHA256SUMS.txt` 中的校验值后可继续运行
 4. 学习数据保存在本机，不会上传任何服务器
@@ -97,7 +97,7 @@ children-eng-study/
    - ⚙️ 右上角设置 → 关闭自动朗读、调整语速、选择音色
    - ◀ 上一张 / ▶ 下一张 → 切换卡片
    - 完成一单元全部卡片 → 首次完成奖励 5 颗星星 + 彩色纸屑庆祝
-4. **玩游戏**：导航到「🎮 游戏」Tab，选择四个小游戏之一（按正确率获得 1–5 颗星）
+4. **玩游戏**：导航到「🎮 游戏」Tab，选择四个小游戏之一（满星 5 颗，每 2 次失误扣 1 颗，保底 1 颗；词汇优先来自当前学习的单元）
 5. **成就追踪**：「📊 成就」Tab 查看已学单词数、朗读次数、年级进度、徽章解锁，并可导出/导入进度 JSON
 
 ---
@@ -166,8 +166,8 @@ git commit -m "feat(children-eng-study): <变更说明>"
 git push origin main
 
 # 3. 打 tag 推送，触发自动发布
-git tag -a children-eng-study-v1.1.0 -m "children-eng-study v1.1.0"
-git push origin children-eng-study-v1.1.0
+git tag -a children-eng-study-v1.1.1 -m "children-eng-study v1.1.1"
+git push origin children-eng-study-v1.1.1
 ```
 
 ### 版本号规则
@@ -199,7 +199,22 @@ MIT
 
 ## 📌 版本记录
 
-### v1.1.0 (2026-11-03) — 🎯 当前稳定版
+### v1.1.1 (2026-11-03) — 🎯 当前稳定版
+- 🐛 修复听音选词点击正确答案直接报错卡死（`this.updateScore is not a function`），答对后加防重复点击锁
+- 🐛 修复游戏星星永远满星：改为按失误扣星（每 2 次失误扣 1 颗，保底 1 颗），四个游戏均统计失误
+- 🐛 修复连连看配对成功不朗读（查找字段写错），并取消每对消去时的纸屑轰炸
+- 🐛 修复切换 Tab / 快速换单元后仍残留朗读：切页时发音代次失效并清理自动朗读定时器
+- 🐛 修复设置面板盖在弹窗之上、Esc 无法关闭、⚙️ 只能开不能关；补充 `role="dialog"`，小屏不溢出
+- 🐛 修复导出下载在部分浏览器被中断（链接挂入 DOM 并延迟回收 URL），导出内容加入语音设置
+- 🐛 修复导入校验过松：拒绝数组/非对象数据、拒绝更高版本备份，语音设置一并恢复
+- 🐛 修复每次取消朗读产生的 unhandled rejection；无语音环境下不再抛错
+- 🐛 修复拼写提示把空格和撇号计入字母数（如 living room 误报 11 个字母）
+- 🐛 修复应用长时间打开跨天后任务与连续天数不重置（每分钟 + 回到前台时检查）
+- 🐛 修复读屏只念「点击再听一遍」而不念单词内容（aria-label 补全词义）
+- 🎮 游戏词汇优先使用当前学习的单元，不足时从同年级补齐
+- 🧹 移除从未使用的 `gradeProgress` 存档字段与 letter-card 特例；package-lock 版本同步
+
+### v1.1.0 (2026-11-03)
 - ✨ 新增语音设置面板：自动朗读开关、语速 0.6–1.2、英语音色选择（右上角 ⚙️）
 - ✨ 新增年级进度条，展示每个年级已完成单元数
 - ✨ 新增进度 JSON 导出/导入，换机或重装可恢复

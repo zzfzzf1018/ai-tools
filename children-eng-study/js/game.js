@@ -42,20 +42,26 @@ const Game = {
         }
     },
 
-    // 获取游戏用的单词数据（跟随当前选择的年级）
+    // 获取游戏用的单词数据（优先当前单元，不足时用同年级其他单元补齐）
     getGameWords: function(count = 8) {
         const grade = LEARNING_DATA[this.currentGrade] || LEARNING_DATA[1];
-        const allWords = [];
-        
-        Object.values(grade.units).forEach(unit => {
-            unit.words.forEach(word => {
-                allWords.push(word);
+        const unitWords = [];
+        const otherWords = [];
+
+        Object.keys(grade.units).forEach(unitKey => {
+            grade.units[unitKey].words.forEach(word => {
+                if (String(unitKey) === String(App.currentUnit) && this.currentGrade === App.currentGrade) {
+                    unitWords.push(word);
+                } else {
+                    otherWords.push(word);
+                }
             });
         });
 
-        // 打乱并取前 count 个
-        const shuffled = allWords.sort(() => Math.random() - 0.5);
-        return shuffled.slice(0, Math.min(count, shuffled.length));
+        // 当前单元的词优先出现，其余随机补齐
+        const prioritized = unitWords.sort(() => Math.random() - 0.5);
+        const fillers = otherWords.sort(() => Math.random() - 0.5);
+        return prioritized.concat(fillers).slice(0, count);
     },
 
     startGame: function(gameType) {
@@ -95,14 +101,16 @@ const Game = {
         document.getElementById('gameScore').textContent = this.gameScore;
     },
 
-    // 按正确率发星：全对 5 星，正确率越低星星越少，保底 1 星
-    completeGame: function(correct = 0, total = 0) {
-        const ratio = total > 0 ? correct / total : 1;
-        const stars = Math.max(1, Math.min(5, Math.round(1 + ratio * 4)));
+    // 按失误扣星：满星 5 颗，每 2 次失误扣 1 颗，保底 1 颗
+    completeGame: function(mistakes = 0) {
+        const stars = Math.max(1, 5 - Math.ceil(mistakes / 2));
 
         App.userData.totalGames++;
         App.userData.missions.game = true;
         App.userData.stars += stars;
+        if (!App.userData.completedGames.includes(this.currentGame)) {
+            App.userData.completedGames.push(this.currentGame);
+        }
         App.saveUserData();
         App.updateStats();
         App.updateMissionsUI();
@@ -140,6 +148,7 @@ const Game = {
         let selectedEn = null;
         let selectedCn = null;
         let matchedCount = 0;
+        let mistakes = 0;
 
         // 渲染英文
         shuffledEn.forEach(word => {
@@ -192,22 +201,22 @@ const Game = {
                 enItem.classList.remove('selected');
                 cnItem.classList.remove('selected');
                 this.updateScore(10);
-                App.createConfetti();
                 matchedCount++;
 
-                // 配对成功时朗读该单词
-                const matchedWord = words.find(w => String(w.id) === String(selectedEn));
+                // 配对成功时朗读该单词（用户操作触发的即时反馈）
+                const matchedWord = words[Number(selectedEn)];
                 if (matchedWord) SpeechHelper.speakWord(matchedWord.word);
 
                 if (matchedCount === words.length) {
                     setTimeout(() => {
-                        const stars = this.completeGame(words.length, words.length);
+                        const stars = this.completeGame(mistakes);
                         App.showModal('🎉', '恭喜通关！', `你的得分是 ${this.gameScore} 分，获得 ${stars} 颗星星！`);
                         App.createConfetti();
                     }, 500);
                 }
             } else {
                 // 不匹配
+                mistakes++;
                 setTimeout(() => {
                     enItem.classList.remove('selected');
                     cnItem.classList.remove('selected');
@@ -223,15 +232,16 @@ const Game = {
     initGuessGame: function() {
         const words = this.getGameWords(10);
         let currentIndex = 0;
-        let correctCount = 0;
+        let firstTryCorrect = 0;
+        let mistakes = 0;
         const content = document.getElementById('gameContent');
 
         const renderQuestion = () => {
             if (currentIndex >= words.length) {
                 // 游戏结束
                 setTimeout(() => {
-                    const stars = this.completeGame(correctCount, words.length);
-                    App.showModal('🎉', '游戏结束！', `正确 ${correctCount}/${words.length} 题，得分 ${this.gameScore}，获得 ${stars} 颗星星！`);
+                    const stars = this.completeGame(mistakes);
+                    App.showModal('🎉', '游戏结束！', `一次答对 ${firstTryCorrect}/${words.length} 题，得分 ${this.gameScore}，获得 ${stars} 颗星星！`);
                 }, 500);
                 return;
             }
@@ -264,28 +274,36 @@ const Game = {
             }
 
             // 播放按钮
-            document.getElementById('guessAudioBtn').addEventListener('click', function() {
+            document.getElementById('guessAudioBtn').addEventListener('click', () => {
                 SpeechHelper.speakWord(currentWord.word);
             });
 
-            // 选项点击
+            // answered 防止答对后等待期间重复点击，造成重复计分跳题
+            let answered = false;
+            let triedWrong = false;
+
+            // 选项点击（箭头函数保证 this 指向 Game）
             document.querySelectorAll('.guess-option').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    const selectedWord = this.dataset.word;
-                    
+                btn.addEventListener('click', () => {
+                    if (answered) return;
+                    const selectedWord = btn.dataset.word;
+
                     if (selectedWord === currentWord.word) {
-                        this.classList.add('correct');
-                        this.updateScore(10);
-                        correctCount++;
+                        answered = true;
+                        btn.classList.add('correct');
+                        this.updateScore(triedWrong ? 5 : 10);
+                        if (!triedWrong) firstTryCorrect++;
                         SpeechHelper.speak('Correct! Well done!');
                         setTimeout(() => {
                             currentIndex++;
                             renderQuestion();
                         }, 1000);
                     } else {
-                        this.classList.add('wrong');
+                        triedWrong = true;
+                        mistakes++;
+                        btn.classList.add('wrong');
                         SpeechHelper.speak('Try again!');
-                        setTimeout(() => this.classList.remove('wrong'), 500);
+                        setTimeout(() => btn.classList.remove('wrong'), 500);
                     }
                 });
             });
@@ -298,19 +316,22 @@ const Game = {
     initSpellGame: function() {
         const words = this.getGameWords(8);
         let currentIndex = 0;
-        let correctCount = 0;
+        let firstTryCorrect = 0;
+        let mistakes = 0;
         const content = document.getElementById('gameContent');
 
         const renderQuestion = () => {
             if (currentIndex >= words.length) {
                 setTimeout(() => {
-                    const stars = this.completeGame(correctCount, words.length);
-                    App.showModal('🎉', '拼写完成！', `正确 ${correctCount}/${words.length}，得分 ${this.gameScore}，获得 ${stars} 颗星星！`);
+                    const stars = this.completeGame(mistakes);
+                    App.showModal('🎉', '拼写完成！', `一次拼对 ${firstTryCorrect}/${words.length}，得分 ${this.gameScore}，获得 ${stars} 颗星星！`);
                 }, 500);
                 return;
             }
 
             const currentWord = words[currentIndex];
+            // 字母数只统计 a-z，不把空格、撇号算进去
+            const letterCount = currentWord.word.replace(/[^a-zA-Z]/g, '').length;
             
             content.innerHTML = `
                 <div class="spell-container">
@@ -322,7 +343,7 @@ const Game = {
                         <input type="text" class="spell-input" id="spellInput" placeholder="输入英文" autocomplete="off" spellcheck="false">
                         <button class="spell-check-btn" id="spellCheckBtn">检查 ✅</button>
                     </div>
-                    <div class="spell-hint">💡 提示：这个单词有 ${currentWord.word.length} 个字母</div>
+                    <div class="spell-hint">💡 提示：这个单词有 ${letterCount} 个字母</div>
                 </div>
             `;
 
@@ -340,6 +361,7 @@ const Game = {
 
             // solved 防止答对后 1.2 秒内重复提交，导致连跳多题
             let solved = false;
+            let triedWrong = false;
 
             const checkAnswer = () => {
                 if (solved) return;
@@ -358,21 +380,26 @@ const Game = {
                     document.getElementById('spellCheckBtn').disabled = true;
                     input.style.borderColor = 'var(--color-green)';
                     input.style.color = 'var(--color-green)';
-                    this.updateScore(15);
-                    correctCount++;
+                    this.updateScore(triedWrong ? 8 : 15);
+                    if (!triedWrong) firstTryCorrect++;
                     SpeechHelper.speak('Excellent!');
                     setTimeout(() => {
                         currentIndex++;
                         renderQuestion();
                     }, 1200);
                 } else {
+                    triedWrong = true;
+                    mistakes++;
                     input.style.borderColor = '#EF4444';
                     input.style.color = '#EF4444';
                     SpeechHelper.speak('Almost! Listen again.');
                     setTimeout(() => {
                         input.style.borderColor = 'var(--color-blue)';
                         input.style.color = 'var(--color-text)';
-                        if (!solved) SpeechHelper.speakWord(currentWord.word);
+                        // 仅在题目仍未切换时重读单词，避免切走后残留发音
+                        if (!solved && document.getElementById('spellInput') === input) {
+                            SpeechHelper.speakWord(currentWord.word);
+                        }
                     }, 800);
                 }
             };
@@ -404,6 +431,7 @@ const Game = {
 
         let flippedCards = [];
         let matchedPairs = 0;
+        let mistakes = 0;
         let isProcessing = false;
 
         content.innerHTML = `
@@ -446,17 +474,18 @@ const Game = {
                             matchedPairs++;
                             flippedCards = [];
                             isProcessing = false;
-                            App.createConfetti();
 
                             if (matchedPairs === words.length) {
                                 setTimeout(() => {
-                                    const stars = this.completeGame(words.length, words.length);
+                                    const stars = this.completeGame(mistakes);
                                     App.showModal('🎉', '记忆超群！', `得分 ${this.gameScore} 分，获得 ${stars} 颗星星！`);
+                                    App.createConfetti();
                                 }, 500);
                             }
                         }, 600);
                     } else {
                         // 配对失败
+                        mistakes++;
                         setTimeout(() => {
                             first.el.textContent = '?';
                             second.el.textContent = '?';

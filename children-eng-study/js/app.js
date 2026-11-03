@@ -29,12 +29,14 @@ const App = {
             speak: 0,
             game: false
         },
-        badges: [],
-        gradeProgress: {}  // 各年级进度
+        badges: []
     },
 
     // 发音代次，用于丢弃上一张卡片迟到的回调
     speechToken: 0,
+
+    // 卡片自动朗读的定时器句柄，切换卡片/页面时需要清理
+    autoSpeakTimer: null,
 
     // 初始化
     init: function() {
@@ -46,6 +48,7 @@ const App = {
         this.initModal();
         this.initSettings();
         this.initDataTransfer();
+        this.startDayWatcher();
         
         // 打印支持信息
         console.log('🎪 趣味英语乐园已启动！');
@@ -54,7 +57,12 @@ const App = {
 
     // 加载用户数据
     loadUserData: function() {
-        const saved = localStorage.getItem('kidsEnglishUserData');
+        let saved = null;
+        try {
+            saved = localStorage.getItem('kidsEnglishUserData');
+        } catch(e) {
+            console.warn('读取本地存储失败:', e);
+        }
         if (saved) {
             try {
                 const parsed = JSON.parse(saved);
@@ -81,9 +89,6 @@ const App = {
             { learn: 0, speak: 0, game: false },
             data.missions && typeof data.missions === 'object' ? data.missions : {}
         );
-        if (!data.gradeProgress || typeof data.gradeProgress !== 'object') {
-            data.gradeProgress = {};
-        }
         data.schemaVersion = 2;
         this.migrateLearnedWords();
     },
@@ -189,6 +194,24 @@ const App = {
         this.updateStats();
     },
 
+    // 应用长时间打开时，跨天后自动重置连续记录与每日任务
+    startDayWatcher: function() {
+        const check = () => {
+            const today = new Date().toDateString();
+            if (this.userData.lastVisitDate !== today) {
+                this.checkDailyStreak();
+            } else if (this.userData.missionDate !== today) {
+                this.resetDailyMissions(today);
+                this.saveUserData();
+                this.updateMissionsUI();
+            }
+        };
+        setInterval(check, 60 * 1000);
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) check();
+        });
+    },
+
     // 每日任务跨天清零（只改数据，UI 由 updateMissionsUI 刷新）
     resetDailyMissions: function(today) {
         this.userData.missionDate = today || new Date().toDateString();
@@ -202,9 +225,15 @@ const App = {
         });
     },
 
-    // 统一切换页面：停止发音、恢复学习控制条、刷新成就数据
+    // 统一切换页面：停止发音、作废旧语音回调、恢复学习控制条、刷新成就数据
     showPage: function(tab) {
         SpeechHelper.stop();
+        // 代次递增：让切换前未完成的单词回调和 800ms 句子朗读全部失效
+        this.speechToken++;
+        if (this.autoSpeakTimer) {
+            clearTimeout(this.autoSpeakTimer);
+            this.autoSpeakTimer = null;
+        }
 
         document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
         const page = document.getElementById('page-' + tab);
@@ -310,13 +339,16 @@ const App = {
             return;
         }
 
-        // 确定卡片类型
-        let cardType = 'word';
-        if (this.currentGrade === 1 && this.currentUnit === '1') cardType = 'letter';
+        // 渲染新卡片前清掉上一张卡片未触发的自动朗读
+        if (this.autoSpeakTimer) {
+            clearTimeout(this.autoSpeakTimer);
+            this.autoSpeakTimer = null;
+        }
 
         container.innerHTML = `
-            <div class="learning-card ${cardType === 'letter' ? 'letter-card' : ''}" data-type="${cardType}"
-                 id="learningCard" role="button" tabindex="0" aria-label="点击再听一遍发音">
+            <div class="learning-card" data-type="word"
+                 id="learningCard" role="button" tabindex="0"
+                 aria-label="${card.word}，${card.cn}。点击再听一遍发音">
                 <span class="card-emoji">${card.emoji}</span>
                 <div class="card-word">${card.word}</div>
                 <div class="card-phonetic">${card.phonetic}</div>
@@ -351,7 +383,13 @@ const App = {
 
         // 自动发音（不计入朗读次数，可在语音设置里关闭）
         if (SpeechHelper.settings.autoSpeak) {
-            setTimeout(() => this.speakCurrentCard(false), 300);
+            const token = this.speechToken;
+            this.autoSpeakTimer = setTimeout(() => {
+                this.autoSpeakTimer = null;
+                // 期间切换过页面或换过卡片则放弃播放
+                if (token !== this.speechToken) return;
+                this.speakCurrentCard(false);
+            }, 300);
         }
 
         // 更新进度
@@ -614,7 +652,14 @@ const App = {
             if (e.target.id === 'modalOverlay') this.closeModal();
         });
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') this.closeModal();
+            if (e.key !== 'Escape') return;
+            // Esc 优先关设置面板，其次关弹窗
+            const panel = document.getElementById('settingsPanel');
+            if (panel && panel.classList.contains('show')) {
+                panel.classList.remove('show');
+                return;
+            }
+            this.closeModal();
         });
     },
 
@@ -660,7 +705,9 @@ const App = {
             SpeechHelper.saveSettings();
         };
 
-        document.getElementById('settingsBtn').onclick = () => panel.classList.add('show');
+        document.getElementById('settingsBtn').onclick = () => {
+            panel.classList.toggle('show');  // ⚙️ 可开可关
+        };
         document.getElementById('settingsClose').onclick = () => panel.classList.remove('show');
         document.getElementById('settingsTest').onclick = () => {
             SpeechHelper.speak('Hello! Let us learn English together.');
@@ -677,18 +724,22 @@ const App = {
 
         document.getElementById('exportBtn').onclick = () => {
             const payload = {
-                schemaVersion: 2,
+                schemaVersion: this.userData.schemaVersion,
                 exportedAt: new Date().toISOString(),
-                userData: this.userData
+                userData: this.userData,
+                speechSettings: SpeechHelper.settings
             };
             const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
             link.download = `kids-english-progress-${new Date().toISOString().slice(0, 10)}.json`;
+            // 部分浏览器要求链接挂在 DOM 上，且不能立刻回收 URL
+            document.body.appendChild(link);
             link.click();
-            URL.revokeObjectURL(url);
-            hint.textContent = '已导出进度文件';
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            hint.textContent = '已导出进度文件（含语音设置）';
         };
 
         document.getElementById('importBtn').onclick = () => fileInput.click();
@@ -697,9 +748,17 @@ const App = {
             if (!file) return;
             file.text().then(text => {
                 const parsed = JSON.parse(text);
+                if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                    throw new Error('文件格式不正确');
+                }
+                if (parsed.schemaVersion && parsed.schemaVersion > this.userData.schemaVersion) {
+                    throw new Error('文件来自更新的版本，请升级应用后再导入');
+                }
                 const data = parsed.userData || parsed;
-                if (!data || typeof data !== 'object') throw new Error('文件格式不正确');
-                if (!window.confirm('导入会覆盖当前进度，确定继续吗？')) {
+                if (!data || typeof data !== 'object' || Array.isArray(data)) {
+                    throw new Error('文件中没有有效的进度数据');
+                }
+                if (!window.confirm('导入将替换当前学习进度和语音设置，确定继续吗？')) {
                     fileInput.value = '';
                     return;
                 }
@@ -707,6 +766,12 @@ const App = {
                 this.userData = Object.assign({}, this.userData, data);
                 this.normalizeUserData();
                 this.saveUserData();
+
+                // 语音设置一并恢复（如果备份里包含）
+                if (parsed.speechSettings && typeof parsed.speechSettings === 'object') {
+                    Object.assign(SpeechHelper.settings, parsed.speechSettings);
+                    SpeechHelper.saveSettings();
+                }
                 location.reload();
             }).catch(error => {
                 hint.textContent = `导入失败：${error.message}`;

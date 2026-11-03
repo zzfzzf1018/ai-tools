@@ -1161,7 +1161,7 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1100;
+    z-index: 900;  /* 低于弹窗 1000，弹窗永远在最上层 */
     opacity: 0;
     visibility: hidden;
     transition: all 0.3s;
@@ -1174,6 +1174,8 @@ html, body {
     border-radius: var(--radius-lg);
     padding: 28px;
     width: min(360px, 90vw);
+    max-height: 90vh;  /* 小屏不溢出 */
+    overflow-y: auto;
     box-shadow: 0 24px 64px rgba(0, 0, 0, 0.2);
     display: flex;
     flex-direction: column;
