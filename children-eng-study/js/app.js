@@ -54,6 +54,7 @@ const App = {
         this.startDayWatcher();
         this.initDictSearch();
         this.initWordListNav();
+        this.bindCardControls();
 
         // 打印支持信息
         console.log('🎪 趣味英语乐园已启动！');
@@ -137,7 +138,11 @@ const App = {
         try {
             localStorage.setItem('kidsEnglishUserData', JSON.stringify(this.userData));
         } catch(e) {
-            console.warn('保存用户数据失败:', e);
+            if (e.name === 'QuotaExceededError' || e.code === 22) {
+                this.showModal('⚠️', '存储空间不足', '录音或进度文件太多啦！请删除一些旧录音后再试~');
+            } else {
+                console.warn('保存用户数据失败:', e);
+            }
         }
     },
 
@@ -326,9 +331,6 @@ const App = {
 
         // 显示控制按钮
         document.getElementById('cardControls').style.display = 'flex';
-
-        // 绑定按钮事件
-        this.bindCardControls();
     },
 
     // 选择单元
@@ -362,7 +364,7 @@ const App = {
 
         const unitKey = `${this.currentGrade}-${this.currentUnit}`;
         const isLetterUnit = LEARNING_DATA[this.currentGrade].units[this.currentUnit].isLetterUnit;
-        const wordKey = `${this.currentGrade}-${this.currentUnit}-${isLetterUnit ? card.letterLower : card.word}`;
+        const wordKey = `${this.currentGrade}-${this.currentUnit}-${card.word}`;
         const isFav = this.userData.favorites.includes(wordKey);
         const isWeak = this.userData.weakWords.includes(wordKey);
         const hasRecording = !!this.userData.recordings[wordKey];
@@ -770,7 +772,7 @@ const App = {
         };
         fillVoices();
         if (window.speechSynthesis) {
-            window.speechSynthesis.onvoiceschanged = fillVoices;
+            window.speechSynthesis.addEventListener('voiceschanged', fillVoices);
         }
 
         toggle.onchange = () => {

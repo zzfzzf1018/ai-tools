@@ -8,9 +8,7 @@ const SpeechHelper = {
     settings: { autoSpeak: true, rate: 0.8, voiceName: '' },
     settingsKey: 'kidsEnglishSpeechSettings',
 
-    // 发音请求队列 + 去重：避免快速重复点击时堆叠合成请求
-    speakQueue: [],
-    queueProcessing: false,
+    // 发音请求去重：避免快速重复点击时堆叠合成请求
     lastSpeakKey: '',
     lastSpeakTime: 0,
 
@@ -207,9 +205,9 @@ const SpeechHelper = {
         this.loadSettings();
         if (this.isSupported()) {
             window.speechSynthesis.getVoices();
-            window.speechSynthesis.onvoiceschanged = () => {
+            window.speechSynthesis.addEventListener('voiceschanged', () => {
                 window.speechSynthesis.getVoices();
-            };
+            });
         }
     },
 
