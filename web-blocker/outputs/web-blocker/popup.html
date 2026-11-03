@@ -49,7 +49,7 @@
       border-bottom: 1px solid var(--line);
     }
     .hint { color: var(--muted); font-size: 11px; }
-    .switch { position: relative; width: 38px; height: 20px; flex: none; }
+    .switch { position: relative; width: 38px; height: 20px; flex: none; cursor: pointer; }
     .switch input { opacity: 0; width: 0; height: 0; }
     .slider { position: absolute; inset: 0; background: var(--line); border-radius: 20px; transition: background .15s; }
     .slider::before {
@@ -117,7 +117,7 @@
       全局启用
       <div class="hint">关掉后所有规则立即失效并还原页面</div>
     </div>
-    <span class="switch"><input type="checkbox" id="master" /><span class="slider"></span></span>
+    <label class="switch"><input type="checkbox" id="master" /><span class="slider"></span></label>
   </div>
 
   <div class="row">

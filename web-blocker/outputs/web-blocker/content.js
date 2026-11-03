@@ -16,7 +16,7 @@
   if (window.__blkLoaded) return;
   window.__blkLoaded = true;
 
-  const VERSION = '1.4.3';
+  const VERSION = '1.4.4';
   const ATTR = 'data-blk';
   const STYLE_ID = 'blk-injected-style';
   const TOAST_ID = 'blk-toast';
