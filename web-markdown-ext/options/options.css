@@ -1,0 +1,164 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 20px;
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  color: #1e293b;
+  background: #f8fafc;
+  min-height: 100vh;
+}
+
+header {
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+h1 {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.subtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.group {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+
+.group h2 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  flex-wrap: wrap;
+}
+
+.row label {
+  font-size: 13px;
+  color: #475569;
+  min-width: 120px;
+}
+
+.row input[type="text"],
+.row input[type="number"],
+.row select {
+  flex: 1;
+  min-width: 200px;
+  padding: 6px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #1e293b;
+  background: #fff;
+  max-width: 320px;
+}
+
+.row input[type="text"]:focus,
+.row input[type="number"]:focus,
+.row select:focus {
+  outline: 2px solid #93c5fd;
+  outline-offset: -1px;
+  border-color: #2563eb;
+}
+
+.row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #2563eb;
+  cursor: pointer;
+}
+
+.row input[type="checkbox"] + span {
+  font-size: 13px;
+  color: #475569;
+}
+
+.conditional {
+  padding-left: 26px;
+}
+
+.conditional.hidden {
+  display: none;
+}
+
+.hint {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 4px;
+  flex-basis: 100%;
+}
+
+code {
+  background: #f1f5f9;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  color: #7c3aed;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 16px;
+}
+
+button {
+  padding: 8px 20px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+
+button:hover:not(:disabled) {
+  background: #f1f5f9;
+}
+
+button.primary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+button.primary:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+button.secondary {
+  background: #fff;
+}
+
+.save-status {
+  font-size: 12px;
+  color: #15803d;
+  margin-left: 8px;
+}
+
+.save-status.error {
+  color: #b91c1c;
+}

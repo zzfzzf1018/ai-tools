@@ -8,7 +8,10 @@
 <body>
   <header>
     <h1>Web &rarr; Markdown</h1>
-    <span id="word-count" class="word-count"></span>
+    <div class="header-actions">
+      <span id="word-count" class="word-count"></span>
+      <button id="btn-settings" class="icon-btn" title="设置">⚙</button>
+    </div>
   </header>
 
   <div class="actions">
@@ -25,6 +28,15 @@
     <button id="btn-download" disabled>下载 .md</button>
   </div>
 
+  <div id="history-section" class="history-section hidden">
+    <div class="history-header">
+      <span>最近转换</span>
+      <button id="btn-clear-history" class="link-btn">清空</button>
+    </div>
+    <ul id="history-list" class="history-list"></ul>
+  </div>
+
+  <script src="../lib/config.js"></script>
   <script src="../lib/turndown.js"></script>
   <script src="../lib/turndown-plugin-gfm.js"></script>
   <script src="../lib/markdown-convert.js"></script>

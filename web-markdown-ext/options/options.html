@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Web to Markdown — 设置</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <header>
+    <h1>Web to Markdown 设置</h1>
+    <p class="subtitle">所有设置本地保存，不会上传任何数据</p>
+  </header>
+
+  <form id="settings-form" autocomplete="off">
+
+    <section class="group">
+      <h2>输出格式</h2>
+
+      <label class="row">
+        <input type="checkbox" id="includeMetaHeader">
+        <span>输出元信息头（标题、来源 URL、抓取时间）</span>
+      </label>
+
+      <label class="row">
+        <input type="checkbox" id="obsidianFrontMatter">
+        <span>添加 Obsidian YAML Front Matter</span>
+      </label>
+
+      <div class="row">
+        <label for="headingStyle">标题风格：</label>
+        <select id="headingStyle">
+          <option value="atx">ATX 风格（# 标题）</option>
+          <option value="setext">Setext 风格（标题下划线）</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label for="codeBlockStyle">代码块风格：</label>
+        <select id="codeBlockStyle">
+          <option value="fenced">围栏（```）</option>
+          <option value="indented">缩进（4 空格）</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label for="bulletListMarker">列表符号：</label>
+        <select id="bulletListMarker">
+          <option value="-">- 短横线</option>
+          <option value="*">* 星号</option>
+          <option value="+">+ 加号</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label for="emDelimiter">斜体符号：</label>
+        <select id="emDelimiter">
+          <option value="*">* 星号</option>
+          <option value="_">_ 下划线</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>内容处理</h2>
+
+      <label class="row">
+        <input type="checkbox" id="detectCodeLanguage">
+        <span>自动检测代码块语言（给 ``` 加语言标注）</span>
+      </label>
+
+      <label class="row">
+        <input type="checkbox" id="fixHeadingLevels">
+        <span>正文标题层级修正（避免多个 h1）</span>
+      </label>
+
+      <label class="row">
+        <input type="checkbox" id="preserveMath">
+        <span>保留 LaTeX 数学公式（$...$ / $$...$$）</span>
+      </label>
+
+      <div class="row">
+        <label for="imageHandling">图片处理：</label>
+        <select id="imageHandling">
+          <option value="keep-url">保留原始 URL（离线后无法查看）</option>
+          <option value="download-local">下载到本地（归档更完整）</option>
+        </select>
+      </div>
+
+      <div class="row conditional" data-dep="imageHandling" data-val="download-local">
+        <label for="imageDownloadDir">图片下载子目录：</label>
+        <input type="text" id="imageDownloadDir" placeholder="wmd-images" maxlength="40">
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>文件名模板</h2>
+
+      <div class="row">
+        <input type="text" id="filenameTemplate" placeholder="{{title}}" maxlength="80">
+      </div>
+      <p class="hint">
+        支持占位符：<code>{{title}}</code>、<code>{{date}}</code>、<code>{{url-host}}</code>
+      </p>
+    </section>
+
+    <section class="group">
+      <h2>历史记录</h2>
+
+      <label class="row">
+        <input type="checkbox" id="enableHistory">
+        <span>启用转换历史记录</span>
+      </label>
+
+      <div class="row conditional" data-dep="enableHistory" data-val="true">
+        <label for="historyMaxItems">最多保存条数：</label>
+        <input type="number" id="historyMaxItems" min="5" max="50">
+      </div>
+
+      <div class="row">
+        <button type="button" id="btn-clear-history" class="secondary">清空历史记录</button>
+        <span id="history-info" class="hint"></span>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>预览</h2>
+
+      <label class="row">
+        <input type="checkbox" id="showArticlePreview">
+        <span>转换前高亮预览正文区域（避免提取失败）</span>
+      </label>
+    </section>
+
+    <div class="footer">
+      <button type="submit" class="primary">保存设置</button>
+      <button type="button" id="btn-reset" class="secondary">恢复默认</button>
+      <span id="save-status" class="save-status"></span>
+    </div>
+
+  </form>
+
+  <script src="../lib/config.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

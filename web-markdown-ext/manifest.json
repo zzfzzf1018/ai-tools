@@ -2,13 +2,18 @@
   "manifest_version": 3,
   "name": "Web to Markdown",
   "version": "0.1.0",
-  "description": "一键将网页正文或选中内容转换为 Markdown，支持复制到剪贴板与下载 .md 文件。",
+  "description": "一键将网页正文或选中内容转换为 Markdown，支持图片本地化、历史记录、Obsidian Front Matter。",
   "permissions": [
     "activeTab",
     "scripting",
     "contextMenus",
     "downloads",
-    "notifications"
+    "notifications",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"
@@ -22,6 +27,10 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
   },
   "icons": {
     "16": "icons/icon16.png",

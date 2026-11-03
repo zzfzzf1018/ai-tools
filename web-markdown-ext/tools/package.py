@@ -33,9 +33,13 @@ RUNTIME_FILES = [
     "popup/popup.html",
     "popup/popup.css",
     "popup/popup.js",
+    "options/options.html",
+    "options/options.css",
+    "options/options.js",
     "lib/readability.js",
     "lib/turndown.js",
     "lib/turndown-plugin-gfm.js",
+    "lib/config.js",
     "lib/markdown-convert.js",
 ]
 # 自有 JS（node --check 范围；第三方库不重复检查）
@@ -43,6 +47,8 @@ JS_FILES = [
     "background.js",
     "content/content.js",
     "popup/popup.js",
+    "options/options.js",
+    "lib/config.js",
     "lib/markdown-convert.js",
 ]
 
