@@ -44,7 +44,7 @@ python tools/package.py          # 输出 dist/web-markdown-ext-v<版本>.zip
 python scripts/versioning.py version --allow-fallback
 ```
 
-发布由 tag 驱动，推送标签后 GitHub Actions 自动校验、打包并创建 Release：
+发布由 tag 驱动，推送标签后 GitHub Actions 自动校验、打包并创建 Release（Release 说明自动取自 CHANGELOG.md 中对应版本的变更段落，缺失则发布失败）：
 
 ```powershell
 git tag web-markdown-ext-v0.1.1

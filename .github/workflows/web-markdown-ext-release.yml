@@ -93,7 +93,7 @@ jobs:
             echo 'Release already exists; refusing to overwrite published downloads.' >&2
             exit 1
           fi
-          gh release create "$RELEASE_TAG" ./* \
+          gh release create "$RELEASE_TAG" web-markdown-ext-*.zip SHA256SUMS.txt release.json \
             --target "$RELEASE_SHA" --draft --title "Web to Markdown ${RELEASE_TAG#web-markdown-ext-v}" \
-            --notes $'网页转 Markdown Edge/Chrome 扩展\n\n安装方式：\n1. 下载 zip 并解压\n2. 浏览器访问 edge://extensions 或 chrome://extensions\n3. 开启"开发人员模式"\n4. 点击"加载解压缩的扩展"选择解压后的 web-markdown-ext 文件夹\n\n功能：一键将网页正文（Readability）或选中内容转换为 Markdown；弹窗预览可编辑、复制或下载 .md；支持右键菜单与 Alt+M 快捷键；GFM 表格与代码块；完全离线。\n\nSHA256SUMS.txt 记录了各下载文件的校验哈希。'
+            --notes-file RELEASE_NOTES.md
           gh release edit "$RELEASE_TAG" --draft=false --latest

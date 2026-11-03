@@ -15,6 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 TAG_PREFIX = "web-markdown-ext-v"
 MANIFEST_PATH = "manifest.json"
+CHANGELOG_PATH = "CHANGELOG.md"
 ARCHIVE_PREFIX = "web-markdown-ext"
 STABLE = re.compile(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)")
 SEMVER = re.compile(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?")
@@ -201,6 +202,39 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def extract_changelog_notes(root: Path, semver: str) -> str:
+    """从 CHANGELOG.md 提取 `## [semver]` 段落正文；缺失或为空则报错（强制变更留痕）。"""
+    changelog = root / CHANGELOG_PATH
+    if not changelog.is_file():
+        raise VersionError(f"Changelog not found: {changelog}")
+    text = changelog.read_text(encoding="utf-8")
+    pattern = re.compile(
+        rf"^## \[{re.escape(semver)}\][^\n]*\n(?P<body>.*?)(?=^## \[|\Z)",
+        re.MULTILINE | re.DOTALL,
+    )
+    match = pattern.search(text)
+    if not match or not match.group("body").strip():
+        raise VersionError(
+            f"CHANGELOG.md 缺少版本 [{semver}] 的变更记录段落，发布中止。"
+            "请先补充该版本的变更内容。"
+        )
+    return match.group("body").strip()
+
+
+def build_release_notes(semver: str, changes: str) -> str:
+    return (
+        f"## Web to Markdown {semver}\n\n"
+        f"{changes}\n\n"
+        "---\n\n"
+        "安装方式：\n"
+        "1. 下载 zip 并解压\n"
+        "2. 浏览器访问 edge://extensions 或 chrome://extensions\n"
+        "3. 开启「开发人员模式」\n"
+        "4. 点击「加载解压缩的扩展」选择解压后的 web-markdown-ext 文件夹\n\n"
+        "SHA256SUMS.txt 记录了各下载文件的校验哈希。\n"
+    )
+
+
 def prepare_assets(root: Path, version: dict, archive: Path) -> list[dict]:
     semver = str(version.get("SemVer", ""))
     if not SEMVER.fullmatch(semver) or not SHA.fullmatch(str(version.get("Sha", ""))):
@@ -240,6 +274,10 @@ def prepare_assets(root: Path, version: dict, archive: Path) -> list[dict]:
     }
     (destination / "release.json").write_text(
         json.dumps(release, indent=2) + "\n", encoding="utf-8", newline="\n"
+    )
+    notes = build_release_notes(semver, extract_changelog_notes(root, semver))
+    (destination / "RELEASE_NOTES.md").write_text(
+        notes, encoding="utf-8", newline="\n"
     )
     return assets
 

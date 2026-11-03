@@ -101,7 +101,7 @@ Manifest V3 扩展，四个运行时组件，无后端：
 - `scripts/versioning.py` 三个子命令：
   - `version [--allow-fallback]`：计算构建版本（GitVersion 不可用时回退 manifest 版本 + `-local` 后缀）
   - `apply --tag <tag>`：校验标签与 GitVersion 计算结果一致、工作区干净，然后把版本写入 manifest.json
-  - `prepare --archive <zip>`：校验 zip 完整性与包内 manifest 版本，产出 `release-assets/`（zip + SHA256SUMS.txt + release.json）
+  - `prepare --archive <zip>`：校验 zip 完整性与包内 manifest 版本，产出 `release-assets/`（zip + SHA256SUMS.txt + release.json + RELEASE_NOTES.md）；**从 CHANGELOG.md 提取 `## [X.Y.Z]` 段落生成 Release 说明，缺失该段落则发布失败（强制变更留痕）**
 
 **打包（tools/package.py）**
 

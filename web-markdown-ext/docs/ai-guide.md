@@ -40,10 +40,10 @@ python tools/package.py
 
 ## 5. 发布流程
 
-1. 完成功能修改，更新文档与 CHANGELOG，提交并推送 main
+1. 完成功能修改，更新文档；**在 CHANGELOG.md 顶部新增 `## [X.Y.Z] - 日期` 段落写明变更内容（CI 发布必需，缺失则发布失败）**，提交并推送 main
 2. 本地 `python tools/package.py` 验证通过
 3. 打标签并推送：`git tag web-markdown-ext-v<X.Y.Z>` → `git push origin web-markdown-ext-v<X.Y.Z>`
-4. GitHub Actions 自动执行：GitVersion 校验标签 → 打包 → 创建 GitHub Release（zip + SHA256SUMS.txt）
+4. GitHub Actions 自动执行：GitVersion 校验标签 → 打包 → 从 CHANGELOG 提取该版本变更生成 Release 说明 → 创建 GitHub Release（zip + SHA256SUMS.txt + release.json）
 5. 注意：manifest.json 的 `version` 由 CI 在发布时写入，本地保持与上一个发布版一致即可
 
 ## 6. 已知限制

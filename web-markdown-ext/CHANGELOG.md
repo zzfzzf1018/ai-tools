@@ -1,7 +1,16 @@
 # 更新日志
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。小规模修改仅递增修订号（patch）。
-Git 标签格式：`web-markdown-ext-<版本号>`。
+Git 标签格式：`web-markdown-ext-v<版本号>`（带 v 前缀）。
+
+## [0.1.1] - 2026-11-03
+
+### 新增
+- 发布强制变更留痕：`versioning.py prepare` 从 CHANGELOG.md 提取对应版本段落生成 RELEASE_NOTES.md 作为 GitHub Release 说明；缺失该版本段落时发布直接失败
+- Release 说明包含版本变更内容 + 安装方式
+
+### 变更
+- Release 上传资产改为精确列表（zip + SHA256SUMS.txt + release.json），不再整目录上传
 
 ## [0.1.0] - 2026-11-03
 
