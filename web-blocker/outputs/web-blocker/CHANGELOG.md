@@ -2,6 +2,22 @@
 
 遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.4.7] - 2026-11-03
+
+### 新增
+
+- **iframe 支持**：manifest `content_scripts` 加 `all_frames: true`，content.js 会在页面所有 iframe（包括跨域 iframe）里独立运行，各自匹配自己的 DOM。一个页面里嵌的广告 iframe、评论 iframe 等现在都能单独屏蔽，而不是只屏蔽顶层页面。
+  - `isTop` 守卫：每个 frame 独立判断自己是否为顶层 frame
+  - 消息路由：`blk:pick`（点选）、`blk:ping`（弹窗状态查询）只让顶层 frame 响应，避免 popup 触发时所有 iframe 同时进入点选模式
+  - toast 守卫：iframe 内的快捷键暂停/恢复静默执行，不弹提示条（iframe 内弹 toast 用户基本看不到）
+  - 广播消息保持全 frame 响应：`blk:toggleTab`、`blk:toggleSite`、`blk:setSitePaused`、`blk:apply`、`blk:cancelPick` 广播到所有 frame（每个 frame 独立翻转自己的 tabPaused/host 或各自 apply 自己的 DOM）
+  - `match_about_blank: false` 排除空 iframe，避免白跑
+
+### 已知局限
+
+- iframe 内的规则会用 iframe 自己的 `location.hostname` 作为 host，而不是顶层页面的域名——跨域 iframe 里创建的规则是绑定到 iframe 来源域名的，这个设计是对的（iframe 独立运行才有意义）。
+- iframe 内不支持点选模式（太混乱，popup 点选只在顶层 frame 生效）。如需屏蔽 iframe 内的内容，先用顶层点选找到 iframe 元素，然后在规则里手动把 selectors 改为 iframe 内部元素的选择器；或直接在 iframe 页面上单独使用扩展。
+
 ## [1.4.6] - 2026-11-03
 
 ### 新增

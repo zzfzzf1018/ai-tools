@@ -16,11 +16,16 @@
   if (window.__blkLoaded) return;
   window.__blkLoaded = true;
 
-  const VERSION = '1.4.6';
+  const VERSION = '1.4.7';
   const ATTR = 'data-blk';
   const STYLE_ID = 'blk-injected-style';
   const TOAST_ID = 'blk-toast';
   const DEFAULTS = { masterEnabled: true, rules: [], pausedSites: [] };
+  let isTop = true;
+  try {
+    // window.top 不存在（极端环境）就默认顶层；存在则做比较
+    isTop = window.top === undefined ? true : window.top === window;
+  } catch (e) { /* cross-origin access violation → 默认顶层 */ }
 
   const STORAGE = chrome.storage && chrome.storage.local ? chrome.storage.local : null;
   const SYNC = chrome.storage && chrome.storage.sync ? chrome.storage.sync : null;
@@ -435,8 +440,9 @@
     return !!(pick && (n === pick.bar || n === pick.hlHover || pick.hls.indexOf(n) !== -1));
   }
 
-  /** 左下角小提示（快捷键没有弹窗可看，必须给反馈） */
+  /** 左下角小提示（快捷键没有弹窗可看，必须给反馈；iframe 内静默执行，不弹提示条） */
   function toast(text) {
+    if (!isTop) return; // iframe 里弹 toast 用户看不到（或只在小区域里看到），静默就好
     try {
       let t = document.getElementById(TOAST_ID);
       if (!t) {
@@ -954,6 +960,7 @@
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (!msg || !msg.type) return;
     if (msg.type === 'blk:ping') {
+      if (!isTop) return; // popup 只需要顶层状态
       sendResponse({
         ok: true,
         version: VERSION,
@@ -967,6 +974,7 @@
         pausedSites: state.pausedSites || [],
         stats: stats,
         picking: !!pick,
+        isTop: true,
       });
     } else if (msg.type === 'blk:toggleTab') {
       tabPaused = !tabPaused;
@@ -1027,6 +1035,11 @@
       });
       return true; // 异步回包，保持消息通道
     } else if (msg.type === 'blk:pick') {
+      if (!isTop) {
+        // iframe 内不支持点选（太混乱），返回 ok:false 让 popup 知道
+        sendResponse({ ok: false, error: 'iframe 内不支持点选，请在主页面上操作。' });
+        return;
+      }
       startPick(sendResponse);
       return true; // 异步回复
     } else if (msg.type === 'blk:cancelPick') {
