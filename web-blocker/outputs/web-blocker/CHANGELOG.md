@@ -7,11 +7,16 @@
 ### 新增
 
 - **iframe 支持**：manifest `content_scripts` 加 `all_frames: true`，content.js 会在页面所有 iframe（包括跨域 iframe）里独立运行，各自匹配自己的 DOM。一个页面里嵌的广告 iframe、评论 iframe 等现在都能单独屏蔽，而不是只屏蔽顶层页面。
-  - `isTop` 守卫：每个 frame 独立判断自己是否为顶层 frame
-  - 消息路由：`blk:pick`（点选）、`blk:ping`（弹窗状态查询）只让顶层 frame 响应，避免 popup 触发时所有 iframe 同时进入点选模式
-  - toast 守卫：iframe 内的快捷键暂停/恢复静默执行，不弹提示条（iframe 内弹 toast 用户基本看不到）
-  - 广播消息保持全 frame 响应：`blk:toggleTab`、`blk:toggleSite`、`blk:setSitePaused`、`blk:apply`、`blk:cancelPick` 广播到所有 frame（每个 frame 独立翻转自己的 tabPaused/host 或各自 apply 自己的 DOM）
-  - `match_about_blank: false` 排除空 iframe，避免白跑
+  - `isTop` 守卫：每个 frame 独立判断自己是否为顶层 frame（`window.top === window` 带 try-catch + undefined fallback，cross-origin 安全）
+  - 消息路由分两类：**状态上报**（角标、弹窗查询、点选通道）只顶层 frame 响应；**操作执行**（toggle/apply/cancelPick）全 frame 执行各自任务但静默跳过 sendResponse
+  - toast 守卫：iframe 内快捷键暂停/恢复静默执行，不弹提示条
+  - `match_about_blank: false` 排除空 iframe
+
+### BUG 修复（手动深度 review 发现）
+
+- **chrome.tabs.sendMessage 多 frame 消息竞态**：popup 点选时 `blk:pick` 广播到所有 frame，iframe 之前会同步 `sendResponse({ok:false})`，而 `chrome.tabs.sendMessage` 的 callback 只收到**第一个**响应——导致 popup 立即收到失败，顶层的 `startPick` 异步通道还在跑。修法：iframe 对 `blk:pick` **静默跳过不 sendResponse**，让顶层独占消息通道。
+- **角标被 iframe reportState 覆盖**：每个 frame apply 完都会 `reportState()` 给 background 设角标。跨域场景下，顶层 sitePaused=true 设角标 ⏸ 后，iframe sitePaused=false 的 reportState 异步到达会把角标覆盖回空。修法：`reportState()` 加 isTop 守卫，只有顶层 frame 上报角标。
+- **commands 广播的 sendResponse 跨域不一致**：background 用 `chrome.tabs.sendMessage` 广播 `blk:toggleSite`，iframe sendResponse 里 `sitePaused: isSitePaused(location.hostname)` 用的是 iframe 自己的 host（比如 ads.com），和顶层 example.com 无关。background 收到 iframe 响应会误设角标。修法：`toggleTab/toggleSite/setSitePaused` 的 sendResponse 只顶层 frame 发。
 
 ### 已知局限
 

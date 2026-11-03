@@ -467,6 +467,7 @@
   }
 
   function reportState() {
+    if (!isTop) return; // 角标是 tab 级别的状态，只让顶层 frame 上报，避免多 frame 竞态覆盖
     try {
       if (chrome.runtime && chrome.runtime.sendMessage) {
         chrome.runtime.sendMessage(
@@ -984,7 +985,7 @@
           ? '⏸ 已暂停本页屏蔽 —— 再按 Alt+Shift+B 恢复（刷新页面后也会自动恢复屏蔽）'
           : '▶ 已恢复本页屏蔽'
       );
-      sendResponse({
+      if (isTop) sendResponse({
         ok: true,
         tabPaused: tabPaused,
         sitePaused: isSitePaused(location.hostname),
@@ -1007,7 +1008,7 @@
           ? '⏸ 已暂停 ' + host + ' 全站屏蔽 —— 再按 Alt+Shift+S 恢复（会记住）'
           : '▶ 已恢复 ' + host + ' 的屏蔽'
       );
-      sendResponse({
+      if (isTop) sendResponse({
         ok: true,
         tabPaused: tabPaused,
         sitePaused: isSitePaused(host),
@@ -1026,7 +1027,7 @@
         if (SYNC) SYNC.set({ pausedSites: list }, () => {});
       }
       apply();
-      sendResponse({ ok: true, pausedSites: list, sitePaused: isSitePaused(location.hostname) });
+      if (isTop) sendResponse({ ok: true, pausedSites: list, sitePaused: isSitePaused(location.hostname) });
     } else if (msg.type === 'blk:apply') {
       readStorage().then((loaded) => {
         state = loaded;
@@ -1036,8 +1037,10 @@
       return true; // 异步回包，保持消息通道
     } else if (msg.type === 'blk:pick') {
       if (!isTop) {
-        // iframe 内不支持点选（太混乱），返回 ok:false 让 popup 知道
-        sendResponse({ ok: false, error: 'iframe 内不支持点选，请在主页面上操作。' });
+        // iframe 内不支持点选。关键：**必须静默跳过不 sendResponse**——
+        // chrome.tabs.sendMessage 广播到所有 frame 时 callback 只拿第一个响应，
+        // iframe 同步 sendResponse 会让 popup 立即收到 {ok:false}，
+        // 但顶层 startPick 还在异步执行中，用户体验灾难。
         return;
       }
       startPick(sendResponse);
