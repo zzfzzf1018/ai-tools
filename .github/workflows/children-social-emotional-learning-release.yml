@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - "children-social-emotional-learning/**"
+      - ".github/workflows/children-social-emotional-learning-release.yml"
   pull_request:
     branches: [main]
     paths:
       - "children-social-emotional-learning/**"
+      - ".github/workflows/children-social-emotional-learning-release.yml"
 
 permissions:
   contents: read

@@ -5,6 +5,9 @@
 ## [1.0.1] - 首次自动化发布修复
 
 - 修复 GitHub Actions 发布流水线：将 `npm ci` 移至 `Plan release` 步骤之前，解决 `scripts/release.cjs` 在 `plan` 阶段 `require('semver')` 找不到模块（MODULE_NOT_FOUND）导致流水线中断的问题。
+- 将 `npm ci` 改为 `npm install`，规避 electron-builder 平台专属可选依赖（如 macOS 的 dmg-license）导致的跨平台锁严格校验失败（EUSAGE）。
+- 在 `npm install` 后增加 `git checkout -- package-lock.json`，还原被 npm 按平台重写的 lock 文件，满足发布流水线对干净工作树的要求。
+- 将发布工作流自身加入 `paths` 过滤，确保仅修改工作流时也能自动触发 CI。
 - 此为首次经 CI 成功打 tag 并发布 GitHub Release 的版本（应用功能与 1.0.0 一致）。
 
 ## [1.0.0] - 初版
