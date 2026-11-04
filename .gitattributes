@@ -1,0 +1,2 @@
+# 发版脚本需要统一 LF 换行，确保 CI（Linux）与本地执行一致
+children-eng-study/scripts/*.sh text eol=lf

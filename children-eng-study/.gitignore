@@ -17,6 +17,9 @@ dist/
 release/
 release-assets/
 
+# 发版流程中间产物
+release-body.md
+
 # 系统文件
 .DS_Store
 Thumbs.db
