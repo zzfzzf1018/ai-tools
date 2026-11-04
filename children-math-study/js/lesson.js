@@ -168,6 +168,15 @@
     },
 
     /* ---------- 结算 ---------- */
+    // 小奖状花样库：每次通关随机一款（主题 + 称号 + 印章）
+    CERT_THEMES: [
+      { cls: 'cert-red',    ribbon: '奖  状', seal: '🏅', titles: ['数学小状元', '满分小达人', '智慧小明星'] },
+      { cls: 'cert-blue',   ribbon: '荣 誉 证 书', seal: '🎖️', titles: ['口算小超人', '速算小飞侠', '思维小博士'] },
+      { cls: 'cert-purple', ribbon: '嘉  奖  令', seal: '🏆', titles: ['闯关小勇士', '魔法数学家', '探索小能手'] },
+      { cls: 'cert-green',  ribbon: '奖  状', seal: '🌟', titles: ['勤奋小蜜蜂', '进步小明星', '解题小高手'] },
+      { cls: 'cert-orange', ribbon: '特 别 嘉 奖', seal: '👑', titles: ['数学小王子', '数学小公主', '最强大脑星'] }
+    ],
+
     showResult(body, L, stars, stats, next) {
       const record = async () => {
         if (stats.perfect && stats.total > 0) await Save.addBadge('perfect-candidate');
@@ -179,14 +188,30 @@
         const nextL = Data.nextLesson(L.id);
         const starHtml = [1, 2, 3].map(n =>
           `<span class="star">${n <= stars ? '⭐' : '☆'}</span>`).join('');
-        const msg = stars === 3 ? '太惊人了，零失误通关！'
-          : stars === 2 ? '很棒的表现！再练一次拿满 3 星吧'
-            : '完成啦！复习一下故事和探索，再来挑战！';
+        // 每次通关随机抽一款奖状花样与称号
+        const theme = this.CERT_THEMES[Math.floor(Math.random() * this.CERT_THEMES.length)];
+        const title = theme.titles[Math.floor(Math.random() * theme.titles.length)];
+        const playerName = (Save.data.player && Save.data.player.name) || '小朋友';
+        const today = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+        const msg = stars === 3 ? '零失误通关，太惊人了！'
+          : stars === 2 ? '很棒！再练一次冲击满星吧'
+            : '通关成功！继续加油哦';
         const panel = el('div', 'card result-panel', `
-          <div class="sparkle-guide">🎉</div>
-          <h2 class="result-msg">${msg}</h2>
-          <div class="result-stars">${starHtml}</div>
-          <div class="result-sub">答对 ${stats.total - stats.wrong}/${stats.total} 题 · ${L.title}</div>
+          <div class="certificate ${theme.cls}">
+            <div class="cert-ribbon">${theme.ribbon}</div>
+            <div class="cert-title">${title}</div>
+            <div class="cert-body">
+              兹授予 <b class="cert-name">${UI.esc(playerName)}</b><br>
+              在「${UI.esc(L.title)}」闯关中表现出色<br>
+              <span class="cert-msg">${msg}</span>
+            </div>
+            <div class="result-stars">${starHtml}</div>
+            <div class="cert-foot">
+              <span class="cert-score">${stats.total ? `答对 ${stats.total - stats.wrong}/${stats.total} 题` : '完成全部挑战'}</span>
+              <span class="cert-date">${today}</span>
+              <span class="cert-seal">${theme.seal}</span>
+            </div>
+          </div>
           <div class="result-actions">
             ${nextL ? `<button class="btn-big" id="rs-next-lesson" data-next-id="${nextL.id}">下一课：${nextL.title} ➜</button>` : ''}
             <button class="${nextL ? 'btn-secondary' : 'btn-big'}" id="rs-next">返回地图 🏝️</button>
