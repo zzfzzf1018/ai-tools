@@ -44,9 +44,9 @@ jobs:
         with:
           dotnet-version: "8.0.x"
       - run: dotnet tool restore
-      # npm ci 必须在 plan/version 之前：release.cjs 顶部 require('semver')，
-      # 而 plan 步骤会创建本地 tag，二者都依赖已安装的 node_modules。
-      - run: npm ci --no-audit --no-fund
+      # 用 npm install 而非 npm ci：electron-builder 含平台专属可选依赖（如 macOS 的 dmg-license），
+      # 单一平台生成的 package-lock.json 无法满足 npm ci 的跨平台严格校验；npm install 按当前平台对账即可。
+      - run: npm install --no-audit --no-fund
       - name: Plan release
         id: plan
         env:

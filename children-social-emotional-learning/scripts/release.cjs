@@ -8,16 +8,28 @@ const { resolveVersion } = require('./version.cjs');
 const projectRoot = path.resolve(__dirname, '..');
 const TAG_RE = /^children-social-emotional-learning-v(\d+\.\d+\.\d+)$/;
 
-function planRelease(current, previous, event) {
+function planRelease(current, previous, event, root) {
   const plan = { publish: false, tag: '' };
   if (event.name !== 'push' || event.ref !== 'refs/heads/main') return plan;
-  if (current === previous) return plan;
   const tag = `children-social-emotional-learning-v${current}`;
   validateRelease({ SemVer: current, Sha: event.sha, UncommittedChanges: 0 }, tag, event.sha);
-  if (previous !== null && (!semver.valid(previous) || !semver.gt(current, previous))) {
+  // 不允许降级发布
+  if (previous !== null && semver.valid(previous) && semver.lt(current, previous)) {
     throw new Error('Release version must increase; downgrades are not published.');
   }
-  return { publish: true, tag };
+  if (previous === null) {
+    // 首次发布：该子项目路径上尚无历史版本
+    plan.publish = true;
+  } else if (semver.gt(current, previous)) {
+    // 版本递增
+    plan.publish = true;
+  } else if (semver.eq(current, previous)) {
+    // 同版本：仅当 tag 尚未存在时重发（覆盖"上一次推送设了版本却因流水线失败未发布"的情况），
+    // 若 tag 已存在则跳过，避免重复发布。
+    if (root && !runGit(root, ['tag', '--list', tag])) plan.publish = true;
+  }
+  if (plan.publish) plan.tag = tag;
+  return plan;
 }
 
 function runGit(root, args) {
@@ -49,7 +61,7 @@ function prepareReleasePlan(root, env) {
       previous = JSON.parse(runGit(root, ['show', `${env.SEL_BEFORE_SHA}:${filename}`])).version;
     }
   }
-  const plan = planRelease(current, previous, event);
+  const plan = planRelease(current, previous, event, root);
   if (plan.publish) {
     if (runGit(root, ['tag', '--list', plan.tag])) {
       throw new Error(`Release tag ${plan.tag} already exists; use a new version.`);
