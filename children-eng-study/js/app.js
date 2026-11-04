@@ -1002,17 +1002,26 @@ const App = {
         };
         recognition.onend = () => {
             if (!heard) {
-                hint.textContent = '😢 没有听到你说话，再试试';
-            } else if (heard.includes(card.word.toLowerCase()) || heard.includes(card.word.toLowerCase().replace(/[^a-z]/g, ''))) {
-                hint.textContent = `🎉 太棒了！你说的是 "${heard}"，跟 "${card.word}" 一致！`;
-                // 跟读也算一次朗读
+                // 没检测到声音：发 1 颗鼓励星，引导孩子再大声试一次
+                this.userData.stars += 1;
+                this.saveUserData();
+                this.updateStats();
+                hint.textContent = '😢 没听到声音哦～奖你 1 颗鼓励星 ⭐，张大嘴巴再试一次！';
+            } else {
+                // 检测到声音：3 颗星 + Excellent 表扬
+                const matched = heard.includes(card.word.toLowerCase()) ||
+                                heard.includes(card.word.toLowerCase().replace(/[^a-z]/g, ''));
+                this.userData.stars += 3;
                 this.userData.totalSpeak++;
                 this.userData.missions.speak++;
                 this.saveUserData();
                 this.updateMissionsUI();
                 this.updateStats();
-            } else {
-                hint.textContent = `💪 加油！你说的是 "${heard}"，再听听标准音试试`;
+                this.checkBadges();
+                hint.textContent = matched
+                    ? `⭐⭐⭐ Excellent！你说的是 "${heard}"，跟 "${card.word}" 一模一样！`
+                    : `⭐⭐⭐ Excellent！听到你大声说 "${heard}" 啦，勇气可嘉！`;
+                SpeechHelper.speak('Excellent!');
             }
             hint.hidden = false;
         };

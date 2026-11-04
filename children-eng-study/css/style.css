@@ -1281,6 +1281,178 @@ html, body {
 
 .data-hint { font-size: 13px; color: var(--color-text-light); }
 
+/* ============== 通关小奖状 ============== */
+.cert-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1500;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s;
+}
+
+.cert-overlay.show {
+    opacity: 1;
+    visibility: visible;
+}
+
+.certificate {
+    /* 每种游戏用自己的主题色覆盖这两个变量 */
+    --cert-main: var(--color-primary);
+    --cert-soft: #FFE5EC;
+    position: relative;
+    width: min(430px, 92vw);
+    max-height: 92vh;
+    overflow-y: auto;
+    padding: 34px 26px 24px;
+    border-radius: 22px;
+    text-align: center;
+    background:
+        radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.95), transparent 55%),
+        linear-gradient(160deg, #FFFDF5 0%, var(--cert-soft) 100%);
+    border: 5px solid var(--cert-main);
+    box-shadow:
+        0 24px 64px rgba(0, 0, 0, 0.3),
+        inset 0 0 0 3px #fff,
+        inset 0 0 0 6px var(--cert-main);
+    transform: scale(0.7) rotate(-4deg);
+    transition: transform 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cert-overlay.show .certificate {
+    transform: scale(1) rotate(0deg);
+}
+
+/* 五个游戏的专属奖状配色 */
+.cert-match    { --cert-main: #FF6B9D; --cert-soft: #FFE5EC; }
+.cert-guess    { --cert-main: #60A5FA; --cert-soft: #E5F0FF; }
+.cert-spell    { --cert-main: #A78BFA; --cert-soft: #F0EAFF; }
+.cert-memory   { --cert-main: #34D399; --cert-soft: #E5FFF4; }
+.cert-fillword { --cert-main: #FF8C42; --cert-soft: #FFF0E5; }
+
+.cert-ribbon {
+    position: absolute;
+    top: -24px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 58px;
+    height: 58px;
+    line-height: 58px;
+    font-size: 32px;
+    background: var(--cert-main);
+    border-radius: 50%;
+    border: 3px solid #fff;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+    animation: ribbon-swing 2.4s ease-in-out infinite;
+}
+
+@keyframes ribbon-swing {
+    0%, 100% { transform: translateX(-50%) rotate(-8deg); }
+    50%      { transform: translateX(-50%) rotate(8deg); }
+}
+
+.cert-heading {
+    font-family: 'Baloo 2', sans-serif;
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: 10px;
+    text-indent: 10px; /* 视觉居中，抵消字间距 */
+    color: var(--cert-main);
+}
+
+.cert-title-en {
+    font-size: 13px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--color-text-light);
+    margin: 2px 0 12px;
+}
+
+.cert-divider {
+    width: 72%;
+    margin: 0 auto 14px;
+    border-top: 2px dashed var(--cert-main);
+    opacity: 0.5;
+}
+
+.cert-present {
+    font-size: 15px;
+    color: var(--color-text-light);
+}
+
+.cert-award-name {
+    font-family: 'Baloo 2', sans-serif;
+    font-size: 34px;
+    font-weight: 800;
+    color: var(--cert-main);
+    margin: 4px 0 8px;
+    text-shadow: 2px 2px 0 #fff;
+}
+
+.cert-reason {
+    font-size: 15px;
+    color: var(--color-text);
+    margin-bottom: 10px;
+}
+
+.cert-stars {
+    min-height: 56px;
+    margin: 2px 0 10px;
+}
+
+.cert-stars span {
+    display: inline-block;
+    font-size: 46px;
+    margin: 0 8px;
+    opacity: 0;
+    transform: scale(0) rotate(-180deg);
+    animation: cert-star-pop 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.cert-stars span:nth-child(1) { animation-delay: 0.35s; }
+.cert-stars span:nth-child(2) { animation-delay: 0.65s; }
+.cert-stars span:nth-child(3) { animation-delay: 0.95s; }
+
+@keyframes cert-star-pop {
+    to { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+
+.cert-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 6px;
+    font-size: 13px;
+    color: var(--color-text-light);
+}
+
+.cert-btn {
+    margin-top: 16px;
+    padding: 12px 36px;
+    background: linear-gradient(135deg, var(--cert-main), var(--color-pink));
+    border: none;
+    border-radius: 100px;
+    font-family: 'Fredoka', sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    color: white;
+    cursor: pointer;
+    transition: all 0.3s;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.cert-btn:hover {
+    transform: scale(1.08);
+}
+
 /* 减少动态效果 */
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {

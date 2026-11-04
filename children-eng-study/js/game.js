@@ -6,12 +6,36 @@
 const Game = {
     // 当前游戏状态
     currentGame: null,
+    currentGameTitle: '',
     currentGrade: 1,
     gameScore: 0,
     gameData: [],
+
+    // 每个游戏的专属奖状样式（称号 + 奖牌 + 配色类名）
+    CERTIFICATES: {
+        match:    { cls: 'cert-match',    ribbon: '🧩', award: '配对小达人', en: 'Match Master' },
+        guess:    { cls: 'cert-guess',    ribbon: '🎯', award: '听力小达人', en: 'Super Listener' },
+        spell:    { cls: 'cert-spell',    ribbon: '✏️', award: '拼写小明星', en: 'Spelling Star' },
+        memory:   { cls: 'cert-memory',   ribbon: '🃏', award: '记忆小超人', en: 'Memory Hero' },
+        fillword: { cls: 'cert-fillword', ribbon: '🧱', award: '拼词小工匠', en: 'Word Builder' }
+    },
     
     init: function() {
         this.bindGameSelector();
+
+        // 奖状关闭：按钮、点击遮罩或 Esc
+        const certOverlay = document.getElementById('certOverlay');
+        document.getElementById('certBtn').addEventListener('click', () => {
+            certOverlay.classList.remove('show');
+        });
+        certOverlay.addEventListener('click', (e) => {
+            if (e.target === certOverlay) certOverlay.classList.remove('show');
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && certOverlay.classList.contains('show')) {
+                certOverlay.classList.remove('show');
+            }
+        });
     },
 
     bindGameSelector: function() {
@@ -86,6 +110,7 @@ const Game = {
             fillword: '🧱 字母拼拼乐'
         };
         document.getElementById('gameTitle').textContent = titles[gameType] || '游戏';
+        this.currentGameTitle = titles[gameType] || '游戏';
         document.getElementById('gameScore').textContent = '0';
 
         // 根据游戏类型初始化
@@ -103,9 +128,9 @@ const Game = {
         document.getElementById('gameScore').textContent = this.gameScore;
     },
 
-    // 按失误扣星：满星 5 颗，每 2 次失误扣 1 颗，保底 1 颗
-    completeGame: function(mistakes = 0) {
-        const stars = Math.max(1, 5 - Math.ceil(mistakes / 2));
+    // 通关奖励：固定 3 颗星 + 颁发当前游戏专属样式的小奖状
+    completeGame: function() {
+        const stars = 3;
 
         App.userData.totalGames++;
         App.userData.missions.game = true;
@@ -117,8 +142,35 @@ const Game = {
         App.updateStats();
         App.updateMissionsUI();
         App.checkBadges();
+        App.createConfetti();
+        this.showCertificate(stars);
 
         return stars;
+    },
+
+    // 颁发小奖状：按游戏切换配色/称号，星星逐颗弹出
+    showCertificate: function(stars) {
+        const conf = this.CERTIFICATES[this.currentGame] ||
+            { cls: '', ribbon: '🏅', award: '闯关小达人', en: 'Great Job' };
+        const overlay = document.getElementById('certOverlay');
+        const cert = document.getElementById('certificate');
+
+        cert.className = 'certificate' + (conf.cls ? ' ' + conf.cls : '');
+        document.getElementById('certRibbon').textContent = conf.ribbon;
+        document.getElementById('certTitleEn').textContent = conf.en;
+        document.getElementById('certAwardName').textContent = conf.award;
+        document.getElementById('certReason').textContent =
+            `恭喜通关「${this.currentGameTitle}」，得分 ${this.gameScore} 分`;
+        document.getElementById('certDate').textContent =
+            new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+
+        // 重建星星节点，保证每次通关弹出动画都能重播
+        const starsBox = document.getElementById('certStars');
+        starsBox.innerHTML = Array.from({ length: stars }, () => '<span>⭐</span>').join('');
+
+        overlay.classList.add('show');
+        // 焦点落到按钮上，键盘用户可直接回车关闭
+        document.getElementById('certBtn').focus();
     },
 
     // ============== 连连看游戏 ==============
@@ -150,7 +202,6 @@ const Game = {
         let selectedEn = null;
         let selectedCn = null;
         let matchedCount = 0;
-        let mistakes = 0;
 
         // 渲染英文
         shuffledEn.forEach(word => {
@@ -210,15 +261,10 @@ const Game = {
                 if (matchedWord) SpeechHelper.speakWord(matchedWord.word);
 
                 if (matchedCount === words.length) {
-                    setTimeout(() => {
-                        const stars = this.completeGame(mistakes);
-                        App.showModal('🎉', '恭喜通关！', `你的得分是 ${this.gameScore} 分，获得 ${stars} 颗星星！`);
-                        App.createConfetti();
-                    }, 500);
+                    setTimeout(() => this.completeGame(), 500);
                 }
             } else {
                 // 不匹配
-                mistakes++;
                 setTimeout(() => {
                     enItem.classList.remove('selected');
                     cnItem.classList.remove('selected');
@@ -234,17 +280,12 @@ const Game = {
     initGuessGame: function() {
         const words = this.getGameWords(10);
         let currentIndex = 0;
-        let firstTryCorrect = 0;
-        let mistakes = 0;
         const content = document.getElementById('gameContent');
 
         const renderQuestion = () => {
             if (currentIndex >= words.length) {
                 // 游戏结束
-                setTimeout(() => {
-                    const stars = this.completeGame(mistakes);
-                    App.showModal('🎉', '游戏结束！', `一次答对 ${firstTryCorrect}/${words.length} 题，得分 ${this.gameScore}，获得 ${stars} 颗星星！`);
-                }, 500);
+                setTimeout(() => this.completeGame(), 500);
                 return;
             }
 
@@ -294,7 +335,6 @@ const Game = {
                         answered = true;
                         btn.classList.add('correct');
                         this.updateScore(triedWrong ? 5 : 10);
-                        if (!triedWrong) firstTryCorrect++;
                         SpeechHelper.speak('Correct! Well done!');
                         setTimeout(() => {
                             currentIndex++;
@@ -302,7 +342,6 @@ const Game = {
                         }, 1000);
                     } else {
                         triedWrong = true;
-                        mistakes++;
                         btn.classList.add('wrong');
                         SpeechHelper.speak('Try again!');
                         setTimeout(() => btn.classList.remove('wrong'), 500);
@@ -318,16 +357,11 @@ const Game = {
     initSpellGame: function() {
         const words = this.getGameWords(8);
         let currentIndex = 0;
-        let firstTryCorrect = 0;
-        let mistakes = 0;
         const content = document.getElementById('gameContent');
 
         const renderQuestion = () => {
             if (currentIndex >= words.length) {
-                setTimeout(() => {
-                    const stars = this.completeGame(mistakes);
-                    App.showModal('🎉', '拼写完成！', `一次拼对 ${firstTryCorrect}/${words.length}，得分 ${this.gameScore}，获得 ${stars} 颗星星！`);
-                }, 500);
+                setTimeout(() => this.completeGame(), 500);
                 return;
             }
 
@@ -383,7 +417,6 @@ const Game = {
                     input.style.borderColor = 'var(--color-green)';
                     input.style.color = 'var(--color-green)';
                     this.updateScore(triedWrong ? 8 : 15);
-                    if (!triedWrong) firstTryCorrect++;
                     SpeechHelper.speak('Excellent!');
                     setTimeout(() => {
                         currentIndex++;
@@ -391,7 +424,6 @@ const Game = {
                     }, 1200);
                 } else {
                     triedWrong = true;
-                    mistakes++;
                     input.style.borderColor = '#EF4444';
                     input.style.color = '#EF4444';
                     SpeechHelper.speak('Almost! Listen again.');
@@ -433,7 +465,6 @@ const Game = {
 
         let flippedCards = [];
         let matchedPairs = 0;
-        let mistakes = 0;
         let isProcessing = false;
 
         content.innerHTML = `
@@ -478,16 +509,11 @@ const Game = {
                             isProcessing = false;
 
                             if (matchedPairs === words.length) {
-                                setTimeout(() => {
-                                    const stars = this.completeGame(mistakes);
-                                    App.showModal('🎉', '记忆超群！', `得分 ${this.gameScore} 分，获得 ${stars} 颗星星！`);
-                                    App.createConfetti();
-                                }, 500);
+                                setTimeout(() => this.completeGame(), 500);
                             }
                         }, 600);
                     } else {
                         // 配对失败
-                        mistakes++;
                         setTimeout(() => {
                             first.el.textContent = '?';
                             second.el.textContent = '?';
@@ -512,16 +538,11 @@ const Game = {
         }
 
         let currentIndex = 0;
-        let firstTryCorrect = 0;
-        let mistakes = 0;
         const content = document.getElementById('gameContent');
 
         const renderQuestion = () => {
             if (currentIndex >= words.length) {
-                setTimeout(() => {
-                    const stars = this.completeGame(mistakes);
-                    App.showModal('🎉', '拼词完成！', `一次拼对 ${firstTryCorrect}/${words.length}，得分 ${this.gameScore}，获得 ${stars} 颗星星！`);
-                }, 500);
+                setTimeout(() => this.completeGame(), 500);
                 return;
             }
 
@@ -609,7 +630,6 @@ const Game = {
                             if (!usedPoolIdx.has(Number(b.dataset.poolIdx))) b.disabled = true;
                         });
                         this.updateScore(triedWrong ? 8 : 15);
-                        if (!triedWrong) firstTryCorrect++;
                         SpeechHelper.speak('Excellent!');
                         setTimeout(() => {
                             currentIndex++;
@@ -617,7 +637,6 @@ const Game = {
                         }, 1200);
                     } else {
                         triedWrong = true;
-                        mistakes++;
                         // 全槽闪红，然后清空重来
                         document.querySelectorAll('.fill-slot').forEach(s => s.classList.add('shake'));
                         SpeechHelper.speak('Almost!');
