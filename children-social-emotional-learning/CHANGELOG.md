@@ -2,6 +2,13 @@
 
 本文件记录心晴岛（Sunny Isles）的版本变更。版本号遵循语义化版本（SemVer），并与 git tag `children-social-emotional-learning-vX.Y.Z` 对应。
 
+## [1.0.2] - 新增应用内「玩法说明」
+
+- 新增应用内「玩法说明」页面（`#/help`）：面向小朋友和家长，用通俗语言讲清「每天心情签到、五座小岛 19 关、冷静工具箱、心情花园」怎么玩，并说明离线、隐私与家长专区等安全设计。
+- 首页新增「ℹ️ 玩法说明」入口按钮。
+- 本次发布起，GitHub Release 说明自动包含本段 `CHANGELOG.md` 内容（首次以完整改动内容发布，验证发布说明自动化机制）。
+- 应用其余功能与 1.0.1 一致。
+
 ## [1.0.1] - 首次自动化发布修复
 
 - 修复 GitHub Actions 发布流水线：将 `npm ci` 移至 `Plan release` 步骤之前，解决 `scripts/release.cjs` 在 `plan` 阶段 `require('semver')` 找不到模块（MODULE_NOT_FOUND）导致流水线中断的问题。

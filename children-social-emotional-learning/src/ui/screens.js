@@ -37,6 +37,7 @@
           '<button class="btn primary big" data-nav="#/map">开始探险 🚀</button>' +
           '<button class="btn blue big" data-nav="#/checkin">' + (doneToday ? '再记一次心情 🌿' : '今天的心情签到 🌤') + '</button>' +
         '</div>' +
+        '<div class="hero-help"><button class="btn tiny ghost" data-nav="#/help">ℹ️ 玩法说明（小朋友和爸爸妈妈都能看）</button></div>' +
         '<div class="hero-stat">' +
           '<div><b>⭐ ' + p.stars + '</b><span>收集到的星星</span></div>' +
           '<div><b>' + st.doneLevels + '/' + st.totalLevels + '</b><span>完成的小关卡</span></div>' +
@@ -72,6 +73,39 @@
           '<p class="muted">不需要账号、不联网、没有广告，也不会把孩子的记录发给任何人。所有内容都保存在本机，家长可以随时导出备份或清空。</p>' +
           '<button class="btn tiny ghost" data-nav="#/parent">家长 / 老师专区 →</button></div>' +
       '</div>';
+    return wrap(html);
+  }
+
+  /* ==================== 玩法说明 ==================== */
+  function help() {
+    var html =
+      backRow('#/home', '回首页') +
+      UI.sectionHead('玩法说明', '给小朋友和爸爸妈妈的一张小地图', 'HOW TO PLAY') +
+      '<div class="card soft" style="margin-bottom:18px">' +
+        '<p class="muted">心晴岛是一段关于「认识情绪、照顾自己、和朋友相处」的小冒险。这里没有「答错」——' +
+        '每一个选择都会告诉你接下来可能发生什么，所有情绪都值得被看见。</p>' +
+        '<div class="row tight"><span class="chip">自我认知</span><span class="chip blue">自我管理</span>' +
+        '<span class="chip green">社会认知</span><span class="chip purple">人际关系</span><span class="chip">负责任决策</span></div>' +
+      '</div>' +
+
+      '<div class="grid grid-2">' +
+        '<div class="card"><h3>🌤 每天心情签到</h3>' +
+          '<p class="muted">选一个现在的情绪、说说为什么，再种一朵心情花。每天第一次签到会得 1 颗星，连续签到还有小惊喜。</p></div>' +
+        '<div class="card"><h3>🏝️ 五座小岛 19 关</h3>' +
+          '<p class="muted">用星星解锁新岛，按顺序玩更顺。每关有情境选择、连一连、排顺序等 7 种小游戏，完成得星星和贴纸。</p></div>' +
+        '<div class="card"><h3>🧰 冷静工具箱</h3>' +
+          '<p class="muted">5 个随时能用的小方法：觉察、呼吸、应对、拉开距离、表达。生气或紧张时，跟着做一遍就好。</p></div>' +
+        '<div class="card"><h3>🌷 心情花园</h3>' +
+          '<p class="muted">记下的每一天都会开出一朵花。翻翻看，就能看见自己情绪的小天气是怎么变化的。</p></div>' +
+      '</div>' +
+
+      '<div class="card" style="margin-top:18px"><h3>🔒 爸爸妈妈放心的小设计</h3>' +
+        '<ul class="muted" style="margin:6px 0 0 18px;line-height:1.8">' +
+          '<li>不需要账号、不联网、没有广告，所有内容都保存在这台电脑上。</li>' +
+          '<li>「家长 / 老师专区」用一道算术题挡住小朋友，里面可以看进度、导出备份或清空数据。</li>' +
+          '<li>如果愿意，可以对着屏幕点「读给我听」，软件会用中文把文字念出来（需要电脑已安装中文语音）。</li>' +
+        '</ul>' +
+        '<button class="btn tiny ghost" data-nav="#/parent">去家长 / 老师专区 →</button></div>';
     return wrap(html);
   }
 
@@ -666,7 +700,7 @@
     home: home, map: map, island: island, level: level, emotions: emotions,
     checkin: checkin, strategies: strategies, runStrategy: runStrategy,
     garden: garden, stickers: stickers, parent: parent, profile: profile,
-    settings: settings, exportFile: exportFile,
+    settings: settings, help: help, exportFile: exportFile,
     TYPE_NAME: TYPE_NAME, ISLAND_LABEL: ISLAND_LABEL
   };
 })();

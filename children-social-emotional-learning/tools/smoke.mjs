@@ -60,7 +60,7 @@ try {
   /* --- 所有页面 --- */
   const pages = [
     '#/home', '#/map', '#/emotions', '#/checkin', '#/strategies',
-    '#/garden', '#/stickers', '#/parent', '#/profile', '#/settings'
+    '#/garden', '#/stickers', '#/parent', '#/profile', '#/settings', '#/help'
   ];
   pages.forEach(h => route(h));
   const islands = (w.SEL_DATA.islands || []);

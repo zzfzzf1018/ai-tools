@@ -35,6 +35,7 @@
         case 'island': view = SC.island(p[1]); break;
         case 'level': view = SC.level(p[1]); break;
         case 'emotions': view = SC.emotions(); break;
+        case 'help': view = SC.help(); break;
         case 'checkin': view = SC.checkin(); break;
         case 'strategies': view = SC.strategies(); break;
         case 'garden': view = SC.garden(); break;

@@ -180,6 +180,7 @@ p { margin: 0 0 10px; }
 .hero h1 span { color: #E8708C; }
 .hero p { font-size: 18px; color: #5C4A43; max-width: 460px; }
 .hero .actions { margin-top: 22px; display: flex; gap: 12px; flex-wrap: wrap; }
+.hero-help { margin-top: 14px; }
 .hero-art { display: flex; justify-content: center; align-items: flex-end; gap: 6px; }
 .hero-art .buddy-main { animation: bob 3.4s ease-in-out infinite; }
 .hero-art .buddy-owl { animation: bob 4.1s ease-in-out infinite .4s; }
