@@ -2,6 +2,11 @@
 
 本文件记录心晴岛（Sunny Isles）的版本变更。版本号遵循语义化版本（SemVer），并与 git tag `children-social-emotional-learning-vX.Y.Z` 对应。
 
+## [1.0.1] - 首次自动化发布修复
+
+- 修复 GitHub Actions 发布流水线：将 `npm ci` 移至 `Plan release` 步骤之前，解决 `scripts/release.cjs` 在 `plan` 阶段 `require('semver')` 找不到模块（MODULE_NOT_FOUND）导致流水线中断的问题。
+- 此为首次经 CI 成功打 tag 并发布 GitHub Release 的版本（应用功能与 1.0.0 一致）。
+
 ## [1.0.0] - 初版
 
 - 5 座 SEL 小岛、19 个互动关卡（7 种题型）。

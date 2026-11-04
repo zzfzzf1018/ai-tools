@@ -44,6 +44,9 @@ jobs:
         with:
           dotnet-version: "8.0.x"
       - run: dotnet tool restore
+      # npm ci 必须在 plan/version 之前：release.cjs 顶部 require('semver')，
+      # 而 plan 步骤会创建本地 tag，二者都依赖已安装的 node_modules。
+      - run: npm ci --no-audit --no-fund
       - name: Plan release
         id: plan
         env:
@@ -52,7 +55,6 @@ jobs:
       - name: Calculate GitVersion
         id: version
         run: node scripts/release.cjs version
-      - run: npm ci --no-audit --no-fund
       - name: Validate data and runtime
         run: |
           node tools/verify.mjs
