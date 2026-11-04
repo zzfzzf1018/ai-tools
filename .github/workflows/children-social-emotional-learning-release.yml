@@ -47,6 +47,11 @@ jobs:
       # 用 npm install 而非 npm ci：electron-builder 含平台专属可选依赖（如 macOS 的 dmg-license），
       # 单一平台生成的 package-lock.json 无法满足 npm ci 的跨平台严格校验；npm install 按当前平台对账即可。
       - run: npm install --no-audit --no-fund
+      # npm install 会按 runner 平台重写 package-lock.json（补回平台专属可选依赖，
+      # 例如 macOS 的 dmg-license），使工作树变脏；而发布流水线要求干净工作树，
+      # 这里还原 lock 文件（node_modules 已安装且被 gitignore，build 不受影响）。
+      - run: git checkout -- package-lock.json
+      - run: git status --porcelain
       - name: Plan release
         id: plan
         env:
