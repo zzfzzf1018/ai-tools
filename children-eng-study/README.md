@@ -3,7 +3,7 @@
 > 面向上海小学一至五年级的趣味英语学习应用
 > 图文结合 · 标准发音 · 字母大冒险 · 五个小游戏 · 成就激励 · 单文件 Windows 便携版
 
-**当前稳定版：v1.2.0** ・ 仓库：https://github.com/zzfzzf1018/ai-tools/tree/main/children-eng-study ・ 发布：https://github.com/zzfzzf1018/ai-tools/releases
+**当前稳定版：v1.2.2** ・ 仓库：https://github.com/zzfzzf1018/ai-tools/tree/main/children-eng-study ・ 发布：https://github.com/zzfzzf1018/ai-tools/releases
 
 ---
 
@@ -18,10 +18,10 @@
 | 🖼️ **图文卡片** | 每个单词配 Emoji 图、国际音标、中文释义、英文例句与翻译 |
 | ⭐ **收藏 / 不熟** | 卡片上一键收藏或标记不熟，成就页两个 Tab 分别列出，点击可快速定位 |
 | 🎙️ **录音 / 回放** | MediaRecorder 录制孩子自己的朗读，本地持久化，随时回放对比 |
-| 🗣️ **句子跟读** | 基于 SpeechRecognition（Chrome/Edge），先听标准音再跟读，自动对比反馈 |
+| 🗣️ **句子跟读** | 基于 SpeechRecognition（Chrome/Edge），先听标准音再跟读，检测到声音即得 ⭐⭐⭐ + Excellent 表扬，没检测到也有 1 颗鼓励星 |
 | 🔍 **离线词典** | 学习页顶部搜索框，全词库模糊匹配，点击结果直接跳转 |
 | 🎮 **五个小游戏** | 单词连连看 · 听音选词 · 拼写大师 · 记忆翻牌 · **字母拼拼乐**（新增） |
-| ⭐ **激励系统** | 星星奖励、连续学习天数、成就徽章、彩色纸屑庆祝动画 |
+| ⭐ **激励系统** | 通关颁发各游戏专属样式小奖状（固定三颗星）、星星奖励、连续学习天数、成就徽章、彩色纸屑庆祝动画 |
 | 💾 **本地持久化** | 学习进度、收藏/不熟、录音自动保存到 localStorage，支持 JSON 导出/导入 |
 | 🎨 **生动界面** | 漂浮气泡背景、卡片翻转动画、表情弹跳、按钮微交互、键盘焦点高亮 |
 | 🖥️ **桌面版** | Electron 单文件便携 exe，双击即用、无需安装 |
@@ -30,16 +30,16 @@
 
 ## 📦 下载安装（推荐普通用户使用）
 
-前往 [Releases](https://github.com/zzfzzf1018/ai-tools/releases/tag/children-eng-study-v1.2.0) 选择你需要的形态：
+前往 [Releases](https://github.com/zzfzzf1018/ai-tools/releases/tag/children-eng-study-v1.2.2) 选择你需要的形态：
 
 | 形态 | 文件 | 大小 | 使用方式 |
 |------|------|------|----------|
-| 🖥️ **Windows 便携版** | `Kids-English-Wonderland-1.2.0-x64-portable.exe` | ~110 MB | 双击即用，无需安装、无需浏览器 |
-| 🌐 **Web 版** | `Kids-English-Wonderland-1.2.0-web.zip` | ~40 KB | 解压后用浏览器打开 `index.html` |
+| 🖥️ **Windows 便携版** | `Kids-English-Wonderland-1.2.2-x64-portable.exe` | ~110 MB | 双击即用，无需安装、无需浏览器 |
+| 🌐 **Web 版** | `Kids-English-Wonderland-1.2.2-web.zip` | ~40 KB | 解压后用浏览器打开 `index.html` |
 
 ### 桌面版使用说明
 
-1. 双击 `Kids-English-Wonderland-1.2.0-x64-portable.exe`
+1. 双击 `Kids-English-Wonderland-1.2.2-x64-portable.exe`
 2. 首次启动会解压到临时目录（约 30 秒），后续启动几乎瞬时
 3. 未签名：Windows 可能提示"未知发布者"，核对 `SHA256SUMS.txt` 中的校验值后可继续运行
 4. 学习数据保存在本机，不会上传任何服务器
