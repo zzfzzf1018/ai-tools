@@ -4,8 +4,8 @@ on:
   push:
     tags:
       - "children-math-study-v*"
-  # 手动补发：在 Actions 页面「Run workflow」选择 main 分支，填入已存在的 tag 名。
-  # 适用于 tag 早于 workflow 建立的情况（例如 children-math-study-v1.0.0）。
+  # 手动刷新：在 Actions 页面「Run workflow」填入已存在的 tag 名，
+  # 用 CHANGELOG.md 对应版本条目重新生成该 Release 的发布说明（不重新构建产物）。
   workflow_dispatch:
     inputs:
       tag:
@@ -52,9 +52,13 @@ jobs:
           test -f desktop/icon.ico
           test -f content/grade1.js
           test -f content/grade5.js
+      - name: Validate changelog entry for current version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          bash scripts/release-notes.sh CHANGELOG.md "$version" > /dev/null
 
   build:
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/children-math-study-v')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/children-math-study-v')
     runs-on: windows-latest
     timeout-minutes: 30
     outputs:
@@ -132,24 +136,36 @@ jobs:
 
   publish:
     needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/children-math-study-v')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: math-wonder-island-${{ needs.build.outputs.version }}
           path: downloads
+      - name: Build release notes from CHANGELOG
+        env:
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+        working-directory: children-math-study
+        run: bash scripts/release-notes.sh CHANGELOG.md "$RELEASE_VERSION" > release-body.md
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_VERSION: ${{ needs.build.outputs.version }}
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          RELEASE_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
+          NOTES_FILE="../children-math-study/release-body.md"
           cd downloads
           sha256sum --check SHA256SUMS.txt
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
@@ -158,13 +174,42 @@ jobs:
               echo 'Release already published; refusing to overwrite published downloads.' >&2
               exit 1
             fi
-            echo "Draft release found; uploading assets and publishing it."
+            echo "Draft release found; uploading assets, refreshing notes and publishing it."
             gh release upload "$RELEASE_TAG" ./* --clobber
-            gh release edit "$RELEASE_TAG" --draft=false --latest
+            gh release edit "$RELEASE_TAG" --notes-file "$NOTES_FILE" --draft=false --latest
             exit 0
           fi
           gh release create "$RELEASE_TAG" ./* \
+            --target "$RELEASE_SHA" \
             --draft \
             --title "Math Wonder Island $RELEASE_VERSION" \
-            --notes $'Desktop (Windows x64): download the single portable .exe and run it directly; it unpacks to a temp folder on first launch and needs no installation.\nWeb version: download the web ZIP, extract it and open index.html in a browser; works fully offline, no installation needed.\nUnsigned build: Windows may warn about an unknown publisher; check SHA256SUMS.txt before running.\nLearning progress, stars and the wrong-answer notebook stay on the device; no account or network required.'
-          gh release edit "$RELEASE_TAG" --draft=false --latest
+            --notes-file "$NOTES_FILE"
+          gh release edit "$RELEASE_TAG" --notes-file "$NOTES_FILE" --draft=false --latest
+
+  # 手动刷新已发布版本的 Release 说明（说明内容取自 CHANGELOG.md 对应版本条目）
+  update-notes:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - name: Refresh release notes from CHANGELOG
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        working-directory: children-math-study
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#children-math-study-v}"
+          if [ "$version" = "$RELEASE_TAG" ]; then
+            echo "Tag must look like children-math-study-vX.Y.Z" >&2
+            exit 1
+          fi
+          bash scripts/release-notes.sh CHANGELOG.md "$version" > release-body.md
+          gh release edit "$RELEASE_TAG" --notes-file release-body.md
