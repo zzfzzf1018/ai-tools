@@ -8,6 +8,7 @@
 - 将 `npm ci` 改为 `npm install`，规避 electron-builder 平台专属可选依赖（如 macOS 的 dmg-license）导致的跨平台锁严格校验失败（EUSAGE）。
 - 在 `npm install` 后增加 `git checkout -- package-lock.json`，还原被 npm 按平台重写的 lock 文件，满足发布流水线对干净工作树的要求。
 - 将发布工作流自身加入 `paths` 过滤，确保仅修改工作流时也能自动触发 CI。
+- 每次发布自动将本版本在 `CHANGELOG.md` 中的段落作为 GitHub Release 说明（release notes），确保发布包含改动内容；同时保留应用使用说明与离线/校验提示。
 - 此为首次经 CI 成功打 tag 并发布 GitHub Release 的版本（应用功能与 1.0.0 一致）。
 
 ## [1.0.0] - 初版

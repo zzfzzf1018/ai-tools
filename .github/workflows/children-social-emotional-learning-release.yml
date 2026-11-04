@@ -72,6 +72,8 @@ jobs:
         env:
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: node scripts/release.cjs prepare
+      - name: Generate release notes
+        run: node scripts/release-notes.cjs "${{ steps.version.outputs.version }}" release-assets/release-notes.md
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: sunny-isles-${{ steps.version.outputs.version }}
@@ -107,7 +109,11 @@ jobs:
             echo 'Release already exists; refusing to overwrite published downloads.' >&2
             exit 1
           fi
+          if [ ! -f release-notes.md ]; then
+            echo 'release-notes.md missing; using fallback.' >&2
+            printf '面向 6–10 岁儿童的社会情绪学习（SEL）游戏软件「心晴岛」。\n\n详见仓库 CHANGELOG.md 与 README.md。' > release-notes.md
+          fi
           gh release create "$RELEASE_TAG" ./* \
             --target "$RELEASE_SHA" --draft --title "心晴岛 ${RELEASE_VERSION}" \
-            --notes $'面向 6–10 岁儿童的社会情绪学习（SEL）游戏软件。\n\nWindows x64：下载 SunnyIsles-SEL-*.exe 单文件便携版，双击即可运行，无需安装；未签名，Windows 可能提示未知发布者。\nWeb 版：下载 SunnyIsles-SEL-*-web.zip，解压后用浏览器打开 index.html 即可（或静态托管）。\n所有版本均完全离线运行，无账号、无网络请求、无遥测。学习记录仅保存在本机。\n详见 SHA256SUMS.txt 校验下载完整性。'
+            --notes-file release-notes.md
           gh release edit "$RELEASE_TAG" --draft=false --latest
