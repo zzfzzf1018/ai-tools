@@ -34,6 +34,29 @@
 
     findLesson(id) { return this.lessonIndex()[id] || null; },
 
+    // 按 lessonId + qid 从内容里取回最新题目，错题重做时避免使用过期的存档快照
+    findQuestion(lessonId, qid) {
+      const hit = this.findLesson(lessonId);
+      if (!hit) return null;
+      for (const game of hit.lesson.games || []) {
+        const q = (game.questions || []).find(x => x.id === qid);
+        if (q) return q;
+      }
+      return null;
+    },
+
+    // 同一本教材顺序中的下一课（不跨年级）
+    nextLesson(id) {
+      const hit = this.findLesson(id);
+      if (!hit) return null;
+      const list = [];
+      for (const sem of hit.grade.semesters) {
+        for (const unit of sem.units) list.push(...unit.lessons);
+      }
+      const i = list.findIndex(L => L.id === id);
+      return i >= 0 && i + 1 < list.length ? list[i + 1] : null;
+    },
+
     // 找 lesson 所在 grade 内容对象
     gradeOfLesson(id) {
       const hit = this.findLesson(id);

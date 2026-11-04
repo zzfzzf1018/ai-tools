@@ -34,6 +34,7 @@
       const dots = [...prog.children];
       const stats = { total: qs.length, correct: 0, wrong: 0, perfect: true };
       let qi = 0;
+      let cleanup = null;   // 当前题目注册的全局监听（如键盘），切题/结束时释放
 
       function renderQ() {
         dots.forEach((d, i) => d.classList.toggle('now', i === qi));
@@ -55,6 +56,7 @@
         let hintIdx = 0;
         let attempts = 0;
         let finished = false;
+        let wrongCounted = false;   // 同一题只计一次错，避免连点错选项重复扣星
 
         function showNextHint(force) {
           if (!q.hints || !q.hints.length) return;
@@ -71,25 +73,33 @@
           if (correct) {
             stats.correct++;
             Rewards.float(answerEl || stage, '⭐');
+            if (window.Sound) window.Sound.correct();
             UI.toast(Rewards.praise(), 'var(--secondary)');
             Save.resolveWrong(gameCfg.lessonId, q.id);
             dots[qi].classList.add('ok');
             setTimeout(() => { if (stage.isConnected) next(); }, 900);
           } else {
-            stats.wrong++;
-            stats.perfect = false;
             attempts++;
             dots[qi].classList.add('bad');
-            Save.addWrong({
-              lessonId: gameCfg.lessonId,
-              qid: q.id,
-              type: q.type,
-              options: q.options || null,
-              template: q.template || null,
-              visual: (q.visual && q.visual.emoji) || '',
-              prompt: q.prompt || '',
-              answer: q.answer
-            });
+            if (!wrongCounted) {
+              wrongCounted = true;
+              stats.wrong++;
+              stats.perfect = false;
+              if (window.Sound) window.Sound.wrong();
+              Save.addWrong({
+                lessonId: gameCfg.lessonId,
+                qid: q.id,
+                type: q.type,
+                options: q.options || null,
+                template: q.template || null,
+                items: q.items || null,
+                bank: q.bank || null,
+                hints: q.hints || null,
+                visual: (q.visual && q.visual.emoji) || '',
+                prompt: q.prompt || '',
+                answer: q.answer
+              });
+            }
             UI.toast(Rewards.encourage(), '#f87171');
             showNextHint();
           }
@@ -103,10 +113,11 @@
         };
 
         const api = renderers[q.type] || renderers.choice;
-        api(stage, q, safeJudge);
+        cleanup = api(stage, q, safeJudge) || null;
       }
 
       function next() {
+        if (cleanup) { cleanup(); cleanup = null; }
         qi++;
         if (qi < qs.length) renderQ();
         else {
@@ -125,7 +136,7 @@
   /* 选择题 */
   renderers.choice = function (stage, q, judge) {
     const list = el('div', 'choice-list');
-    const opts = q.options.slice();
+    const opts = (q.options || []).slice();
     if (q.shuffle !== false) opts.sort(() => Math.random() - .5);
     opts.forEach(opt => {
       const b = el('button', 'choice-btn', String(opt));
@@ -155,31 +166,53 @@
     const pad = el('div', 'keypad');
     let buf = '';
     const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0'];
-    keys.forEach(k => {
-      const b = el('button', null, k);
-      b.addEventListener('click', () => {
-        if (buf.length >= 8) return;
-        if (k === '.' && buf.includes('.')) return;
-        buf += k;
-        disp.textContent = buf;
-      });
-      pad.appendChild(b);
-    });
-    const del = el('button', 'key-del', '⌫');
-    del.addEventListener('click', () => { buf = buf.slice(0, -1); disp.textContent = buf; });
-    pad.appendChild(del);
-    const ok = el('button', 'key-ok', '✔ 确认');
-    ok.addEventListener('click', () => {
+
+    const push = (k) => {
+      if (buf.length >= 8) return;
+      if (k === '.' && buf.includes('.')) return;
+      buf += k;
+      disp.textContent = buf;
+    };
+    const back = () => { buf = buf.slice(0, -1); disp.textContent = buf; };
+    const submit = () => {
       if (buf === '') return;
       const v = parseFloat(buf);
       const ans = parseFloat(q.answer);
       judge(Math.abs(v - ans) < 1e-9, disp);
       buf = ''; disp.textContent = '';
+    };
+
+    keys.forEach(k => {
+      const b = el('button', null, k);
+      b.addEventListener('click', () => push(k));
+      pad.appendChild(b);
     });
+    const del = el('button', 'key-del', '⌫');
+    del.addEventListener('click', back);
+    pad.appendChild(del);
+    const ok = el('button', 'key-ok', '✔ 确认');
+    ok.addEventListener('click', submit);
     pad.appendChild(ok);
     wrap.appendChild(disp);
     wrap.appendChild(pad);
     stage.appendChild(wrap);
+
+    // 桌面端支持实体键盘：数字 / 小数点 / 退格 / 回车
+    const onKeyDown = (e) => {
+      if (!stage.isConnected) {
+        window.removeEventListener('keydown', onKeyDown);
+        return;
+      }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+      if (e.key >= '0' && e.key <= '9') { e.preventDefault(); push(e.key); }
+      else if (e.key === '.') { e.preventDefault(); push('.'); }
+      else if (e.key === 'Backspace') { e.preventDefault(); back(); }
+      else if (e.key === 'Enter') { e.preventDefault(); submit(); }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   };
 
   /* 拖放填空题：q.slots=[...], q.bank=[...], q.answer 可以是数组或单值 */
@@ -202,13 +235,23 @@
     stage.appendChild(line);
 
     const bank = el('div', 'drop-bank');
-    const chips = {};
+    const chips = {};          // chipId -> chip，支持相同答案的重复筹码
+    let chipSeq = 0;
     const answers = Array.isArray(q.answer) ? q.answer : q.answer.split?.('|') || [q.answer];
     const bankItems = q.bank ? q.bank.slice() : answers.slice();
+    // 答案中重复的值需要足够的筹码（如 1+3 与 3+1 两个空都填 4）
+    const need = {}, have = {};
+    answers.forEach(v => { need[String(v)] = (need[String(v)] || 0) + 1; });
+    bankItems.forEach(v => { have[String(v)] = (have[String(v)] || 0) + 1; });
+    Object.keys(need).forEach(v => {
+      while ((have[v] || 0) < need[v]) { bankItems.push(v); have[v] = (have[v] || 0) + 1; }
+    });
     if (q.shuffle !== false) bankItems.sort(() => Math.random() - .5);
     bankItems.forEach(v => {
       const c = el('span', 'answer-chip', String(v));
-      chips[String(v)] = c;
+      const chipId = 'chip' + (chipSeq++);
+      c.dataset.chipId = chipId;
+      chips[chipId] = c;
       bank.appendChild(c);
       makeChipDraggable(c, String(v));
     });
@@ -237,10 +280,11 @@
           const slot = under && under.closest('.drop-slot');
           if (slot) {
             // 若槽已被占用，原筹码回库
-            const prev = slot.dataset.value;
-            if (prev && chips[prev]) chips[prev].classList.remove('used');
+            const prevId = slot.dataset.chipId;
+            if (prevId && chips[prevId]) chips[prevId].classList.remove('used');
             slot.textContent = val;
             slot.dataset.value = val;
+            slot.dataset.chipId = chip.dataset.chipId;
             slot.classList.add('filled');
             chip.classList.add('used');
             // 检查是否全部填满
@@ -253,9 +297,10 @@
                   // 清空错误槽，允许重填
                   slots.forEach(s => {
                     if (String(answers[+s.dataset.slotId]) !== s.dataset.value) {
-                      const used = chips[s.dataset.value];
+                      const used = chips[s.dataset.chipId];
                       if (used) used.classList.remove('used');
-                      s.textContent = ''; s.dataset.value = ''; s.classList.remove('filled');
+                      s.textContent = ''; s.dataset.value = ''; s.dataset.chipId = '';
+                      s.classList.remove('filled');
                     }
                   });
                 }
@@ -272,7 +317,7 @@
   /* 排序/按序点选题 */
   renderers.sequence = function (stage, q, judge) {
     const slotsRow = el('div', 'seq-slots');
-    const items = q.items.slice();
+    const items = (q.items || []).slice();
     if (q.shuffle !== false) items.sort(() => Math.random() - .5);
     const picked = [];
     const slots = (q.answer || []).map((_, i) => {
@@ -295,7 +340,7 @@
         it.classList.add('picked');
         if (picked.length === slots.length) {
           setTimeout(() => {
-            const ok = picked.every((p, i) => String((q.answer)[i]) === p);
+            const ok = picked.every((p, i) => String((q.answer || [])[i]) === p);
             judge(ok, slots[0]);
             if (!ok) {
               setTimeout(() => {

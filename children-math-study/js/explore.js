@@ -440,7 +440,22 @@
       panel.appendChild(ins);
       panel.appendChild(ws);
       box.appendChild(panel);
-      fn(ws, cfg, done);
+
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        done && done();
+      };
+
+      // 允许跳过探索，避免孩子卡在互动环节无法进入闯关
+      const skip = document.createElement('button');
+      skip.className = 'btn-secondary explore-skip';
+      skip.textContent = '跳过探索 ➜';
+      skip.addEventListener('click', finish);
+      panel.appendChild(skip);
+
+      fn(ws, cfg, finish);
     }
   };
 

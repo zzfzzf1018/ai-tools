@@ -12,6 +12,38 @@
   const PRAISE = ['太棒了！', '真厉害！', '答对啦！', '你真聪明！', '完美！', '好样的！'];
   const ENCOURAGE = ['没关系，再看一眼提示～', '差一点点，再试一次！', '勇敢的小数学家不怕错～'];
 
+  /* 轻量音效：WebAudio 合成，无需素材；家长视图可关闭 */
+  const Sound = {
+    ctx: null,
+    enabled() { return !Save.data || !Save.data.settings || Save.data.settings.sound !== false; },
+    play(notes) {
+      if (!this.enabled()) return;
+      try {
+        const C = window.AudioContext || window.webkitAudioContext;
+        if (!C) return;
+        this.ctx = this.ctx || new C();
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+        const now = this.ctx.currentTime;
+        notes.forEach(([f, t, dur]) => {
+          const o = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          o.type = 'sine';
+          o.frequency.value = f;
+          g.gain.setValueAtTime(0.0001, now + t);
+          g.gain.exponentialRampToValueAtTime(0.14, now + t + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.0001, now + t + dur);
+          o.connect(g);
+          g.connect(this.ctx.destination);
+          o.start(now + t);
+          o.stop(now + t + dur + 0.05);
+        });
+      } catch (e) { /* 音效失败不影响学习流程 */ }
+    },
+    correct() { this.play([[660, 0, .12], [880, .1, .22]]); },
+    wrong() { this.play([[220, 0, .16], [180, .12, .2]]); },
+    badge() { this.play([[523, 0, .12], [659, .12, .12], [784, .24, .12], [1046, .36, .3]]); }
+  };
+
   const Rewards = {
     badges: BADGES,
     praise() { return PRAISE[Math.floor(Math.random() * PRAISE.length)]; },
@@ -58,6 +90,7 @@
     showBadgeOverlay(badgeIds, onDone) {
       const list = badgeIds.map(id => BADGES.find(b => b.id === id)).filter(Boolean);
       if (!list.length) { onDone && onDone(); return; }
+      Sound.badge();
       const items = list.map(b => `
         <div class="badge-item">
           <div class="badge-icon">${b.icon}</div>
@@ -77,4 +110,5 @@
   };
 
   window.Rewards = Rewards;
+  window.Sound = Sound;
 })();

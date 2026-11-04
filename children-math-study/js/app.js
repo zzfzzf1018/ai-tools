@@ -122,6 +122,7 @@
       }
       else if (lessonMatch) {
         if (!Data.findLesson(lessonMatch[1])) { this.navigate('home'); return; }
+        Save.setLastLesson(lessonMatch[1]);
         topbar.classList.remove('hidden'); Lesson.play(lessonMatch[1], this.page);
       }
       else if (h === 'parent') { topbar.classList.remove('hidden'); Parent.render(this.page); }
@@ -137,6 +138,27 @@
         <h1 class="page-title">选择你的冒险岛 🗺️</h1>
         <p class="page-subtitle">每个年级都是一座小岛，跟着闪闪一起去探险吧！</p>
       `);
+
+      // 继续上次：优先直达上次未完成的课程，否则回到上次年级
+      const s = Save.data.settings || {};
+      const lastL = s.lastLesson ? Data.findLesson(s.lastLesson) : null;
+      const lastG = s.lastGrade ? Data.grade(s.lastGrade) : null;
+      if (lastG) {
+        const direct = lastL && lastL.grade.grade === lastG.grade && !Save.data.completed[lastL.lesson.id] ? lastL : null;
+        const label = direct
+          ? `继续上次：${direct.lesson.title} ➜`
+          : `继续上次冒险：${lastG.emoji} ${lastG.title} ➜`;
+        const row = document.createElement('div');
+        row.className = 'continue-row';
+        const btn = document.createElement('button');
+        btn.className = 'btn-big';
+        btn.id = 'btn-continue';
+        btn.textContent = label;
+        btn.onclick = () => this.navigate(direct ? 'lesson/' + direct.lesson.id : 'grade/' + lastG.grade);
+        row.appendChild(btn);
+        p.appendChild(row);
+      }
+
       const grid = document.createElement('div');
       grid.className = 'grade-grid';
       Data.grades.forEach(g => {
@@ -174,7 +196,21 @@
       p.appendChild(tabs);
       p.appendChild(listWrap);
 
-      const renderSem = (si) => {
+      // 默认打开上次学习所在的学期（同年级时）
+      const settings = Save.data.settings || {};
+      const lastL = settings.lastLesson ? Data.findLesson(settings.lastLesson) : null;
+      const inThisGrade = !!lastL && lastL.grade.grade === n;
+      const defaultSem = inThisGrade ? Math.max(0, g.semesters.indexOf(lastL.semester)) : 0;
+
+      const scrollToLast = () => {
+        if (!inThisGrade) return;
+        const node = listWrap.querySelector(`.lesson-node[data-lesson-id="${lastL.lesson.id}"]`);
+        if (!node) return;
+        const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        requestAnimationFrame(() => node.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' }));
+      };
+
+      const renderSem = (si, autoScroll) => {
         tabs.querySelectorAll('.semester-tab').forEach((t, i) => t.classList.toggle('active', i === si));
         listWrap.innerHTML = '';
         const sem = g.semesters[si];
@@ -197,6 +233,7 @@
             prevDone = done;
             const node = document.createElement('div');
             node.className = 'lesson-node' + (done ? ' done' : '') + (unlocked ? '' : ' locked');
+            node.dataset.lessonId = L.id;
             const stars = Save.starsOf(L.id);
             node.innerHTML = `
               ${unlocked ? '' : '<span class="node-lock">🔒</span>'}
@@ -211,16 +248,17 @@
           ul.appendChild(uc);
         });
         listWrap.appendChild(ul);
+        if (autoScroll) scrollToLast();
       };
 
       g.semesters.forEach((sem, i) => {
         const t = document.createElement('button');
         t.className = 'semester-tab';
         t.textContent = sem.title;
-        t.addEventListener('click', () => renderSem(i));
+        t.addEventListener('click', () => renderSem(i, false));
         tabs.appendChild(t);
       });
-      renderSem(0);
+      renderSem(defaultSem, inThisGrade);
     },
 
     /* ---------- 错题本 ---------- */
@@ -262,62 +300,55 @@
     },
 
     practiceWrong(w, itemEl) {
-      // 选择题用选项按钮复现，其余用输入框（答案可能是数字，也可能是文字）
-      const isChoice = Array.isArray(w.options) && w.options.length > 0;
-      const body = isChoice
-        ? `<div class="choice-row">${w.options.map(o =>
-            `<button class="choice-btn" data-opt="${UI.esc(o)}">${UI.esc(o)}</button>`).join('')}</div>`
-        : `<div style="margin:14px 0"><input id="wp-input" class="mock-input" style="
-            width:140px;font-size:26px;text-align:center;padding:8px;
-            border:3px solid var(--node-border);border-radius:14px;" autofocus></div>`;
-
-      const finish = () => {
-        UI.closeOverlay();
-        Rewards.float(itemEl, '🎉');
-        UI.toast(Rewards.praise() + ' 错题正在飞走～', 'var(--secondary)');
-        Save.resolveWrong(w.lessonId, w.qid).then(() => this.route());
+      // 优先从内容里取回最新题目，按原题型（选择/输入/拖放/排序）重做
+      const fresh = Data.findQuestion(w.lessonId, w.qid);
+      const q = fresh || {
+        id: w.qid,
+        type: w.type || (Array.isArray(w.options) && w.options.length ? 'choice' : 'input'),
+        prompt: w.prompt || '',
+        answer: w.answer,
+        options: w.options || null,
+        template: w.template || null,
+        items: w.items || null,
+        bank: w.bank || null,
+        hints: w.hints || [],
+        visual: w.visual ? { emoji: w.visual } : null
       };
 
+      // 极旧的存档可能缺少排序题选项，退回“重做本课”
+      if (q.type === 'sequence' && !Array.isArray(q.items)) {
+        UI.overlay(`
+          <div class="overlay-card">
+            <div class="sparkle-guide">📝</div>
+            <div class="question-visual">${UI.esc(w.visual || '')}</div>
+            <h2 style="font-size:22px">${UI.esc(w.prompt || '')}</h2>
+            <div class="overlay-text">这道排序题需要回到课程里重新完成哦～</div>
+            <div class="overlay-actions">
+              <button class="btn-big" id="wp-lesson">去重做这一课 ➜</button>
+            </div>
+          </div>`, () => {
+          document.getElementById('wp-lesson').onclick = () => this.navigate('lesson/' + w.lessonId);
+        });
+        return;
+      }
+
       UI.overlay(`
-        <div class="overlay-card">
+        <div class="overlay-card wide">
           <div class="sparkle-guide">📝</div>
-          <div class="question-visual">${UI.esc(w.visual || '')}</div>
-          <h2 style="font-size:22px">${UI.esc(w.prompt || '')}</h2>
-          ${body}
-          <div class="overlay-actions">
-            ${isChoice ? '' : '<button class="btn-big" id="wp-ok">确认</button>'}
-          </div>
+          <div id="wp-game" class="practice-game"></div>
         </div>`, () => {
-        const expect = String(w.answer == null ? '' : w.answer).trim();
-
-        if (isChoice) {
-          document.querySelectorAll('#overlay .choice-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-              if (btn.dataset.opt === expect) finish();
-              else UI.toast('再想一想哦～', '#f87171');
-            });
-          });
-          return;
-        }
-
-        const input = document.getElementById('wp-input');
-        input.focus();
-        const submit = () => {
-          const raw = input.value.trim();
-          if (!raw) { UI.toast('先写个答案吧～', '#f87171'); return; }
-          const num = Number(raw);
-          const expNum = Number(expect);
-          const ok = (raw === expect) ||
-            (!isNaN(num) && !isNaN(expNum) && Math.abs(num - expNum) < 1e-9);
-          if (ok) finish();
-          else {
-            UI.toast('再想一想哦～', '#f87171');
-            input.value = '';
-            input.focus();
+        Game.mount(document.getElementById('wp-game'), {
+          icon: '📝', title: '错题重做', lessonId: w.lessonId, questions: [q]
+        }, {
+          onQuestionDone() {},
+          onFinish: () => {
+            UI.closeOverlay();
+            if (itemEl) Rewards.float(itemEl, '🎉');
+            const still = Save.data.wrongBook.find(x => x.lessonId === w.lessonId && x.qid === w.qid);
+            UI.toast(still ? '答对啦！再答对一次，错题就飞走～' : '错题飞走啦～', 'var(--secondary)');
+            this.navigate('wrong');
           }
-        };
-        document.getElementById('wp-ok').onclick = submit;
-        input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+        });
       });
     }
   };

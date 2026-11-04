@@ -9,8 +9,13 @@
     wrongBook: [],    // [{lessonId, qid, visual, prompt, count, lastAt}]
     badges: [],       // badge id 列表
     exploreDone: {},  // lessonId -> true（完成过探索）
-    settings: { lastGrade: null }
+    settings: { lastGrade: null, lastLesson: null, sound: true }
   };
+
+  // 深拷贝默认存档，避免重置/导入时共享嵌套对象
+  function defaultSave() {
+    return JSON.parse(JSON.stringify(DEFAULT_SAVE));
+  }
 
   function deepMerge(base, extra) {
     const out = Array.isArray(base) ? base.slice() : Object.assign({}, base);
@@ -42,7 +47,9 @@
       ? d.wrongBook.filter(w => w && typeof w === 'object' && w.lessonId && w.qid)
       : [];
     d.badges = Array.isArray(d.badges) ? d.badges : [];
-    if (!d.settings || typeof d.settings !== 'object') d.settings = { lastGrade: null };
+    if (!d.settings || typeof d.settings !== 'object') d.settings = { lastGrade: null, lastLesson: null, sound: true };
+    if (typeof d.settings.lastLesson !== 'string') d.settings.lastLesson = null;
+    if (typeof d.settings.sound !== 'boolean') d.settings.sound = true;
     return d;
   }
 
@@ -71,7 +78,7 @@
     async init() {
       const raw = await loadRaw();
       this.isFresh = !raw;
-      this.data = normalize(deepMerge(DEFAULT_SAVE, raw || {}));
+      this.data = normalize(deepMerge(defaultSave(), raw || {}));
       if (!this.data.player.createdAt) {
         this.data.player.createdAt = new Date().toISOString();
         await this.write();
@@ -106,10 +113,10 @@
         found.lastAt = new Date().toISOString().slice(0, 10);
         found.wrongStreak = (Number(found.wrongStreak) || 0) + 1;
         found.rightStreak = 0;   // 再次答错，连击清零，必须先连续答对两次才会移出
-        if (item.options) found.options = item.options;
-        if (item.type) found.type = item.type;
-        if (item.visual) found.visual = item.visual;
-        if (item.prompt) found.prompt = item.prompt;
+        // 题目内容可能更新，重做时优先使用最新快照
+        for (const k of ['type', 'options', 'template', 'items', 'bank', 'hints', 'answer', 'visual', 'prompt']) {
+          if (item[k] !== undefined) found[k] = item[k];
+        }
       } else {
         this.data.wrongBook.push(Object.assign({
           count: 1, wrongStreak: 1, rightStreak: 0,
@@ -137,7 +144,38 @@
       return this.write().then(() => true);
     },
 
-    setLastGrade(g) { this.data.settings.lastGrade = g; return this.write(); }
+    setLastGrade(g) { this.data.settings.lastGrade = g; return this.write(); },
+
+    setLastLesson(lessonId) {
+      const hit = Data.findLesson(lessonId);
+      this.data.settings.lastLesson = lessonId;
+      if (hit) this.data.settings.lastGrade = hit.grade.grade;
+      return this.write();
+    },
+
+    setSound(on) {
+      this.data.settings.sound = !!on;
+      return this.write();
+    },
+
+    // 导入完整存档；导入前做同样的类型兜底，脏数据不会白屏
+    importSave(obj) {
+      if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+        return Promise.reject(new Error('存档格式不正确'));
+      }
+      this.data = normalize(deepMerge(defaultSave(), obj));
+      if (!this.data.player.createdAt) this.data.player.createdAt = new Date().toISOString();
+      this.isFresh = false;
+      return this.write();
+    },
+
+    // 重置全部进度（保留默认玩家资料）
+    reset() {
+      this.data = normalize(defaultSave());
+      this.data.player.createdAt = new Date().toISOString();
+      this.isFresh = false;
+      return this.write();
+    }
   };
 
   window.Save = Save;

@@ -11,7 +11,7 @@
   const Lesson = {
     current: null,
 
-    play(lessonId, container) {
+    play(lessonId, container, opts) {
       const hit = Data.findLesson(lessonId);
       if (!hit) return;
       const L = hit.lesson;
@@ -40,19 +40,47 @@
 
       // 引导角色闪闪开场
       const guide = L.guide || '🤖';
-      setStep(0);
-      this.playStory(body, L, guide, () => {
-        Save.recordExplored(lessonId);
-        setStep(1);
-        this.playExplore(body, L, guide, () => {
-          setStep(2);
-          this.playGames(body, L, guide, (stars, stats) => {
-            this.showResult(body, L, stars, stats, () => {
-              App.navigate('grade/' + hit.grade.grade);
-            });
+      const finishFlow = (stars, stats) => {
+        this.showResult(body, L, stars, stats, () => {
+          App.navigate('grade/' + hit.grade.grade);
+        });
+      };
+
+      const startChallenge = () => {
+        setStep(2);
+        this.playGames(body, L, guide, finishFlow);
+      };
+
+      const startFull = () => {
+        setStep(0);
+        this.playStory(body, L, guide, () => {
+          Save.recordExplored(lessonId);
+          setStep(1);
+          this.playExplore(body, L, guide, () => {
+            setStep(2);
+            this.playGames(body, L, guide, finishFlow);
           });
         });
-      });
+      };
+
+      // 已通关课程再次进入：让孩子自己选复习还是直接挑战
+      if (Save.data.completed[lessonId] && !(opts && opts.forceFull)) {
+        UI.overlay(`
+          <div class="overlay-card">
+            <div class="sparkle-guide">🗺️</div>
+            <h2>这一课你已经通关啦！</h2>
+            <div class="overlay-text">想再复习一遍，还是直接挑战闯关？</div>
+            <div class="overlay-actions">
+              <button class="btn-big" id="ls-review">📖 复习一遍</button>
+              <button class="btn-secondary" id="ls-challenge">🎮 直接闯关</button>
+            </div>
+          </div>`, () => {
+          document.getElementById('ls-review').onclick = () => { UI.closeOverlay(); startFull(); };
+          document.getElementById('ls-challenge').onclick = () => { UI.closeOverlay(); startChallenge(); };
+        });
+      } else {
+        startFull();
+      }
     },
 
     /* ---------- 故事 ---------- */
@@ -148,6 +176,7 @@
       };
       record().then(fresh => {
         body.innerHTML = '';
+        const nextL = Data.nextLesson(L.id);
         const starHtml = [1, 2, 3].map(n =>
           `<span class="star">${n <= stars ? '⭐' : '☆'}</span>`).join('');
         const msg = stars === 3 ? '太惊人了，零失误通关！'
@@ -159,15 +188,18 @@
           <div class="result-stars">${starHtml}</div>
           <div class="result-sub">答对 ${stats.total - stats.wrong}/${stats.total} 题 · ${L.title}</div>
           <div class="result-actions">
-            <button class="btn-big" id="rs-next">返回地图 🏝️</button>
+            ${nextL ? `<button class="btn-big" id="rs-next-lesson" data-next-id="${nextL.id}">下一课：${nextL.title} ➜</button>` : ''}
+            <button class="${nextL ? 'btn-secondary' : 'btn-big'}" id="rs-next">返回地图 🏝️</button>
             <button class="btn-secondary" id="rs-again">🔁 再玩一次</button>
           </div>
         `);
         body.appendChild(panel);
         panel.querySelector('#rs-next').onclick = () => next();
         panel.querySelector('#rs-again').onclick = () => {
-          this.play(L.id, document.getElementById('page'));
+          this.play(L.id, document.getElementById('page'), { forceFull: true });
         };
+        const nextBtn = panel.querySelector('#rs-next-lesson');
+        if (nextBtn) nextBtn.onclick = () => App.navigate('lesson/' + nextBtn.dataset.nextId);
         if (fresh.length) {
           setTimeout(() => {
             if (document.getElementById('page').contains(panel)) Rewards.showBadgeOverlay(fresh);

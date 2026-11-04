@@ -404,7 +404,8 @@ body {
 }
 .overlay .overlay-card {
   background: var(--card-bg); border-radius: 24px; padding: 34px 40px;
-  max-width: 520px; width: 90%; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.3);
+  max-width: 520px; width: 90%; max-height: 90vh; overflow-y: auto;
+  text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.3);
 }
 .overlay h2 { color: var(--title); font-size: 26px; margin-bottom: 12px; }
 .overlay .overlay-text { font-size: 18px; line-height: 1.7; color: var(--text); margin-bottom: 22px; }
@@ -413,9 +414,33 @@ body {
 /* 闪光角色 */
 .sparkle-guide { font-size: 46px; animation: bounce 2.4s infinite; }
 
+/* 继续上次 / 探索跳过 / 存档管理 */
+.continue-row { text-align: center; margin: 8px 0 20px; }
+.explore-skip { display: block; margin: 20px auto 0; opacity: .72; }
+.overlay .overlay-card.wide { max-width: 680px; }
+.practice-game { max-width: 620px; margin: 0 auto; }
+.practice-game .game-panel { padding: 8px 0 0; }
+.parent-note { font-size: 14px; color: var(--text-soft); line-height: 1.6; margin-bottom: 12px; }
+.save-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.toggle-row {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 16px; color: var(--text); cursor: pointer; padding: 6px 0;
+}
+.toggle-row input { width: 20px; height: 20px; accent-color: var(--primary); }
+
 /* 响应式 */
 @media (max-width: 720px) {
   .keypad { grid-template-columns: repeat(4, 1fr); width: 100%; }
   .choice-btn { font-size: 22px; min-width: 80px; }
   .question-visual { font-size: 40px; }
+}
+
+/* 尊重系统“减少动态效果”设置 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
