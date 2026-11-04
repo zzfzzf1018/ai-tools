@@ -1,0 +1,104 @@
+name: 心晴岛 (Sunny Isles) CI and Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "children-social-emotional-learning/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "children-social-emotional-learning/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sunny-isles-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      publish: ${{ steps.plan.outputs.publish }}
+      tag: ${{ steps.plan.outputs.tag }}
+    defaults:
+      run:
+        working-directory: children-social-emotional-learning
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: children-social-emotional-learning/package-lock.json
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+        with:
+          dotnet-version: "8.0.x"
+      - run: dotnet tool restore
+      - name: Plan release
+        id: plan
+        env:
+          SEL_BEFORE_SHA: ${{ github.event.before }}
+        run: node scripts/release.cjs plan
+      - name: Calculate GitVersion
+        id: version
+        run: node scripts/release.cjs version
+      - run: npm ci --no-audit --no-fund
+      - name: Validate data and runtime
+        run: |
+          node tools/verify.mjs
+          node tools/smoke.mjs
+      - name: Build Windows desktop package
+        run: npm run build:win
+      - name: Prepare release assets
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: node scripts/release.cjs prepare
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sunny-isles-${{ steps.version.outputs.version }}
+          path: children-social-emotional-learning/release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.verify.outputs.publish == 'true'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: sunny-isles-${{ needs.verify.outputs.version }}
+          path: downloads
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+          RELEASE_TAG: ${{ needs.verify.outputs.tag }}
+          RELEASE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd downloads
+          sha256sum --check SHA256SUMS.txt
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo 'Release already exists; refusing to overwrite published downloads.' >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" ./* \
+            --target "$RELEASE_SHA" --draft --title "心晴岛 ${RELEASE_VERSION}" \
+            --notes $'面向 6–10 岁儿童的社会情绪学习（SEL）游戏软件。\n\nWindows x64：下载 SunnyIsles-SEL-*.exe 单文件便携版，双击即可运行，无需安装；未签名，Windows 可能提示未知发布者。\nWeb 版：下载 SunnyIsles-SEL-*-web.zip，解压后用浏览器打开 index.html 即可（或静态托管）。\n所有版本均完全离线运行，无账号、无网络请求、无遥测。学习记录仅保存在本机。\n详见 SHA256SUMS.txt 校验下载完整性。'
+          gh release edit "$RELEASE_TAG" --draft=false --latest

@@ -1,0 +1,17 @@
+# 心晴岛（Sunny Isles）版本策略
+# 本仓库为多项目 monorepo，每个子项目用各自的 tag 前缀隔离版本：
+#   children-social-emotional-learning-vX.Y.Z  →  本项目的稳定语义化版本
+# 其它兄弟项目（children-typing-tutor 等）使用各自前缀，互不干扰。
+workflow: GitHubFlow/v1
+tag-prefix: '^children-social-emotional-learning-v'
+update-build-number: false
+commit-message-incrementing: Disabled
+branches:
+  main:
+    increment: Patch
+    label: ''
+    prevent-increment:
+      when-current-commit-tagged: true
+  unknown:
+    prevent-increment:
+      when-current-commit-tagged: true

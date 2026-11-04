@@ -1,0 +1,42 @@
+# 依赖
+node_modules/
+
+# 构建产物（发布走 CI，不入库）
+dist/
+release/
+release-assets/
+
+# 日志与缓存
+*.log
+.vite/
+coverage/
+tmp/
+.build.lock
+
+# 环境变量
+.env
+.env.*
+!.env.example
+
+# 系统/编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# 证书/密钥（如有）
+*.pem
+*.pfx
+*.p12
+
+# safe-delete 沙箱在清理 node_modules 时可能把文件改名而非删除，
+# 这些残留不应入库，应清理后重装依赖。
+*.DELETE.*
+
+# npm 清洁重装时，把损坏的依赖目录改名留存以便排查，不入库。
+node_modules_broken_*/
+
+# 项目工作记忆（含内部排障笔记，不对外发布）
+.workbuddy/
