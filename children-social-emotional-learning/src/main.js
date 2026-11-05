@@ -96,6 +96,7 @@
     if (toggle) {
       var key = toggle.getAttribute('data-toggle');
       var cur = S.current().settings[key];
+      if (typeof cur !== 'boolean') return;
       S.setSetting(key, !cur);
       Audio.sfx('tap');
       render();
@@ -115,6 +116,9 @@
     var seen = false;
     try { seen = window.localStorage.getItem(KEY) === '1'; } catch (e) {}
     if (seen) return;
+    /* 孩子已经自己点去别的页面时，不要再弹窗打断 */
+    var p = parts();
+    if (p[0] && p[0] !== 'home') return;
     UI.modal({
       title: '欢迎来到心晴岛 ☁️',
       art: '<div style="display:flex;justify-content:center;gap:4px;align-items:flex-end">' +

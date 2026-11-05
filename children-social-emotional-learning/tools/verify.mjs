@@ -139,6 +139,26 @@ const dupe = allLevels.map(x => x.lv.id).filter((v, i, a) => a.indexOf(v) !== i)
 if (dupe.length) E('关卡 id 重复: ' + [...new Set(dupe)].join(', '));
 TYPES.forEach(t => { if ((typeCount[t] || 0) < 2) W(`题型 ${t} 只出现 ${typeCount[t] || 0} 次`); });
 
+/* ---------- 解锁链路可达性：星星上限必须够开下一座岛 ---------- */
+let reachableStars = 0;
+(d.islands || []).forEach(island => {
+  if (typeof island.unlockAt === 'number' && island.unlockAt > reachableStars) {
+    E(`岛屿 ${island.id} 需要 ${island.unlockAt} 星，但此前最多只能拿到 ${reachableStars} 星，永远无法解锁`);
+  }
+  reachableStars += (island.levels || []).length * 3;
+});
+
+/* ---------- 贴纸可获得性：每张贴纸都必须至少作为一次关卡奖励出现 ---------- */
+const rewarded = new Set(allLevels.map(x => x.lv.reward && x.lv.reward.sticker).filter(Boolean));
+(d.stickers || []).forEach(s => {
+  if (!rewarded.has(s.id)) E(`贴纸 ${s.id} 没有出现在任何关卡奖励里，孩子永远拿不到`);
+});
+
+/* ---------- 签到原因表必须与情绪一一对应 ---------- */
+Object.keys(d.checkinReasons || {}).forEach(id => {
+  if (!emotionIds.has(id)) E(`checkinReasons 存在未知情绪键: ${id}`);
+});
+
 /* ---------- 故事可达性 ---------- */
 (d.stories || []).forEach(s => {
   const nodes = s.nodes || {};
@@ -184,8 +204,30 @@ const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const refs = [...html.matchAll(/(?:src|href)="([^"]+)"/g)].map(m => m[1]);
 refs.forEach(r => {
   if (/^(https?:)?\/\//.test(r)) E('index.html 引用了外部资源: ' + r);
+  else if (/^(data:|#)/.test(r)) { /* 内联图标与锚点，不产生请求 */ }
   else if (!fs.existsSync(path.join(root, r))) E('index.html 引用的本地文件不存在: ' + r);
 });
+
+/* ---------- 版本一致性：package.json / 页面 meta / CHANGELOG 最新条目 ---------- */
+const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+const metaVersion = (html.match(/<meta name="app-version" content="([^"]+)"/) || [])[1];
+const changelogLatest = (fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8')
+  .match(/^##\s+\[([0-9]+\.[0-9]+\.[0-9]+)\]/m) || [])[1];
+if (!pkg.version) E('package.json 缺少 version');
+if (metaVersion !== pkg.version) E(`index.html 的 app-version (${metaVersion || '缺失'}) 与 package.json (${pkg.version}) 不一致`);
+if (changelogLatest !== pkg.version) E(`CHANGELOG 最新条目 (${changelogLatest || '缺失'}) 与 package.json (${pkg.version}) 不一致`);
+const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
+if (lock.version !== pkg.version || (lock.packages && lock.packages[''] && lock.packages[''].version !== pkg.version)) {
+  E(`package-lock.json 版本 (${lock.version}) 与 package.json (${pkg.version}) 不一致`);
+}
+const winIcon = pkg.build && pkg.build.win && pkg.build.win.icon;
+if (winIcon && !fs.existsSync(path.join(root, winIcon))) E('构建配置引用的应用图标不存在: ' + winIcon);
+if (!/http-equiv="Content-Security-Policy"/i.test(html)) E('index.html 缺少 Content-Security-Policy，Electron 会告警');
+else {
+  const csp = (html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/i) || [])[1] || '';
+  if (/unsafe-eval/i.test(csp)) E('CSP 不应允许 unsafe-eval');
+  if (/(?:^|;)\s*script-src[^;]*unsafe-inline/i.test(csp)) E('CSP 的 script-src 不应允许 unsafe-inline');
+}
 
 function listFiles(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

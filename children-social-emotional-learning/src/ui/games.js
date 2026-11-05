@@ -123,7 +123,7 @@
             t.classList.add('matched'); active = null; matched++;
             setExtra(root, '');
             if (matched >= total) {
-              var stars = miss <= 1 ? 3 : (miss <= 3 ? 2 : 2);
+              var stars = miss <= 1 ? 3 : 2;
               var ex = setExtra(root, tipBox('全部找到朋友啦 🎉',
                 '<p>你一共配出了 ' + total + ' 对。认出情绪的线索，是认识自己的第一步。</p>' +
                 finishBtn(stars, '配对完成', level.teach || '你认出了这些情绪'), true));
@@ -150,6 +150,10 @@
     var d = level.data || {};
     var items = U.shuffle(d.items || []);
     var answer = d.answer || [];
+    /* 打乱后正好等于正确答案就没有“排”的乐趣了，换一个起点 */
+    if (items.length > 1 && items.every(function (it, i) { return it.id === answer[i]; })) {
+      items = items.slice(1).concat(items.slice(0, 1));
+    }
     var html = '<div class="game-prompt">' + U.esc(d.instruction || '把步骤排好顺序') + '</div>' +
       '<div class="game-instruction">用 ▲▼ 调整顺序，也可以直接拖着卡片移动。排好点「我排好了」👇</div>' +
       '<div class="order-list" data-order-list>' + items.map(function (it) {
@@ -166,7 +170,7 @@
       mount: function (root) {
         var card = U.$('.game-card', root);
         var list = U.$('[data-order-list]', card);
-        var tries = 0;
+        var tries = 0, solved = false;
         function renumber() {
           U.$$('.order-item', list).forEach(function (el, i) { U.$('.ord-num', el).textContent = String(i + 1); });
         }
@@ -175,6 +179,7 @@
 
         U.delegate(list, 'click', '[data-move]', function (e, t) {
           e.stopPropagation();
+          if (solved) return;
           var item = t.closest('.order-item');
           if (!item) return;
           Audio.sfx('tap');
@@ -184,11 +189,14 @@
         });
 
         var dragging = null;
-        U.delegate(list, 'dragstart', '.order-item', function (e, t) { dragging = t; try { e.dataTransfer.effectAllowed = 'move'; } catch (x) {} });
+        U.delegate(list, 'dragstart', '.order-item', function (e, t) {
+          if (solved) { e.preventDefault(); return; }
+          dragging = t; try { e.dataTransfer.effectAllowed = 'move'; } catch (x) {}
+        });
         U.delegate(list, 'dragover', '.order-item', function (e) { e.preventDefault(); });
         U.delegate(list, 'drop', '.order-item', function (e, t) {
           e.preventDefault();
-          if (!dragging || dragging === t) return;
+          if (solved || !dragging || dragging === t) return;
           var r = t.getBoundingClientRect();
           if (e.clientY < r.top + r.height / 2) list.insertBefore(dragging, t);
           else list.insertBefore(dragging, t.nextSibling);
@@ -196,11 +204,13 @@
         });
 
         U.delegate(card, 'click', '[data-check]', function () {
+          if (solved) return;
           Audio.sfx('select');
           var cur = currentOrder();
           var ok = cur.length === answer.length && cur.every(function (v, i) { return v === answer[i]; });
           tries++;
           if (ok) {
+            solved = true;
             var stars = tries <= 1 ? 3 : 2;
             setExtra(root, tipBox('顺序排对啦 🎉',
               '<p>' + U.esc(level.teach || '一步步来，事情会顺很多。') + '</p>' +
@@ -299,32 +309,70 @@
       mount: function (root) {
         var card = U.$('.game-card', root);
         var orb = U.$('[data-orb]', card), cue = U.$('[data-cue]', card);
+        var startBtn = U.$('[data-start]', card);
         var dots = U.$$('[data-dots] i', card);
-        var cancelled = false, timers = [];
-        onCleanup(function () { cancelled = true; timers.forEach(clearTimeout); });
+        var cancelled = false, running = false, started = false;
+        var timers = [], waiters = [], gen = 0;
+
+        function clearTimers() { timers.forEach(clearTimeout); timers = []; }
+        /* 取消时把挂起的等待也唤醒，否则旧的 run() 会永远停在 await 上 */
+        function wakeWaiters() {
+          var list = waiters.splice(0);
+          list.forEach(function (res) { try { res(); } catch (e) {} });
+        }
+        function stopAll() { clearTimers(); wakeWaiters(); }
+        onCleanup(function () { cancelled = true; gen++; stopAll(); });
+
         function wait(ms) {
-          return new Promise(function (res) { timers.push(setTimeout(res, ms)); });
+          return new Promise(function (res) {
+            waiters.push(res);
+            timers.push(setTimeout(function () {
+              waiters = waiters.filter(function (x) { return x !== res; });
+              res();
+            }, ms));
+          });
         }
         function setOrb(cls, text) {
           orb.className = 'breath-orb' + (cls ? ' ' + cls : '');
           orb.textContent = text;
         }
+        function resetStage() {
+          stopAll();
+          cancelled = false;
+          running = false;
+          setOrb('', '准备');
+          cue.textContent = '点「开始」，我们一起来';
+          dots.forEach(function (d) { d.classList.remove('on'); });
+          setExtra(root, '');
+          startBtn.disabled = false;
+        }
         async function run() {
-          U.$('[data-start]', card).disabled = true;
-          for (var c = 0; c < cycles && !cancelled; c++) {
+          if (running) return;
+          resetStage();
+          var my = ++gen;
+          running = true; started = true;
+          startBtn.disabled = true;
+          for (var c = 0; c < cycles && gen === my && !cancelled; c++) {
             if (dots[c]) dots[c].classList.add('on');
-            for (var i = 0; i < ph.length && !cancelled; i++) {
+            for (var i = 0; i < ph.length && gen === my && !cancelled; i++) {
               var p = ph[i];
               cue.textContent = p.c;
               var cls = p.n === '吸气' ? 'in' : (p.n === '呼气' ? 'out' : '');
               Audio.tone(p.n === '吸气' ? 392 : 294, 0.5, 'sine', 0, 0.12);
-              for (var s = p.s; s > 0 && !cancelled; s--) {
+              for (var s = p.s; s > 0 && gen === my && !cancelled; s--) {
                 setOrb(cls, p.n + ' ' + s);
                 await wait(1000);
+                if (gen !== my) return;   /* 已经被停止或被新一次练习顶替 */
               }
-              Audio.sfx('bubble');
+              if (gen === my && !cancelled) Audio.sfx('bubble');
             }
           }
+          if (gen !== my) return;
+          running = false;
+          started = false;
+          /* 练完后先留着「收下星星」，不让误点「开始」把奖励按钮清掉；
+             想再练一次可以从完成弹窗的「再玩一次」重新进入 */
+          startBtn.disabled = !cancelled;
           if (cancelled) return;
           setOrb('', '完成啦');
           cue.textContent = '你刚刚让身体慢下来了 🌿';
@@ -337,7 +385,11 @@
         }
         U.delegate(card, 'click', '[data-start]', function () { Audio.unlock(); Audio.sfx('pop'); run(); });
         U.delegate(card, 'click', '[data-stop]', function () {
-          cancelled = true; timers.forEach(clearTimeout);
+          if (!started) { UI.toast('先点「开始练习」，我们一起试试 🌿'); return; }
+          Audio.sfx('tap');
+          cancelled = true; running = false; started = false; gen++;
+          stopAll();
+          startBtn.disabled = false;
           setOrb('', '随时回来');
           cue.textContent = '练过一点点也算数，想练的时候再来 🌿';
           setExtra(root, tipBox('先休息一下', '<p>呼吸练习不用一次做完，任何时候都能重新开始。</p>' +
@@ -379,9 +431,9 @@
           var face = A.buddy('cloud', n.emotion || 'calm', 90);
           var body = pathDots() +
             '<div class="story-top"><div class="story-avatar">' + face + '</div>' +
-            '<div><div class="chip purple">' + U.esc(n.speaker || '团团') + '</div>' +
-            '<div class="story-text" style="margin-top:10px">' + U.esc(n.text || '') + '</div>' +
-            UI.speakBtn(n.text || '') + '</div></div>';
+            '<div style="flex:1"><div class="spread"><div class="chip purple">' + U.esc(n.speaker || '团团') + '</div>' +
+            UI.speakBtn(n.text || '') + '</div>' +
+            '<div class="story-text" style="margin-top:10px">' + U.esc(n.text || '') + '</div></div></div>';
           if (ending) {
             body += (n.moral ? '<div class="story-moral">💡 ' + U.esc(n.moral) + '</div>' : '');
             body += tipBox('故事走到这里啦 📖',
@@ -449,8 +501,9 @@
       mount: function (root) {
         var card = U.$('.game-card', root);
         var pool = U.$('[data-pool]', card);
-        var active = null, miss = 0, placed = 0, total = items.length;
+        var active = null, miss = 0, placed = 0, total = items.length, finished = false;
         function place(item, bucketEl) {
+          if (finished) return;
           var want = item.getAttribute('data-bucket');
           var got = bucketEl.getAttribute('data-bucket-id');
           item.classList.remove('active');
@@ -458,9 +511,11 @@
             Audio.sfx('pop');
             U.$('.bucket-slot', bucketEl).appendChild(item);
             item.setAttribute('data-placed', '1');
+            item.setAttribute('draggable', 'false');
             placed++;
             setExtra(root, '');
             if (placed >= total) {
+              finished = true;
               var stars = miss <= 1 ? 3 : 2;
               var explains = (d.explain || []).map(function (e) { return '<li>' + U.esc(e) + '</li>'; }).join('');
               setExtra(root, tipBox('全部放好啦 🎉',
@@ -485,6 +540,9 @@
           t.classList.add('active'); active = t;
         });
         U.delegate(card, 'click', '.bucket', function (e, t) {
+          /* 点已经放进篮子的卡片时，不要弹“先选一张卡片”的提示 */
+          if (e.target && e.target.closest && e.target.closest('.drag-item')) return;
+          if (finished) return;
           if (!active) { setExtra(root, tipBox('先选一张卡片', '点上面的一张卡片，再选篮子 🙂', false)); return; }
           place(active, t);
         });

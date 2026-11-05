@@ -47,11 +47,11 @@
   function topbar() {
     var p = window.SEL.state.current();
     var s = p.settings;
-    return '<a class="brand" data-nav="#/home">' + A.brandMark(44) +
-      '<span><span class="brand-name">心晴岛</span><br><span class="brand-sub">SUNNY ISLES · 儿童社会情绪学习</span></span></a>' +
+    return '<a class="brand" href="#/home" data-nav="#/home">' + A.brandMark(44) +
+      '<span class="brand-text"><span class="brand-name">心晴岛</span><br><span class="brand-sub">SUNNY ISLES · 儿童社会情绪学习</span></span></a>' +
       '<div class="top-spacer"></div>' +
       '<div class="top-chip star-chip" title="我的星星">⭐ <span>' + p.stars + '</span></div>' +
-      '<div class="top-chip" data-nav="#/profile" title="切换小玩家" style="cursor:pointer">👤 ' + U.esc(p.name) + '</div>' +
+      '<button class="top-chip profile-chip" data-nav="#/profile" title="切换小玩家" aria-label="切换小玩家">👤 ' + U.esc(p.name) + '</button>' +
       '<button class="top-btn ' + (s.voice ? '' : 'off') + '" data-toggle="voice" title="朗读开关" aria-label="朗读开关">' + (s.voice ? '🔊' : '🔇') + '</button>' +
       '<button class="top-btn ' + (s.sfx ? '' : 'off') + '" data-toggle="sfx" title="音效开关" aria-label="音效开关">' + (s.sfx ? '🎵' : '🔕') + '</button>' +
       '<button class="top-btn" data-nav="#/parent" title="家长/老师专区" aria-label="家长专区">👨‍👩‍👧</button>';
@@ -70,6 +70,7 @@
   var confettiEmoji = ['⭐', '✨', '🌈', '🎉', '💛', '🌸', '🫧'];
   function confetti(n) {
     n = n || 16;
+    try { if (window.SEL.state.current().settings.reduceMotion === true) return; } catch (e) {}
     for (var i = 0; i < n; i++) {
       (function (i) {
         setTimeout(function () {
@@ -113,12 +114,14 @@
     U.delegate(ov, 'click', '[data-modal-act]', function (e, t) {
       if (onAct) onAct(t.getAttribute('data-modal-act'), ov);
     });
+    document.body.classList.add('modal-open');
     if (opts.onMount) opts.onMount(ov);
   }
 
   function closeModal() {
     var ov = document.getElementById('overlay');
     if (ov) ov.innerHTML = '';
+    document.body.classList.remove('modal-open');
   }
 
   function confirm(opts, onYes) {

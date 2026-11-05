@@ -86,7 +86,7 @@ p { margin: 0 0 10px; }
 .top-chip {
   display: inline-flex; align-items: center; gap: 7px;
   background: var(--paper); border: 2px solid var(--line); border-radius: 999px;
-  padding: 7px 15px; font-weight: 800; font-size: 15px; white-space: nowrap;
+  padding: 7px 15px; font-weight: 800; font-size: 15px; white-space: nowrap; color: var(--ink);
   box-shadow: var(--shadow-sm);
 }
 .top-chip.star-chip { background: var(--yellow-soft); border-color: #F6D985; }
@@ -133,8 +133,8 @@ p { margin: 0 0 10px; }
 .btn:hover { transform: translateY(-2px); filter: brightness(1.03); }
 .btn:active { transform: translateY(2px); box-shadow: 0 2px 0 rgba(58,46,43,.08); }
 .btn.primary { background: linear-gradient(160deg, #FFD671, #FFB84D); border-color: #F5B542; color: #4A3210; }
-.btn.pink { background: linear-gradient(160deg, #FFA9B9, #FF7E98); border-color: #F2738E; color: #fff; }
-.btn.blue { background: linear-gradient(160deg, #8BD6F5, #59B9E8); border-color: #4EACE0; color: #fff; }
+.btn.pink { background: linear-gradient(160deg, #FFA9B9, #FF7E98); border-color: #F2738E; color: #5C1024; }
+.btn.blue { background: linear-gradient(160deg, #8BD6F5, #59B9E8); border-color: #4EACE0; color: #0B3E52; }
 .btn.green { background: linear-gradient(160deg, #9EE4B9, #71CE99); border-color: #5FC28B; color: #17492D; }
 .btn.ghost { background: transparent; box-shadow: none; }
 .btn.big { min-height: 66px; padding: 16px 34px; font-size: 20px; }
@@ -207,16 +207,16 @@ p { margin: 0 0 10px; }
 /* ---------- 地图 / 岛屿 ---------- */
 .island-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
 .island-card {
-  position: relative; border-radius: var(--r-lg); padding: 24px; min-height: 194px;
+  position: relative; border-radius: var(--r-lg); padding: 24px 24px 74px; min-height: 194px;
   color: #332823; box-shadow: var(--shadow); overflow: hidden; text-align: left;
-  border: none; transition: transform .2s; width: 100%; display: block;
+  border: none; transition: transform .2s; width: 100%; display: flex; flex-direction: column;
 }
 .island-card:hover { transform: translateY(-6px) rotate(-.6deg); }
 .island-card .ic-deco { position: absolute; right: -26px; bottom: -38px; font-size: 130px; opacity: .22; transform: rotate(-12deg); }
 .island-card .ic-emoji { font-size: 38px; }
 .island-card h3 { font-size: 24px; margin-top: 8px; font-weight: 900; }
 .island-card .ic-skill { font-size: 13px; font-weight: 800; opacity: .72; }
-.island-card .ic-desc { font-size: 14px; margin-top: 10px; max-width: 78%; opacity: .85; }
+.island-card .ic-desc { font-size: 14px; margin-top: 10px; max-width: 100%; opacity: .85; line-height: 1.55; }
 .island-card .ic-progress { position: absolute; left: 24px; right: 24px; bottom: 18px; }
 .island-card.locked { filter: saturate(.35); opacity: .78; }
 .island-card .lock-badge {
@@ -388,7 +388,12 @@ input[type="range"]::-moz-range-thumb { width: 34px; height: 34px; border-radius
 .strategy-card ol { margin: 8px 0 0; padding-left: 22px; }
 .strategy-card li { margin-bottom: 4px; }
 .garden-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 14px; }
-.flower-card { text-align: center; padding: 12px 6px; border-radius: var(--r-md); background: var(--paper); box-shadow: var(--shadow-sm); }
+.flower-card {
+  text-align: center; padding: 12px 6px; border-radius: var(--r-md); background: var(--paper);
+  border: 2px solid var(--line); box-shadow: var(--shadow-sm);
+  transition: transform .15s, border-color .15s;
+}
+.flower-card:hover { transform: translateY(-4px); border-color: var(--yellow); }
 .flower-card svg { width: 84px; height: 96px; }
 .flower-card small { display: block; color: var(--ink-soft); font-size: 12px; }
 .sticker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 16px; }
@@ -459,9 +464,11 @@ table.data-table th { color: var(--ink-soft); font-size: 12px; }
   background: var(--ink); color: #fff; border-radius: 999px; padding: 12px 24px;
   font-weight: 700; box-shadow: var(--shadow); margin-top: 8px; animation: popin .25s;
 }
-.confetti { position: fixed; z-index: 55; pointer-events: none; font-size: 24px; animation: rise 1.3s ease-out forwards; }
+.confetti { position: fixed; z-index: 70; pointer-events: none; font-size: 24px; animation: rise 1.3s ease-out forwards; }
 
 /* ---------- 自适应 / 减少动效 ---------- */
+body.modal-open { overflow: hidden; }
+.brand-mark svg { display: block; width: 100%; height: auto; }
 @media (max-width: 900px) {
   .hero { grid-template-columns: 1fr; text-align: center; }
   .hero p { margin-left: auto; margin-right: auto; }
@@ -471,15 +478,35 @@ table.data-table th { color: var(--ink-soft); font-size: 12px; }
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
   .guide-row .guide-avatar { width: 58px; }
 }
+@media (max-width: 760px) {
+  .profile-chip { display: none; }
+  #topbar { gap: 9px; }
+}
 @media (max-width: 620px) {
   body { font-size: 16px; }
   .brand-sub { display: none; }
   .top-chip { padding: 6px 10px; font-size: 13px; }
   #screen { padding: 18px 14px 70px; }
   .card, .game-card { padding: 18px; }
-  .pair-board, .grid-3, .grid-4, .reason-grid { grid-template-columns: 1fr; }
+  .hero { padding: 26px 18px; border-radius: 28px; }
+  .hero-art .buddy-main svg { width: 118px; height: auto; }
+  .hero-stat { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 10px; text-align: center; }
+  /* 连一连在窄屏也保持左右两列，避免「左列全在上面、右列全在下面」难以配对 */
+  .pair-board { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .pair-item { min-height: 64px; padding: 8px 6px; font-size: 15px; gap: 6px; }
+  .pair-face { width: 44px; height: 44px; }
+  .pair-col-label { font-size: 12px; }
+  .grid-3, .grid-4, .reason-grid { grid-template-columns: 1fr; }
   .quick-grid { gap: 10px; }
   .option-btn { font-size: 16px; }
+  .toast { max-width: calc(100vw - 32px); text-align: center; }
+}
+@media (max-width: 430px) {
+  .brand-text { display: none; }
+  .top-btn { width: 40px; height: 40px; }
+  .btn { padding: 12px 18px; }
+  .hero h1 { font-size: 32px; }
+  .hero-stat { gap: 14px; }
 }
 .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after {
   animation-duration: .001ms !important; animation-iteration-count: 1 !important;

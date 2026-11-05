@@ -9,14 +9,22 @@
   var memoryOnly = false;
 
   var SKILLS = ['awareness', 'management', 'social', 'relationship', 'decision'];
+  var HEX = /^#[0-9a-fA-F]{3,8}$/;
+  var DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+  function intIn(v, lo, hi, dflt) {
+    var n = typeof v === 'number' && isFinite(v) ? Math.round(v) : dflt;
+    return Math.max(lo, Math.min(hi, n));
+  }
 
   function freshProfile(name, avatar) {
     var skills = {};
     SKILLS.forEach(function (k) { skills[k] = 0; });
+    var safeName = typeof name === 'string' && name.trim() ? name.trim() : '小探险家';
     return {
       id: U.uid('p'),
-      name: (name || '小探险家').slice(0, 12),
-      avatar: avatar || 'cloud',
+      name: safeName.slice(0, 12),
+      avatar: typeof avatar === 'string' && avatar ? avatar : 'cloud',
       createdAt: U.today(),
       stars: 0,
       skills: skills,
@@ -35,34 +43,123 @@
     return { version: 1, activeId: p.id, profiles: [p] };
   }
 
+  /* 把任意来源（旧版本存档 / 用户导入文件）修成可用结构；无法修复时返回 null。
+     这一步必须足够宽容：宁可丢弃坏字段，也不能让整份存档读不出来。 */
   function normalize(s) {
-    if (!s || typeof s !== 'object' || !Array.isArray(s.profiles) || !s.profiles.length) return freshSave();
+    if (!s || typeof s !== 'object' || !Array.isArray(s.profiles)) return null;
     s.version = 1;
+    var usedIds = {};
     s.profiles = s.profiles.map(function (p) {
+      if (!p || typeof p !== 'object') return null;
       var base = freshProfile(p.name, p.avatar);
       Object.keys(base).forEach(function (k) {
         if (p[k] === undefined || p[k] === null) p[k] = base[k];
       });
-      SKILLS.forEach(function (k) { if (typeof p.skills[k] !== 'number') p.skills[k] = 0; });
-      ['levels', 'strategyCount'].forEach(function (k) { if (!p[k] || typeof p[k] !== 'object') p[k] = {}; });
-      ['stickers', 'checkins', 'flowers'].forEach(function (k) { if (!Array.isArray(p[k])) p[k] = []; });
-      if (!p.settings || typeof p.settings !== 'object') p.settings = base.settings;
-      if (typeof p.stars !== 'number') p.stars = 0;
+      if (typeof p.id !== 'string' || !p.id) p.id = base.id;
+      if (usedIds[p.id]) p.id = base.id;
+      usedIds[p.id] = true;
+      p.name = (typeof p.name === 'string' && p.name.trim() ? p.name.trim() : base.name).slice(0, 12);
+      p.avatar = typeof p.avatar === 'string' && p.avatar ? p.avatar : 'cloud';
+      p.createdAt = typeof p.createdAt === 'string' ? p.createdAt : base.createdAt;
+      p.lastVisit = typeof p.lastVisit === 'string' ? p.lastVisit : '';
+      p.stars = Math.max(0, intIn(p.stars, 0, 1e9, 0));
+
+      if (!p.skills || typeof p.skills !== 'object' || Array.isArray(p.skills)) p.skills = {};
+      SKILLS.forEach(function (k) { p.skills[k] = Math.max(0, intIn(p.skills[k], 0, 1e9, 0)); });
+
+      if (!p.settings || typeof p.settings !== 'object' || Array.isArray(p.settings)) p.settings = {};
+      ['voice', 'sfx', 'reduceMotion'].forEach(function (k) {
+        if (typeof p.settings[k] !== 'boolean') p.settings[k] = base.settings[k];
+      });
+
+      var levels = {};
+      var knownLevels = {};
+      try {
+        allLevels().forEach(function (x) { knownLevels[x.level.id] = true; });
+      } catch (e) { knownLevels = null; }
+      if (p.levels && typeof p.levels === 'object' && !Array.isArray(p.levels)) {
+        Object.keys(p.levels).forEach(function (id) {
+          var r = p.levels[id];
+          if (!r || typeof r !== 'object' || (knownLevels && !knownLevels[id])) return;
+          levels[id] = {
+            done: r.done === true,
+            stars: intIn(r.stars, 0, 3, 0),
+            attempts: Math.max(0, intIn(r.attempts, 0, 1e6, 0)),
+            lastAt: typeof r.lastAt === 'string' ? r.lastAt : ''
+          };
+        });
+      }
+      p.levels = levels;
+
+      var stickerIds = null;
+      try { stickerIds = (data().stickers || []).map(function (x) { return x.id; }); } catch (e) {}
+      var seenStickers = {};
+      p.stickers = (Array.isArray(p.stickers) ? p.stickers : []).filter(function (id) {
+        if (typeof id !== 'string' || seenStickers[id]) return false;
+        if (stickerIds && stickerIds.indexOf(id) < 0) return false;
+        seenStickers[id] = true;
+        return true;
+      });
+
+      p.checkins = (Array.isArray(p.checkins) ? p.checkins : []).filter(function (c) {
+        return c && typeof c === 'object' && typeof c.date === 'string' && DAY.test(c.date) &&
+          typeof c.emotion === 'string' && c.emotion;
+      }).map(function (c) {
+        return {
+          date: c.date, emotion: c.emotion,
+          intensity: intIn(c.intensity, 1, 5, 3),
+          reason: typeof c.reason === 'string' ? c.reason : '',
+          strategy: typeof c.strategy === 'string' ? c.strategy : '',
+          note: typeof c.note === 'string' ? c.note : '',
+          at: typeof c.at === 'string' ? c.at : ''
+        };
+      }).slice(-400);
+
+      p.flowers = (Array.isArray(p.flowers) ? p.flowers : []).filter(function (f) {
+        return f && typeof f === 'object' && typeof f.date === 'string' && DAY.test(f.date) &&
+          typeof f.emotion === 'string' && f.emotion;
+      }).map(function (f) {
+        return {
+          id: typeof f.id === 'string' && f.id ? f.id : U.uid('f'),
+          date: f.date, emotion: f.emotion,
+          color: typeof f.color === 'string' && HEX.test(f.color) ? f.color : '#FFC94A',
+          petal: intIn(f.petal, 0, 4, 0)
+        };
+      }).slice(-120);
+
+      var counts = {};
+      if (p.strategyCount && typeof p.strategyCount === 'object' && !Array.isArray(p.strategyCount)) {
+        Object.keys(p.strategyCount).forEach(function (id) {
+          counts[id] = Math.max(0, intIn(p.strategyCount[id], 0, 1e6, 0));
+        });
+      }
+      p.strategyCount = counts;
       return p;
-    });
+    }).filter(Boolean);
+
+    if (!s.profiles.length) return null;
+    if (s.profiles.length > 12) s.profiles = s.profiles.slice(0, 12);
     if (!s.profiles.some(function (p) { return p.id === s.activeId; })) s.activeId = s.profiles[0].id;
     return s;
   }
 
   function read() {
     if (memory) return memory;
+    var raw = null;
     try {
-      var raw = window.localStorage.getItem(KEY);
-      memory = raw ? normalize(JSON.parse(raw)) : freshSave();
+      raw = window.localStorage.getItem(KEY);
     } catch (e) {
       memoryOnly = true;
       memory = freshSave();
+      return memory;
     }
+    if (!raw) { memory = freshSave(); return memory; }
+    var safe = null;
+    try { safe = normalize(JSON.parse(raw)); } catch (e) { safe = null; }
+    if (safe) { memory = safe; return memory; }
+    /* 存档坏了：先原样备份一份原始文本，再以新档启动，避免用户数据被无声覆盖 */
+    try { window.localStorage.setItem(KEY + '-corrupt-' + Date.now(), raw); } catch (e) {}
+    memory = freshSave();
     return memory;
   }
 
@@ -133,6 +230,7 @@
     var islandId = found.island.id;
     var gained = 0;
     var isNew = false;
+    var unlockedSticker = null;
     update(function (p) {
       var old = p.levels[levelId];
       var prevStars = (old && old.stars) || 0;
@@ -145,13 +243,14 @@
         lastAt: U.today()
       };
       p.stars += gained;
-      p.skills[islandId] = (p.skills[islandId] || 0) + (skillPoints || stars);
+      p.skills[islandId] = (p.skills[islandId] || 0) +
+        (typeof skillPoints === 'number' ? skillPoints : stars);
       p.lastVisit = U.today();
       var st = found.level.reward && found.level.reward.sticker;
-      if (st && p.stickers.indexOf(st) < 0) p.stickers.push(st);
+      if (st && p.stickers.indexOf(st) < 0) { p.stickers.push(st); unlockedSticker = st; }
     });
     return {
-      newSticker: (found.level.reward && found.level.reward.sticker) || null,
+      newSticker: unlockedSticker,
       newStars: gained, isNew: isNew, islandId: islandId
     };
   }
@@ -161,23 +260,27 @@
   }
 
   function addCheckin(entry) {
+    if (!entry || typeof entry !== 'object' || typeof entry.emotion !== 'string' || !entry.emotion) {
+      return { firstToday: false, star: 0 };
+    }
     var today = U.today();
-    var day = (entry && entry.date) || today;
+    var day = typeof entry.date === 'string' && DAY.test(entry.date) ? entry.date : today;
     var firstToday = !current().checkins.some(function (c) { return c.date === day; });
     update(function (p) {
       p.checkins.push({
         date: day,
         emotion: entry.emotion,
-        intensity: entry.intensity || 3,
-        reason: entry.reason || '',
-        strategy: entry.strategy || '',
-        note: entry.note || '',
+        intensity: intIn(entry.intensity, 1, 5, 3),
+        reason: typeof entry.reason === 'string' ? entry.reason : '',
+        strategy: typeof entry.strategy === 'string' ? entry.strategy : '',
+        note: typeof entry.note === 'string' ? entry.note : '',
         at: new Date().toISOString()
       });
       if (p.checkins.length > 400) p.checkins = p.checkins.slice(-400);
       p.flowers.push({
         id: U.uid('f'), date: day, emotion: entry.emotion,
-        color: entry.color || '#FFC94A', petal: Math.floor(Math.random() * 5)
+        color: typeof entry.color === 'string' && HEX.test(entry.color) ? entry.color : '#FFC94A',
+        petal: Math.floor(Math.random() * 5)
       });
       if (p.flowers.length > 120) p.flowers = p.flowers.slice(-120);
       if (firstToday) p.stars += 1;
@@ -220,6 +323,9 @@
         if (p.id !== id) return p;
         var f = freshProfile(p.name, p.avatar);
         f.id = p.id;
+        f.createdAt = p.createdAt || f.createdAt;
+        /* 清空的是「进度」，不是孩子调好的声音/动效偏好 */
+        f.settings = { voice: p.settings.voice, sfx: p.settings.sfx, reduceMotion: p.settings.reduceMotion };
         return f;
       });
     });
@@ -228,8 +334,14 @@
   function exportSave() { return JSON.stringify(read(), null, 2); }
 
   function importSave(text) {
-    var obj = JSON.parse(text);
+    var obj;
+    try { obj = JSON.parse(String(text)); }
+    catch (e) { throw new Error('这不是有效的 JSON 备份文件'); }
+    if (!obj || typeof obj !== 'object' || !Array.isArray(obj.profiles) || !obj.profiles.length) {
+      throw new Error('备份里没有小玩家档案');
+    }
     var s = normalize(obj);
+    if (!s) throw new Error('备份里没有可用的档案');
     write(s);
     return s;
   }

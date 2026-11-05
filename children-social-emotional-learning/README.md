@@ -73,6 +73,9 @@ children-social-emotional-learning/
 ├─ scripts/
 │  ├─ version.cjs        # GitVersion 版本解析
 │  └─ release.cjs        # 发布计划/版本校验/资产打包（CI 用）
+├─ build/
+│  ├─ icon.svg           # 应用图标源文件（云朵团团）
+│  └─ icon.png           # 打包用 512×512 图标
 ├─ GitVersion.yml        # 语义化版本策略（tag 前缀隔离 monorepo）
 ├─ .config/dotnet-tools.json  # dotnet GitVersion 工具清单
 └─ package.json
@@ -81,7 +84,8 @@ children-social-emotional-learning/
 ## 六、技术架构
 
 - **零构建纯前端**：原生 JavaScript（无框架、无打包器、无 ES Module），用普通 `<script>` 标签加载，因此能直接以 `file://` 双击运行——这是离线优先设计的关键。
-- **Electron 外壳**：`desktop/main.js` 用 `loadFile` 直接打开仓库内的 `index.html`；`nodeIntegration:false` + `contextIsolation:true`，页面无法访问 Node，更安全；拦截一切新窗口与外部导航。
+- **Electron 外壳**：`desktop/main.js` 用 `loadFile` 直接打开仓库内的 `index.html`；`nodeIntegration:false` + `contextIsolation:true`，页面无法访问 Node，更安全；拦截一切新窗口与外部导航；单实例锁避免重复启动写坏同一份存档。
+- **内容安全策略**：`index.html` 内置 CSP，只允许本地脚本/样式与 `data:` 图标，禁止外部连接、`unsafe-eval` 与内联脚本。
 - **全离线资源**：音效用 Web Audio API 实时合成（无音频文件），中文语音用浏览器 `speechSynthesis`，美术全部为内联 SVG，**0 个外部 `<script src>`**。
 - **本地存档**：`localStorage` 持久化，不可用时降级为内存态；支持多档案与 JSON 备份。
 

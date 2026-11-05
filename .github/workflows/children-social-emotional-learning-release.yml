@@ -68,13 +68,19 @@ jobs:
           node tools/smoke.mjs
       - name: Build Windows desktop package
         run: npm run build:win
+      # 只有 package.json 版本号相对上一次提交递增（plan=publish）时，才需要整理发布资产。
+      # 普通提交/PR 只做构建与校验；否则 GitVersion 的下一版本号会与本次构建的
+      # package.json 版本不一致，导致 prepare 步骤必然失败。
       - name: Prepare release assets
+        if: steps.plan.outputs.publish == 'true'
         env:
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: node scripts/release.cjs prepare
       - name: Generate release notes
+        if: steps.plan.outputs.publish == 'true'
         run: node scripts/release-notes.cjs "${{ steps.version.outputs.version }}" release-assets/release-notes.md
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: steps.plan.outputs.publish == 'true'
         with:
           name: sunny-isles-${{ steps.version.outputs.version }}
           path: children-social-emotional-learning/release-assets/*

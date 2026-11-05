@@ -16,6 +16,16 @@
 
   function D() { return S.data(); }
   function esc(s) { return U.esc(s); }
+  function totalLevels() { return S.allLevels().length; }
+  function gameTypeCount() {
+    var seen = {};
+    S.allLevels().forEach(function (l) { seen[l.level.type] = 1; });
+    return Object.keys(seen).length;
+  }
+  function appVersion() {
+    var m = document.querySelector('meta[name="app-version"]');
+    return (m && m.getAttribute('content')) || '';
+  }
   function navBtn(hash, label, cls) {
     return '<button class="btn ' + (cls || 'ghost') + '" data-nav="' + hash + '">' + label + '</button>';
   }
@@ -59,10 +69,10 @@
 
       UI.sectionHead('今天想玩什么？', '每一个入口都是一小段旅程', 'EXPLORE') +
       '<div class="quick-grid">' +
-        '<a class="quick-card" data-nav="#/map"><span class="qc-icon">🏝️</span><b>五座小岛</b><span>18 个互动关卡</span></a>' +
-        '<a class="quick-card" data-nav="#/emotions"><span class="qc-icon">🎭</span><b>情绪图鉴</b><span>认出心里的小天气</span></a>' +
-        '<a class="quick-card" data-nav="#/strategies"><span class="qc-icon">🧰</span><b>冷静工具箱</b><span>5 个随时能用的小方法</span></a>' +
-        '<a class="quick-card" data-nav="#/garden"><span class="qc-icon">🌷</span><b>心情花园</b><span>看看记下的每一天</span></a>' +
+        '<a class="quick-card" href="#/map" data-nav="#/map"><span class="qc-icon">🏝️</span><b>五座小岛</b><span>' + totalLevels() + ' 个互动关卡</span></a>' +
+        '<a class="quick-card" href="#/emotions" data-nav="#/emotions"><span class="qc-icon">🎭</span><b>情绪图鉴</b><span>认出心里的小天气</span></a>' +
+        '<a class="quick-card" href="#/strategies" data-nav="#/strategies"><span class="qc-icon">🧰</span><b>冷静工具箱</b><span>5 个随时能用的小方法</span></a>' +
+        '<a class="quick-card" href="#/garden" data-nav="#/garden"><span class="qc-icon">🌷</span><b>心情花园</b><span>看看记下的每一天</span></a>' +
       '</div>' +
 
       '<div class="grid grid-2" style="margin-top:22px">' +
@@ -91,10 +101,10 @@
       '<div class="grid grid-2">' +
         '<div class="card"><h3>🌤 每天心情签到</h3>' +
           '<p class="muted">选一个现在的情绪、说说为什么，再种一朵心情花。每天第一次签到会得 1 颗星，连续签到还有小惊喜。</p></div>' +
-        '<div class="card"><h3>🏝️ 五座小岛 19 关</h3>' +
-          '<p class="muted">用星星解锁新岛，按顺序玩更顺。每关有情境选择、连一连、排顺序等 7 种小游戏，完成得星星和贴纸。</p></div>' +
+        '<div class="card"><h3>🏝️ ' + S.data().islands.length + ' 座小岛 ' + totalLevels() + ' 关</h3>' +
+          '<p class="muted">用星星解锁新岛，按顺序玩更顺。每关有情境选择、连一连、排顺序等 ' + gameTypeCount() + ' 种小游戏，完成得星星和贴纸。</p></div>' +
         '<div class="card"><h3>🧰 冷静工具箱</h3>' +
-          '<p class="muted">5 个随时能用的小方法：觉察、呼吸、应对、拉开距离、表达。生气或紧张时，跟着做一遍就好。</p></div>' +
+          '<p class="muted">' + S.data().strategies.length + ' 个随时能用的小方法：觉察、呼吸、应对、拉开距离、表达。生气或紧张时，跟着做一遍就好。</p></div>' +
         '<div class="card"><h3>🌷 心情花园</h3>' +
           '<p class="muted">记下的每一天都会开出一朵花。翻翻看，就能看见自己情绪的小天气是怎么变化的。</p></div>' +
       '</div>' +
@@ -151,6 +161,14 @@
     var is = (D().islands || []).filter(function (x) { return x.id === id; })[0];
     if (!is) return wrap(UI.emptyState('🗺️', '没找到这座岛', '回地图看看别的岛吧', navBtn('#/map', '回地图', 'primary')));
     var p = S.current();
+    if (!S.isIslandUnlocked(is, p)) {
+      var need = Math.max(1, (is.unlockAt || 0) - p.stars);
+      return wrap(backRow('#/map', '回地图') +
+        UI.emptyState('🔒', is.name + ' 还没开门', '再攒 ' + need + ' 颗星星，这座岛就开啦。',
+          navBtn('#/map', '回地图', 'primary')), function () {
+            UI.toast('再攒几颗星星，这座岛就开啦 ⭐');
+          });
+    }
     var levels = is.levels || [];
     var done = levels.filter(function (l) { return p.levels[l.id] && p.levels[l.id].done; }).length;
     var tips = (D().parentTips || {})[id] || [];
@@ -166,10 +184,12 @@
       '<div class="level-list">' + levels.map(function (lv, i) {
         var rec = p.levels[lv.id];
         var unlocked = S.isLevelUnlocked(is, i);
+        var teach = String(lv.teach || '');
+        var teaser = esc(teach.slice(0, 24)) + (teach.length > 24 ? '…' : '');
         return '<button class="level-card ' + (rec && rec.done ? 'done' : '') + ' ' + (unlocked ? '' : 'locked') + '" ' +
           (unlocked ? 'data-nav="#/level/' + esc(lv.id) + '"' : 'data-locklevel="1"') + '>' +
           '<span class="num">' + (rec && rec.done ? '✓' : (i + 1)) + '</span>' +
-          '<span><b>' + esc(lv.title) + '</b><div class="lv-type">' + (TYPE_NAME[lv.type] || lv.type) + ' · ' + esc(lv.teach || '').slice(0, 24) + '</div></span>' +
+          '<span><b>' + esc(lv.title) + '</b><div class="lv-type">' + (TYPE_NAME[lv.type] || lv.type) + ' · ' + teaser + '</div></span>' +
           '<span style="margin-left:auto">' + UI.starRow(rec ? rec.stars : 0, 3) + '</span>' +
           '<span class="lv-arrow">' + (unlocked ? '→' : '🔒') + '</span></button>';
       }).join('') + '</div>' +
@@ -185,12 +205,34 @@
     var found = S.findLevel(levelId);
     if (!found) return wrap(UI.emptyState('🔍', '没找到这一关', '回地图看看', navBtn('#/map', '回地图', 'primary')));
     var lv = found.level, is = found.island;
+    var p = S.current();
+    var idx = is.levels.indexOf(lv);
+    var rec = p.levels[lv.id];
+    /* 已完成的关卡允许重玩；未完成的必须按顺序解锁，防止直接改 hash 跳关 */
+    var accessible = S.isLevelUnlocked(is, idx, p) || !!(rec && rec.done);
+    if (!accessible) {
+      var need = Math.max(0, (is.unlockAt || 0) - p.stars);
+      return wrap(backRow('#/map', '回地图') +
+        UI.emptyState('🔒', is.name + ' 还没开门',
+          need > 0 ? '再攒 ' + need + ' 颗星星，这座岛就开啦。' : '先完成上一个关卡，这里就开门啦。',
+          navBtn('#/map', '回地图', 'primary')), function () {
+            UI.toast('先完成前面的关卡，再来这里 🔑');
+          });
+    }
+
+    var completed = false;
     var ctx = {
       complete: function (res) {
+        if (completed) return;   /* 防止连点「收下星星」重复结算 */
+        completed = true;
         var out = S.completeLevel(levelId, res.stars);
         UI.confetti(18);
         var sticker = (D().stickers || []).filter(function (s) { return s.id === out.newSticker; })[0];
-        var next = S.allLevels()[S.allLevels().findIndex(function (x) { return x.level.id === levelId; }) + 1];
+        var all = S.allLevels();
+        var at = all.findIndex(function (x) { return x.level.id === levelId; });
+        var next = at >= 0 ? all[at + 1] : null;
+        var nextOpen = !!next && (S.isLevelUnlocked(next.island, next.index, S.current()) ||
+          !!(S.current().levels[next.level.id] && S.current().levels[next.level.id].done));
         var body = '<div class="big-stars">' + UI.starRow(res.stars, 3) + '</div>' +
           '<p>' + esc(res.title || '完成啦') + '</p>' +
           (res.feedback ? '<p class="muted small">' + esc(res.feedback) + '</p>' : '') +
@@ -198,7 +240,7 @@
           (sticker ? '<div class="chip green" style="margin-top:12px">🎁 新贴纸：' + esc(sticker.emoji || '') + ' ' + esc(sticker.name) + '</div>' : '') +
           '<p class="small muted" style="margin-top:14px">给大人：' + esc(lv.tip || '') + '</p>';
         var actions = [];
-        if (next) actions.push({ label: '下一关 →', cls: 'primary', nav: '#/level/' + next.level.id });
+        if (nextOpen) actions.push({ label: '下一关 →', cls: 'primary', nav: '#/level/' + next.level.id });
         actions.push({ label: '回岛屿', cls: 'blue', nav: '#/island/' + is.id });
         actions.push({ label: '再玩一次', cls: 'ghost', act: 'replay' });
         UI.modal({ title: '这一关走完啦 🎉', art: '⭐', body: body, actions: actions }, function (act) {
@@ -211,7 +253,7 @@
     var html = '<div class="level-shell">' + backRow('#/island/' + is.id, '回' + is.name) +
       '<div class="level-head"><h2>' + esc(lv.title) + '</h2>' +
       '<span class="chip">' + esc(is.skill) + '</span>' + '<span class="chip blue">' + (TYPE_NAME[lv.type] || lv.type) + '</span>' +
-      '<div style="margin-left:auto">' + UI.starRow(3, 3) + '</div></div>' +
+      '<div style="margin-left:auto">' + UI.starRow(rec ? rec.stars : 0, 3) + '</div></div>' +
       UI.guideRow(lv.intro || '我们一起来试试看！', 'cloud', 'happy') +
       game.html +
       '<div class="center small muted" style="margin-top:20px">慢慢来，没有时间限制，也没有「答错」这回事 🌿</div></div>';
@@ -261,6 +303,7 @@
     return wrap(html, function (root) {
       var body = U.$('[data-checkin-body]', root);
       var dots = U.$('[data-dots]', root);
+      var lastPlantAt = 0;
       function draw() {
         dots.innerHTML = [0, 1, 2, 3].map(function (i) { return '<i class="' + (i <= state.step ? 'on' : '') + '"></i>'; }).join('');
         var s = '';
@@ -278,7 +321,7 @@
             '<div class="slider-wrap" style="padding:8px">' +
             '<div class="slider-face">' + A.face(em.face || 'calm', 120, em.color) + '</div>' +
             '<div class="slider-value" data-val>' + state.intensity + '</div>' +
-            '<input type="range" min="1" max="5" step="1" value="' + state.intensity + '" data-range>' +
+            '<input type="range" min="1" max="5" step="1" value="' + state.intensity + '" data-range aria-label="情绪强度">' +
             '<div class="slider-labels"><span>一点点</span><span>非常多</span></div></div>' +
             '<h4 style="margin:14px 0 8px">可能是因为…（选一个，也可以不选）</h4>' +
             '<div class="reason-grid">' + reasons.map(function (r, i) {
@@ -326,8 +369,12 @@
 
       (function bindOnce() {
         U.delegate(body, 'click', '[data-pick]', function (e, t) {
-          state.emotion = list[Number(t.getAttribute('data-pick'))].id;
-          Audio.sfx('select'); Audio.speak('你现在觉得' + (list.filter(function (x) { return x.id === state.emotion; })[0] || {}).name);
+          var picked = list[Number(t.getAttribute('data-pick'))];
+          if (!picked) return;
+          /* 换了情绪，上一种情绪选过的原因就不该继续挂着 */
+          if (state.emotion !== picked.id) state.reason = '';
+          state.emotion = picked.id;
+          Audio.sfx('select'); Audio.speak('你现在觉得' + picked.name);
           draw();
         });
         U.delegate(body, 'click', '[data-reason]', function (e, t) {
@@ -340,6 +387,10 @@
         U.delegate(body, 'click', '[data-back]', function () { Audio.sfx('tap'); state.step = Math.max(0, state.step - 1); draw(); });
         U.delegate(body, 'click', '[data-practice]', function () { runStrategy(state.strategy); });
         U.delegate(body, 'click', '[data-plant]', function () {
+          var now = Date.now();
+          /* 防连点重复种花，但不阻止关掉弹窗后再记一朵 */
+          if (now - lastPlantAt < 800) return;
+          lastPlantAt = now;
           var em = list.filter(function (x) { return x.id === state.emotion; })[0] || {};
           var r = S.addCheckin({
             date: U.today(), emotion: state.emotion, intensity: state.intensity,
@@ -470,7 +521,11 @@
         var f = flowers[Number(t.getAttribute('data-flower'))];
         if (!f) return;
         var em = emotionName[f.emotion] || {};
-        var rec = p.checkins.filter(function (c) { return c.date === f.date && c.emotion === f.emotion; })[0] || {};
+        /* 同一天同一情绪可能记过多次，取最后一次，而不是最早的 */
+        var rec = {};
+        for (var i = p.checkins.length - 1; i >= 0; i--) {
+          if (p.checkins[i].date === f.date && p.checkins[i].emotion === f.emotion) { rec = p.checkins[i]; break; }
+        }
         UI.modal({
           title: U.prettyDate(f.date) + ' 的花', art: A.flower(f.color, f.petal, 100),
           body: '<p><b>' + esc(em.emoji || '') + ' ' + esc(em.name || '') + '</b>' + (rec.intensity ? ' · ' + rec.intensity + ' 格' : '') + '</p>' +
@@ -593,8 +648,15 @@
         if (!f) return;
         var reader = new FileReader();
         reader.onload = function () {
-          try { S.importSave(String(reader.result)); UI.toast('备份已导入 ✅'); window.SEL.render(); }
-          catch (e) { UI.toast('这个文件读不出来，换一个试试'); }
+          try {
+            S.importSave(String(reader.result));
+            UI.toast('备份已导入 ✅');
+            window.SEL.render();
+          } catch (e) {
+            UI.toast(e && e.message ? e.message : '这个文件读不出来，换一个试试');
+          } finally {
+            file.value = '';   /* 允许再次选择同一个文件 */
+          }
         };
         reader.readAsText(f);
       });
@@ -658,6 +720,7 @@
         S.setActive(t.getAttribute('data-switch')); Audio.sfx('pop'); window.SEL.render();
       });
       U.delegate(root, 'click', '[data-create]', function () {
+        if (S.profiles().length >= 12) { UI.toast('一台电脑最多 12 个小玩家档案'); return; }
         var v = U.$('[data-new-name]', root).value.trim();
         S.createProfile(v || '小探险家', pick);
         Audio.sfx('win'); UI.toast('新档案建好啦 🎉'); window.SEL.render();
@@ -673,8 +736,10 @@
   function settings() {
     var p = S.current();
     function row(label, desc, key) {
+      var on = p.settings[key] === true;
       return '<div class="setting-row"><div><b>' + label + '</b><div class="small muted">' + desc + '</div></div>' +
-        '<button class="switch ' + (p.settings[key] ? 'on' : '') + '" data-toggle="' + key + '" aria-label="' + label + '"></button></div>';
+        '<button class="switch ' + (on ? 'on' : '') + '" data-toggle="' + key + '" role="switch" aria-checked="' +
+        (on ? 'true' : 'false') + '" aria-label="' + label + '"></button></div>';
     }
     var html = backRow('#/home', '回首页') +
       UI.sectionHead('设置', '让软件用起来更舒服', 'SETTINGS') +
@@ -690,7 +755,7 @@
       '<div class="card" style="margin-top:20px"><h3>关于心晴岛</h3>' +
         '<p class="muted">面向 6-10 岁儿童的社会情绪学习游戏，参考 CASEL 五大能力框架，用情境故事、配对、排序、呼吸练习和每日心情签到，把「认识情绪—练习方法—用到生活里」串成一条闭环。全部内容离线运行，无广告、无账号、无数据上传。</p>' +
         '<p class="small muted"><b>边界：</b>这是教育游戏，不是心理评估或诊断工具，也不构成任何医疗建议。孩子若持续困扰，请寻求学校心理老师或专业人士的帮助。</p>' +
-        '<p class="small muted">版本 1.0.0 · Web 版与 Windows 桌面版共用同一份内容</p></div>';
+        '<p class="small muted">版本 ' + esc(appVersion() || '未知') + ' · Web 版与 Windows 桌面版共用同一份内容</p></div>';
     return wrap(html, function (root) {
       U.delegate(root, 'click', '[data-export]', function () { exportFile(); });
     });
