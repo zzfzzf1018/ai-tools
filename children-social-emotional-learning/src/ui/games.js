@@ -310,8 +310,9 @@
         var card = U.$('.game-card', root);
         var orb = U.$('[data-orb]', card), cue = U.$('[data-cue]', card);
         var startBtn = U.$('[data-start]', card);
+        var stopBtn = U.$('[data-stop]', card);
         var dots = U.$$('[data-dots] i', card);
-        var cancelled = false, running = false, started = false;
+        var cancelled = false, running = false, started = false, completed = false;
         var timers = [], waiters = [], gen = 0;
 
         function clearTimers() { timers.forEach(clearTimeout); timers = []; }
@@ -340,14 +341,16 @@
           stopAll();
           cancelled = false;
           running = false;
+          completed = false;
           setOrb('', '准备');
           cue.textContent = '点「开始」，我们一起来';
           dots.forEach(function (d) { d.classList.remove('on'); });
           setExtra(root, '');
           startBtn.disabled = false;
+          if (stopBtn) stopBtn.disabled = false;
         }
         async function run() {
-          if (running) return;
+          if (running || completed) return;
           resetStage();
           var my = ++gen;
           running = true; started = true;
@@ -368,12 +371,15 @@
             }
           }
           if (gen !== my) return;
+          if (cancelled) { running = false; started = false; return; }
           running = false;
           started = false;
-          /* 练完后先留着「收下星星」，不让误点「开始」把奖励按钮清掉；
-             想再练一次可以从完成弹窗的「再玩一次」重新进入 */
-          startBtn.disabled = !cancelled;
-          if (cancelled) return;
+          completed = true;
+          /* 练完就把「开始」锁住：此时页面上已经出现「收下星星」，
+             再点开始会清掉这块奖励区，孩子就没法结算了。
+             想再练一次可以领完星星，从完成弹窗的「再玩一次」重新进来。 */
+          startBtn.disabled = true;
+          if (stopBtn) stopBtn.disabled = true;
           setOrb('', '完成啦');
           cue.textContent = '你刚刚让身体慢下来了 🌿';
           dots.forEach(function (d) { d.classList.add('on'); });
@@ -385,6 +391,7 @@
         }
         U.delegate(card, 'click', '[data-start]', function () { Audio.unlock(); Audio.sfx('pop'); run(); });
         U.delegate(card, 'click', '[data-stop]', function () {
+          if (completed) return;
           if (!started) { UI.toast('先点「开始练习」，我们一起试试 🌿'); return; }
           Audio.sfx('tap');
           cancelled = true; running = false; started = false; gen++;
@@ -404,11 +411,11 @@
     var d = level.data || {};
     var story = (S.data().stories || []).filter(function (s) { return s.id === d.storyId; })[0];
     if (!story) {
+      /* 数据缺故事时只给出口，不发星星：按钮写着「回到地图」却结算奖励会误导孩子 */
       return {
-        html: '<div class="game-prompt">这个故事还在路上，先去玩别的关卡吧 🌈</div>',
-        mount: function (root) {
-          setExtra(root, finishBtn(3, '故事暂缺', '先去玩别的关卡吧。', '回到地图'));
-        }
+        html: '<div class="game-prompt">这个故事还在路上，先去玩别的关卡吧 🌈</div>' +
+          '<div style="margin-top:16px"><button class="btn primary" data-nav="#/map">回到地图</button></div>',
+        mount: function () {}
       };
     }
     var nodes = story.nodes || {};
@@ -442,7 +449,7 @@
             body += tipBox('故事走到这里啦 📖',
               '<p>你一共做了 ' + steps + ' 次选择。故事里没有「错」的选择，只有不一样的结果。</p>' +
               finishBtn(3, '故事完成', strip(n.moral || level.teach || '')), true);
-            Audio.sfx('good'); Audio.speak(strip(n.moral || level.teach || ''));
+            Audio.sfx('good');
           } else {
             body += '<div class="game-instruction">如果是你，会怎么做？</div><div class="story-choices">' +
               n.choices.map(function (c, i) {
@@ -451,7 +458,8 @@
               }).join('') + '</div>';
           }
           panel.innerHTML = body;
-          Audio.speak(n.text || '');
+          /* 结局要连"故事正文 + 这句话的道理"一起念；此前正文会把刚念到的道理顶掉 */
+          Audio.speak(ending ? strip((n.text || '') + '。' + (n.moral || level.teach || '')) : (n.text || ''));
         }
         var currentId = story.start || Object.keys(nodes)[0];
         U.delegate(panel, 'click', '.option-btn', function (e, t) {
@@ -575,6 +583,11 @@
       mount: function (root) {
         inner.mount(root);
         U.delegate(root, 'click', '[data-finish]', function (e, t) {
+          /* 结算过一次就锁住按钮：完成弹窗被误关后，再点不会静默无反应 */
+          if (t.getAttribute('data-claimed') === '1') return;
+          t.setAttribute('data-claimed', '1');
+          t.disabled = true;
+          t.textContent = '已收下星星 ✓';
           Audio.sfx('star');
           var title = t.getAttribute('data-title') || '完成啦';
           var text = t.getAttribute('data-text') || '';

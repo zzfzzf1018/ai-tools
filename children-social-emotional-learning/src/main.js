@@ -55,6 +55,7 @@
     var screen = document.createElement('main');
     screen.id = 'screen';
     screen.setAttribute('role', 'main');
+    screen.setAttribute('tabindex', '-1');
     oldScreen.parentNode.replaceChild(screen, oldScreen);
     screen.innerHTML = view.html;
     document.getElementById('topbar').innerHTML = UI.topbar();
@@ -67,6 +68,14 @@
         '<button class="btn primary" data-nav="#/home">回首页</button></div>');
     }
     try { window.scrollTo(0, 0); } catch (e) {}
+    /* 换页时被点中的按钮随旧节点一起消失，焦点会掉回 body。
+       把焦点交给新页面（不滚动），键盘与读屏用户才能从新内容继续。 */
+    try {
+      var ae = document.activeElement;
+      if (!ae || ae === document.body || !document.body.contains(ae)) {
+        screen.focus({ preventScroll: true });
+      }
+    } catch (e) {}
   }
 
   /* 全局事件：一次绑定，页面重绘不重复注册 */
@@ -98,6 +107,8 @@
       var cur = S.current().settings[key];
       if (typeof cur !== 'boolean') return;
       S.setSetting(key, !cur);
+      /* 关掉朗读时顺手停掉正在念的那一句，不然关完还在念 */
+      if (key === 'voice' && cur) Audio.stopSpeak();
       Audio.sfx('tap');
       render();
       return;

@@ -87,6 +87,26 @@
     if (p) p();
   }
 
+  /* 中文语音选择。Chrome/Electron 首次调用 getVoices() 往往返回空数组，
+     要等 voiceschanged 之后才有；缓存一份，避免第一句用英文声音念中文。 */
+  var zhVoice = null;
+  function pickZhVoice() {
+    try {
+      var voices = window.speechSynthesis.getVoices() || [];
+      if (!voices.length) return null;
+      var zh = voices.filter(function (v) { return /^(zh|cmn)|Chinese/i.test((v.lang || '') + ' ' + (v.name || '')); });
+      /* 普通话（zh-CN）优先，其次本地语音（离线可用、不依赖在线语音服务） */
+      zh.sort(function (a, b) {
+        var ac = /^zh[-_]CN/i.test(a.lang || '') ? 0 : 1;
+        var bc = /^zh[-_]CN/i.test(b.lang || '') ? 0 : 1;
+        if (ac !== bc) return ac - bc;
+        if (a.localService === b.localService) return 0;
+        return a.localService ? -1 : 1;
+      });
+      return zh[0] || null;
+    } catch (e) { return null; }
+  }
+
   /* 中文朗读。系统无中文语音时静默失败，不影响任何功能。 */
   function speak(text, opts) {
     if (!text) return;
@@ -101,9 +121,7 @@
       u.rate = (opts && opts.rate) || 0.92;
       u.pitch = (opts && opts.pitch) || 1.12;
       u.volume = 1;
-      var voices = window.speechSynthesis.getVoices() || [];
-      var zh = voices.filter(function (v) { return /zh|cmn|Chinese/i.test(v.lang + ' ' + v.name); })[0];
-      if (zh) u.voice = zh;
+      if (zhVoice) u.voice = zhVoice;
       window.speechSynthesis.speak(u);
     } catch (e) {}
   }
@@ -119,4 +137,11 @@
   /* 第一次点击/按键后解锁音频上下文（浏览器自动播放策略） */
   document.addEventListener('pointerdown', unlock, { once: true });
   document.addEventListener('keydown', unlock, { once: true });
+
+  if ('speechSynthesis' in window) {
+    try {
+      zhVoice = pickZhVoice();
+      window.speechSynthesis.addEventListener('voiceschanged', function () { zhVoice = pickZhVoice(); });
+    } catch (e) {}
+  }
 })();

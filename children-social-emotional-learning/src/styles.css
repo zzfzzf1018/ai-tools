@@ -52,17 +52,6 @@ p { margin: 0 0 10px; }
   width: 520px; height: 520px; bottom: -230px; right: -130px;
   background: radial-gradient(circle, rgba(102, 196, 238, .24), rgba(102, 196, 238, 0) 70%);
 }
-.sky-cloud {
-  position: absolute; background: rgba(255, 255, 255, .72); border-radius: 100px;
-  box-shadow: 0 8px 24px rgba(58, 46, 43, .05);
-}
-.sky-cloud::before, .sky-cloud::after { content: ""; position: absolute; background: inherit; border-radius: 50%; }
-.sky-cloud::before { width: 55%; height: 150%; top: -70%; left: 14%; }
-.sky-cloud::after { width: 42%; height: 125%; top: -50%; right: 12%; }
-.c1 { width: 130px; height: 42px; top: 13%; left: 8%; animation: floatx 19s ease-in-out infinite; }
-.c2 { width: 90px; height: 30px; top: 31%; right: 11%; animation: floatx 23s ease-in-out infinite reverse; }
-.c3 { width: 150px; height: 48px; top: 68%; left: 4%; animation: floatx 27s ease-in-out infinite; }
-@keyframes floatx { 0%,100% { transform: translateX(0) translateY(0); } 50% { transform: translateX(38px) translateY(-10px); } }
 @keyframes bob { 0%,100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-10px) rotate(1deg); } }
 @keyframes popin { 0% { transform: scale(.82); opacity: 0; } 70% { transform: scale(1.04); } 100% { transform: scale(1); opacity: 1; } }
 @keyframes rise { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(-90px); opacity: 0; } }
@@ -99,6 +88,8 @@ p { margin: 0 0 10px; }
 .top-btn.off { opacity: .45; }
 
 #screen { position: relative; z-index: 1; max-width: 1180px; margin: 0 auto; padding: 26px clamp(16px, 4vw, 40px) 90px; }
+/* 换页时程序会把焦点交给 #screen（方便键盘/读屏），不要给整页画焦点框 */
+#screen:focus { outline: none; }
 
 /* ---------- 通用 ---------- */
 .card {
@@ -517,6 +508,11 @@ body.modal-open { overflow: hidden; }
   transition-duration: .001ms !important;
 }
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+  /* 与 .reduce-motion 保持一致：只跑一次，否则 infinite + 0.001ms 会在后台疯狂空转 */
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
 }
 :focus-visible { outline: 4px solid var(--blue); outline-offset: 3px; }

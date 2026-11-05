@@ -43,6 +43,22 @@ const islandIds = new Set((d.islands || []).map(i => i.id));
 STRATEGY_IDS.forEach(id => { if (!strategyIds.has(id)) E('缺少固定策略 id: ' + id); });
 ISLAND_IDS.forEach(id => { if (!islandIds.has(id)) E('缺少固定岛屿 id: ' + id); });
 
+/* ---------- 主键唯一性：重复 id 会让存档、贴纸、跳转静默串档 ---------- */
+const dupes = (list, key, label) => {
+  const seen = new Set(), dup = new Set();
+  (list || []).forEach(x => {
+    const v = x && x[key];
+    if (v === undefined || v === null || v === '') return;
+    if (seen.has(v)) dup.add(v); else seen.add(v);
+  });
+  if (dup.size) E(`${label} 存在重复 id: ${[...dup].join(', ')}`);
+};
+dupes(d.emotions, 'id', 'emotions');
+dupes(d.strategies, 'id', 'strategies');
+dupes(d.islands, 'id', 'islands');
+dupes(d.stickers, 'id', 'stickers');
+dupes(d.stories, 'id', 'stories');
+
 (d.emotions || []).forEach(e => {
   if (!has(e, 'id') || !has(e, 'name')) E('情绪字段不全: ' + JSON.stringify(e).slice(0, 80));
   if (!FACES.includes(e.face)) E(`情绪 ${e.id} 的 face 非法: ${e.face}`);
@@ -238,6 +254,24 @@ if (lock.version !== pkg.version || (lock.packages && lock.packages[''] && lock.
 }
 const winIcon = pkg.build && pkg.build.win && pkg.build.win.icon;
 if (winIcon && !fs.existsSync(path.join(root, winIcon))) E('构建配置引用的应用图标不存在: ' + winIcon);
+if (!pkg.main || !fs.existsSync(path.join(root, pkg.main))) E('package.json 的 main 入口不存在: ' + pkg.main);
+if (!(pkg.build && Array.isArray(pkg.build.files) && pkg.build.files.includes('index.html') && pkg.build.files.includes('src/**/*'))) {
+  E('build.files 没有包含 index.html 与 src/**/*，打包后会缺少运行文件');
+}
+
+/* ---------- Electron 安全基线：这些开关一旦被改掉，儿童安全承诺就失效了 ---------- */
+const mainSrc = fs.readFileSync(path.join(root, 'desktop/main.js'), 'utf8');
+const security = [
+  ['nodeIntegration: false', /nodeIntegration\s*:\s*false/, '页面能访问 Node'],
+  ['contextIsolation: true', /contextIsolation\s*:\s*true/, '页面与预加载上下文未隔离'],
+  ['sandbox: true', /sandbox\s*:\s*true/, '渲染进程未开启沙箱'],
+  ['spellcheck: false', /spellcheck\s*:\s*false/, '拼写检查可能触发在线词典下载，破坏完全离线承诺'],
+  ['setWindowOpenHandler -> deny', /setWindowOpenHandler\s*\(\s*\(\)\s*=>\s*\(\{\s*action\s*:\s*'deny'/, '未禁止新窗口/弹窗'],
+  ['will-navigate', /will-navigate/, '未拦截外部导航'],
+  ['will-attach-webview', /will-attach-webview/, '未阻止 <webview> 挂载'],
+  ['setPermissionRequestHandler', /setPermissionRequestHandler/, '未统一拒绝摄像头/麦克风等权限申请'],
+];
+security.forEach(([label, re, why]) => { if (!re.test(mainSrc)) E(`Electron 安全基线缺失（${why}）：main.js 未见 ${label}`); });
 /* 开发预览服务会按路径开放整个项目目录，必须只监听本机回环地址 */
 const serveSrc = fs.readFileSync(path.join(root, 'desktop/serve.mjs'), 'utf8');
 if (!/server\.listen\(\s*PORT\s*,\s*HOST\s*,/.test(serveSrc) || !/127\.0\.0\.1/.test(serveSrc)) {
@@ -252,6 +286,12 @@ else {
   if (/unsafe-eval/i.test(csp)) E('CSP 不应允许 unsafe-eval');
   if (/(?:^|;)\s*script-src[^;]*unsafe-inline/i.test(csp)) E('CSP 的 script-src 不应允许 unsafe-inline');
 }
+/* 样式表最基本的结构检查：删错一行很容易把 @keyframes 的头丢掉，浏览器会静默失效 */
+const cssSrc = fs.readFileSync(path.join(root, 'src/styles.css'), 'utf8');
+const openBraces = (cssSrc.match(/{/g) || []).length;
+const closeBraces = (cssSrc.match(/}/g) || []).length;
+if (openBraces !== closeBraces) E(`styles.css 花括号不配对（{ ${openBraces} 个 / } ${closeBraces} 个）`);
+if (/@keyframes\s*\{/.test(cssSrc)) E('styles.css 存在没有名字的 @keyframes');
 
 function listFiles(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

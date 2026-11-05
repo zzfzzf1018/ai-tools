@@ -85,7 +85,7 @@ children-social-emotional-learning/
 ## 六、技术架构
 
 - **零构建纯前端**：原生 JavaScript（无框架、无打包器、无 ES Module），用普通 `<script>` 标签加载，因此能直接以 `file://` 双击运行——这是离线优先设计的关键。
-- **Electron 外壳**：`desktop/main.js` 用 `loadFile` 直接打开仓库内的 `index.html`；`nodeIntegration:false` + `contextIsolation:true`，页面无法访问 Node，更安全；拦截一切新窗口与外部导航；单实例锁避免重复启动写坏同一份存档。
+- **Electron 外壳**：`desktop/main.js` 用 `loadFile` 直接打开仓库内的 `index.html`；`nodeIntegration:false` + `contextIsolation:true` + `sandbox:true`，页面无法访问 Node，更安全；拦截一切新窗口与外部导航、拒绝摄像头/麦克风等权限申请、禁止 `<webview>` 挂载，并关闭拼写检查避免 Chromium 下载在线词典（保证完全离线）；单实例锁避免重复启动写坏同一份存档。
 - **内容安全策略**：`index.html` 内置 CSP，只允许本地脚本/样式与 `data:` 图标，禁止外部连接、`unsafe-eval` 与内联脚本。
 - **全离线资源**：音效用 Web Audio API 实时合成（无音频文件），中文语音用浏览器 `speechSynthesis`，美术全部为内联 SVG，**0 个外部 `<script src>`**。
 - **本地存档**：`localStorage` 持久化，不可用时降级为内存态；支持多档案与 JSON 备份。为控制本机存储占用，界面最多展示最近 400 条签到与 365 朵心情花；更早的记录会自动移入归档（每档最多 2000 条 / 1000 朵），随导出备份一起保存与还原，不会丢失。
@@ -100,8 +100,8 @@ npm run smoke    # jsdom 运行时冒烟测试（需 jsdom，已在 devDependenc
 npm run build:win
 ```
 
-- `tools/verify.mjs`：校验课程数据字段、关卡引用、题型合法性、无外部 URL。
-- `tools/smoke.mjs`：在 jsdom 中渲染全部页面与 19 个关卡，跑通签到闭环与 7 种题型交互。
+- `tools/verify.mjs`：校验课程数据字段、主键唯一性、关卡引用、题型合法性、解锁可达性、Electron 安全基线、样式表结构、无外部 URL。
+- `tools/smoke.mjs`：在 jsdom 中渲染全部页面与 19 个关卡，跑通签到闭环、7 种题型交互、存档溢出归档、导入安全、焦点管理与家长面板。
 
 ## 八、版本管理与自动发布（GitVersion + GitHub Actions）
 

@@ -32,8 +32,8 @@ const server = http.createServer((req, res) => {
   if (pathname === '/') pathname = '/index.html';
 
   const rel = pathname.replace(/^\/+/, '');
-  // 明确拒绝含 .. 的路径，防止路径穿越
-  if (rel.split(/[\\/]/).includes('..')) {
+  // 明确拒绝含 .. 的路径，防止路径穿越；空字节会让 fs 直接抛异常并打挂进程
+  if (rel.split(/[\\/]/).includes('..') || rel.includes('\0')) {
     res.writeHead(403);
     res.end('Forbidden');
     return;

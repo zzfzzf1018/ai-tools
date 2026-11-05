@@ -51,7 +51,7 @@
         '<div class="hero-stat">' +
           '<div><b>⭐ ' + p.stars + '</b><span>收集到的星星</span></div>' +
           '<div><b>' + st.doneLevels + '/' + st.totalLevels + '</b><span>完成的小关卡</span></div>' +
-          '<div><b>' + st.checkins + '</b><span>记下的心情</span></div>' +
+          '<div><b>' + st.checkinsTotal + '</b><span>记下的心情</span></div>' +
           '<div><b>' + st.streak + '</b><span>连续签到天数</span></div>' +
         '</div></div>' +
         '<div class="hero-art">' +
@@ -185,7 +185,7 @@
         var rec = p.levels[lv.id];
         var unlocked = S.isLevelUnlocked(is, i);
         var teach = String(lv.teach || '');
-        var teaser = esc(teach.slice(0, 24)) + (teach.length > 24 ? '…' : '');
+        var teaser = esc(U.cut(teach, 24));
         return '<button class="level-card ' + (rec && rec.done ? 'done' : '') + ' ' + (unlocked ? '' : 'locked') + '" ' +
           (unlocked ? 'data-nav="#/level/' + esc(lv.id) + '"' : 'data-locklevel="1"') + '>' +
           '<span class="num">' + (rec && rec.done ? '✓' : (i + 1)) + '</span>' +
@@ -503,11 +503,11 @@
   function garden() {
     var p = S.current();
     var flowers = p.flowers.slice().reverse();
-    var counts = {};
+    var counts = Object.create(null);
     flowers.forEach(function (f) { counts[f.emotion] = (counts[f.emotion] || 0) + 1; });
-    var emotionName = {};
+    var emotionName = Object.create(null);
     (D().emotions || []).forEach(function (e) { emotionName[e.id] = e; });
-    var strategyName = {};
+    var strategyName = Object.create(null);
     (D().strategies || []).forEach(function (x) { strategyName[x.id] = x.name; });
     var cap = S.limits ? S.limits.flowers : 365;
     var capped = flowers.length >= cap;
@@ -601,6 +601,8 @@
     var islands = D().islands || [];
     var labels = islands.map(function (i) { return i.skill || i.name; });
     var values = islands.map(function (i) { return p.skills[i.id] || 0; });
+    var skillMax = Math.max.apply(null, values.concat([0]));
+    var skillSum = values.reduce(function (a, b) { return a + b; }, 0);
     var weak = islands.slice().sort(function (x, y) { return (p.skills[x.id] || 0) - (p.skills[y.id] || 0); }).slice(0, 2);
     var tips = D().parentTips || {};
     var emotions = D().emotions || [];
@@ -618,7 +620,7 @@
     var emotionRows = emotions.map(function (e) {
       return '<tr><td>' + esc(e.emoji || '') + ' ' + esc(e.name) + '</td><td>' + (st.emotionCount[e.id] || 0) + ' 次</td></tr>';
     }).join('');
-    var emById = {};
+    var emById = Object.create(null);
     emotions.forEach(function (e) { emById[e.id] = e; });
     var recent = p.checkins.slice(-7).reverse();
     var recentRows = recent.map(function (c) {
@@ -627,23 +629,27 @@
       /* 窄屏下表格列很窄：日期用 11-05 这种紧凑写法，避免中文日期被折成两行 */
       return '<tr><td>' + esc(c.date.slice(5)) + '</td>' +
         '<td>' + esc(e.emoji || '') + ' ' + esc(e.name || c.emotion) + ' · ' + c.intensity + '格</td>' +
-        '<td class="small">' + esc(words.slice(0, 12)) + (words.length > 12 ? '…' : '') + '</td></tr>';
+        '<td class="small">' + esc(U.cut(words, 12)) + '</td></tr>';
     }).join('');
     var html = backRow('#/home', '回首页') +
       UI.sectionHead('成长记录', '只记录练习过程，不给孩子的能力打分', 'FOR GROWN-UPS') +
       '<div class="kpi-grid">' +
         '<div class="kpi"><b>' + st.doneLevels + '/' + st.totalLevels + '</b><span>完成关卡</span></div>' +
         '<div class="kpi"><b>' + st.stars + '</b><span>收集星星</span></div>' +
-        '<div class="kpi"><b>' + st.checkins + '</b><span>心情签到</span></div>' +
+        '<div class="kpi"><b>' + st.checkinsTotal + '</b><span>心情签到</span></div>' +
         '<div class="kpi"><b>' + st.streak + '</b><span>连续天数</span></div>' +
       '</div>' +
       '<div class="parent-grid" style="margin-top:20px">' +
         '<div class="card"><h3>五种能力的练习次数</h3>' +
           '<div class="radar-wrap">' + A.radar(values, labels) + '</div>' +
-          '<p class="small muted center">这是「练过多少次」，不是能力高低，请不要用来比较孩子。</p></div>' +
+          '<p class="small muted center">' +
+          (skillSum === 0
+            ? '还没有练习记录：完成一关，或去冷静工具箱练一次，形状就会长出来。'
+            : '这是「练过多少次」，不是能力高低，请不要用来比较孩子。图上最外圈 = 练得最多的那一项（' + skillMax + ' 次）。') +
+          '</p></div>' +
         '<div class="card"><h3>最近 14 天签到</h3><div class="calendar">' + cal + '</div>' +
           '<h4 style="margin-top:20px">记下过的心情</h4>' +
-          '<table class="data-table"><thead><tr><th>心情</th><th>次数</th></tr></thead><tbody>' + emotionRows + '</tbody></table>' +
+          '<table class="data-table"><thead><tr><th>心情</th><th>次数（含归档）</th></tr></thead><tbody>' + emotionRows + '</tbody></table>' +
           '<h4 style="margin-top:20px">最近的签到</h4>' +
           (recent.length ? '<table class="data-table recent-table"><thead><tr><th>日期</th><th>心情</th><th>写下的话</th></tr></thead><tbody>' +
             recentRows + '</tbody></table>' : '<p class="small muted">还没有签到记录。</p>') +
@@ -690,6 +696,7 @@
             file.value = '';   /* 允许再次选择同一个文件 */
           }
         };
+        reader.onerror = function () { UI.toast('这个文件读不出来，换一个试试'); file.value = ''; };
         reader.readAsText(f);
       });
       U.delegate(root, 'click', '[data-reset]', function () {
@@ -756,9 +763,11 @@
         S.setActive(t.getAttribute('data-switch')); Audio.sfx('pop'); window.SEL.render();
       });
       U.delegate(root, 'click', '[data-create]', function () {
-        if (S.profiles().length >= 12) { UI.toast('一台电脑最多 12 个小玩家档案'); return; }
+        var cap = (S.limits && S.limits.profiles) || 12;
+        if (S.profiles().length >= cap) { UI.toast('一台电脑最多 ' + cap + ' 个小玩家档案'); return; }
         var v = U.$('[data-new-name]', root).value.trim();
-        S.createProfile(v || '小探险家', pick);
+        var created = S.createProfile(v || '小探险家', pick);
+        if (!created) { UI.toast('档案数量已达上限'); return; }
         Audio.sfx('win'); UI.toast('新档案建好啦 🎉'); window.SEL.render();
       });
       U.delegate(root, 'click', '[data-del-profile]', function () {

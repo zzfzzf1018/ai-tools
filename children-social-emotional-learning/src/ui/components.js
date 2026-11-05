@@ -133,7 +133,8 @@
       else if (a.close !== false) attrs += ' data-modal-close="1"';
       return '<button class="btn ' + (a.cls || 'primary') + '" ' + attrs + '>' + U.esc(a.label) + '</button>';
     }).join('');
-    ov.innerHTML = '<div class="modal-backdrop"><div class="modal" role="dialog" aria-modal="true">' +
+    ov.innerHTML = '<div class="modal-backdrop"><div class="modal" role="dialog" aria-modal="true" ' +
+      'aria-label="' + U.esc(opts.title || '提示') + '">' +
       (opts.art ? '<div class="modal-art">' + opts.art + '</div>' : '') +
       (opts.title ? '<h2>' + U.esc(opts.title) + '</h2>' : '') +
       (opts.body || '') +

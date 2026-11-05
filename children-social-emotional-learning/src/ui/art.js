@@ -309,7 +309,10 @@
   /* ---------- 家长雷达图 ---------- */
   function radar(values, labels) {
     var cx = 130, cy = 122, R = 82;
+    labels = labels || [];
+    values = values || [];
     var n = labels.length;
+    if (!n) return svg('', 260, 250, '0 0 260 250');
     function pt(i, r) {
       var a = -Math.PI / 2 + (Math.PI * 2 / n) * i;
       return [cx + Math.cos(a) * r, cy + Math.sin(a) * r];
@@ -326,10 +329,15 @@
       var p = pt(i, R);
       grid += '<line x1="' + cx + '" y1="' + cy + '" x2="' + p[0].toFixed(1) + '" y2="' + p[1].toFixed(1) + '" stroke="#EADBC8" stroke-width="1.5"/>';
     });
-    var max = Math.max(6, Math.max.apply(null, values.concat([1])));
-    var dataPts = values.map(function (v) { return Math.max(6, (v / max) * R); });
-    var body = grid + poly(dataPts, 'rgba(255,143,163,.35)', '#FF8FA3', 3);
-    dataPts.forEach(function (r, i) {
+    var max = Math.max(0, Math.max.apply(null, values.concat([0])));
+    var hasData = max > 0;
+    /* 没有任何练习记录时不要把五个点顶到 6 像素处画出一个"小五边形"——
+       那会让家长误以为孩子已经练过。直接画中心点，并在页面上给出文字说明。 */
+    var dataPts = values.map(function (v) { return hasData ? (v / max) * R : 0; });
+    var body = grid + (hasData
+      ? poly(dataPts, 'rgba(255,143,163,.35)', '#FF8FA3', 3)
+      : '<circle cx="' + cx + '" cy="' + cy + '" r="5" fill="#E9D9C8" stroke="#fff" stroke-width="2"/>');
+    if (hasData) dataPts.forEach(function (r, i) {
       var p = pt(i, r);
       body += '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="4.5" fill="#FF8FA3" stroke="#fff" stroke-width="2"/>';
     });

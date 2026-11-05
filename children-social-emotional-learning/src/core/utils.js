@@ -58,6 +58,12 @@
     });
   }
 
+  /* 按字符（而不是 UTF-16 码元）截断，避免把 emoji 从中间切开办成乱码 */
+  function cut(s, n) {
+    var chars = Array.from(String(s == null ? '' : s));
+    return chars.length > n ? chars.slice(0, n).join('') + '…' : chars.join('');
+  }
+
   /* 把字符串数组拼成适合朗读的一句话 */
   function joinSay(parts) {
     return parts.filter(Boolean).join('。').replace(/。+/g, '。');
@@ -65,7 +71,7 @@
 
   window.SEL.utils = {
     esc: esc, shuffle: shuffle, clamp: clamp, pad: pad, today: today,
-    prettyDate: prettyDate, uid: uid, daysAgo: daysAgo,
+    prettyDate: prettyDate, uid: uid, daysAgo: daysAgo, cut: cut,
     $: $, $$: $$, delegate: delegate, joinSay: joinSay
   };
 })();

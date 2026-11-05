@@ -148,6 +148,8 @@ try {
   const skillBefore = JSON.stringify(w.SEL.state.current().skills);
   click(q('[data-finish]'));
   const skillAfter1 = JSON.stringify(w.SEL.state.current().skills);
+  must(q('[data-finish]').disabled === true, '结算后完成按钮没有锁住，误关弹窗再点会静默无反应');
+  must((q('[data-finish]').textContent || '').includes('已收下星星'), '结算后完成按钮文案没有改成「已收下星星」');
   click(q('[data-finish]'));
   const skillAfter2 = JSON.stringify(w.SEL.state.current().skills);
   must(skillAfter1 !== skillBefore, '完成关卡后能力练习次数未增加');
@@ -439,6 +441,67 @@ try {
     if (go) click(go);
   }
   must(sumSkills() === replaySkill, '重玩故事仍在重复累加能力点');
+
+  /* --- 20. 第 401 条签到：必须自动归档而不是崩溃 --- */
+  {
+    const many = bare();
+    many.profiles[0].id = 'p1';
+    for (let i = 0; i < 400; i++) {
+      many.profiles[0].checkins.push({ date: '2026-11-05', emotion: 'happy', note: 'n' + i });
+    }
+    many.profiles[0].flowers = Array.from({ length: 365 }, (_, i) => ({
+      id: 'f' + i, date: '2026-11-05', emotion: 'happy', color: '#FFC94A', petal: 1
+    }));
+    w.SEL.state.importSave(JSON.stringify(many));
+    const pid = w.SEL.state.current().id;
+    let out = null, threw = null;
+    try { out = w.SEL.state.addCheckin({ emotion: 'sad', intensity: 4, reason: '溢出一条' }); }
+    catch (e) { threw = e; }
+    must(!threw, '签到达到 400 条后再签到会抛错：' + (threw && threw.message));
+    must(!!out && out.star === 0, '同一天第二次签到不应再给星');
+    must(w.SEL.state.current().checkins.length === 400, '溢出后展示区签到数应保持 400');
+    must(w.SEL.state.current().flowers.length === 365, '溢出后心情花应保持 365 朵');
+    const slot = (w.SEL.state.save().archive || {})[pid] || null;
+    must(!!slot && slot.checkins.length === 1, '第 401 条签到没有被移入归档');
+    must(!!slot && slot.flowers.length === 1, '第 366 朵心情花没有被移入归档');
+    must(w.SEL.state.stats().checkinsTotal === 401, '统计没有把归档记录算进总签到数');
+    must(w.SEL.state.stats().emotionCount.happy === 400, '归档后情绪统计丢失了更早的记录');
+    const parentTxt = route('#/parent');
+    must(parentTxt.includes('401'), '家长面板的签到总数没有包含归档记录');
+    must(parentTxt.includes('含归档'), '家长面板没有说明情绪次数包含归档记录');
+  }
+
+  /* --- 21. 导入的怪 id / HTML 昵称不能污染对象或注入 DOM --- */
+  {
+    w.SEL.state.importSave(JSON.stringify({
+      profiles: [{
+        id: '__proto__', name: '<img src=x onerror=alert(1)>', avatar: 'cloud',
+        checkins: [], flowers: [], levels: {}, stickers: [], skills: {}, strategyCount: {}, settings: {}
+      }]
+    }));
+    must(w.SEL.state.current().id !== '__proto__', '导入的 __proto__ 档案 id 未被清洗');
+    must(({}).checkins === undefined, '导入的档案 id 污染了 Object.prototype');
+    route('#/home');
+    must(!q('#topbar img'), '昵称里的 HTML 没有被转义，顶栏出现注入元素');
+    must((q('#topbar').textContent || '').includes('<img'), '昵称里的尖括号没有被当作普通文字显示');
+    must((route('#/parent') || '').includes('还没有练习记录'), '零练习时雷达图没有给出「还没有练习记录」的说明');
+  }
+
+  /* --- 22. 未知路由与未知关卡要有兜底，不能白屏 --- */
+  {
+    const homeHtml = route('#/does-not-exist');
+    must(homeHtml.includes('心里的小天气'), '未知路由没有回到首页');
+    const badLevel = route('#/level/no-such-level');
+    must(badLevel.includes('没找到这一关'), '未知关卡没有给出友好提示');
+    const badIsland = route('#/island/no-such-island');
+    must(badIsland.includes('没找到这座岛'), '未知岛屿没有给出友好提示');
+  }
+
+  /* --- 23. 换页后焦点落在新页面上（键盘/读屏可达） --- */
+  {
+    route('#/home');
+    must(w.document.activeElement === q('#screen'), '换页后焦点没有交给新的 #screen');
+  }
 } catch (e) {
   fails.push('测试流程异常: ' + (e && e.stack || e));
 }

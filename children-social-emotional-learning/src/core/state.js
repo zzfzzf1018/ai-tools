@@ -13,6 +13,7 @@
   var DAY = /^\d{4}-\d{2}-\d{2}$/;
   var MAX_CHECKINS = 400;
   var MAX_FLOWERS = 365;      // 约一年的心情花，避免 localStorage 无限增长
+  var MAX_PROFILES = 12;      // 一台电脑最多 12 个小玩家
   /* 超出展示上限的记录不丢弃，搬进 archive（随存档一起导出/导入），上限再给一个很宽的天花板 */
   var MAX_ARCHIVE_CHECKINS = 2000;
   var MAX_ARCHIVE_FLOWERS = 1000;
@@ -53,10 +54,18 @@
     return { version: 1, activeId: p.id, profiles: [p], archive: {} };
   }
 
+  /* 档案 id 只允许安全字符：导入的备份可能是任意 JSON，不能让 __proto__ / constructor
+     之类的键渗进 levels / archive / strategyCount 这些普通对象里 */
+  var SAFE_ID = /^[A-Za-z0-9_-]{1,60}$/;
+  var RESERVED_ID = ['__proto__', 'constructor', 'prototype'];
+  function safeId(id) {
+    return typeof id === 'string' && SAFE_ID.test(id) && RESERVED_ID.indexOf(id) < 0 ? id : null;
+  }
+
   /* 归档槽：profileId -> { checkins: [], flowers: [] } */
   function archiveSlot(s, pid) {
     if (!s.archive || typeof s.archive !== 'object' || Array.isArray(s.archive)) s.archive = {};
-    var a = s.archive[pid];
+    var a = Object.prototype.hasOwnProperty.call(s.archive, pid) ? s.archive[pid] : null;
     if (!a || typeof a !== 'object') a = s.archive[pid] = { checkins: [], flowers: [] };
     if (!Array.isArray(a.checkins)) a.checkins = [];
     if (!Array.isArray(a.flowers)) a.flowers = [];
@@ -98,15 +107,16 @@
   function normalize(s) {
     if (!s || typeof s !== 'object' || !Array.isArray(s.profiles)) return null;
     s.version = 1;
-    var usedIds = {};
+    var usedIds = Object.create(null);
     s.profiles = s.profiles.map(function (p) {
       if (!p || typeof p !== 'object') return null;
       var base = freshProfile(p.name, p.avatar);
       Object.keys(base).forEach(function (k) {
         if (p[k] === undefined || p[k] === null) p[k] = base[k];
       });
-      if (typeof p.id !== 'string' || !p.id) p.id = base.id;
-      p.id = str(p.id, 60);
+      var safe = safeId(p.id);
+      if (!safe) safe = base.id;
+      p.id = safe;
       if (usedIds[p.id]) p.id = base.id;
       usedIds[p.id] = true;
       p.name = str(p.name, 12, base.name).trim() || base.name;
@@ -155,7 +165,7 @@
       p.checkins = cleanCheckins(p.checkins);
       p.flowers = cleanFlowers(p.flowers);
 
-      var counts = {};
+      var counts = Object.create(null);
       if (p.strategyCount && typeof p.strategyCount === 'object' && !Array.isArray(p.strategyCount)) {
         Object.keys(p.strategyCount).slice(0, 100).forEach(function (id) {
           counts[str(id, 40)] = Math.max(0, intIn(p.strategyCount[id], 0, 1e6, 0));
@@ -166,7 +176,7 @@
     }).filter(Boolean);
 
     if (!s.profiles.length) return null;
-    if (s.profiles.length > 12) s.profiles = s.profiles.slice(0, 12);
+    if (s.profiles.length > MAX_PROFILES) s.profiles = s.profiles.slice(0, MAX_PROFILES);
     if (!s.profiles.some(function (p) { return p.id === s.activeId; })) s.activeId = s.profiles[0].id;
 
     /* 超上限的记录不丢：搬进归档，跟着存档一起导出/导入 */
@@ -330,7 +340,10 @@
     var today = U.today();
     var day = typeof entry.date === 'string' && DAY.test(entry.date) ? entry.date : today;
     var firstToday = !current().checkins.some(function (c) { return c.date === day; });
-    update(function (p) {
+    /* 注意：update 的回调签名是 (profile, save)。超出展示上限时要把旧记录搬进
+       save.archive，所以这里必须接收第二个参数，否则会抛 ReferenceError，
+       孩子点「种下这朵花」将没有任何反应（第 401 条签到起必然触发）。 */
+    update(function (p, s) {
       p.checkins.push({
         date: day,
         emotion: str(entry.emotion, 40),
@@ -370,9 +383,15 @@
   }
 
   function createProfile(name, avatar) {
-    var p = freshProfile(name, avatar);
-    update(function (_p, s) { s.profiles.push(p); s.activeId = p.id; });
-    return p;
+    var created = null;
+    update(function (_p, s) {
+      /* 上限写在数据层，而不是只靠界面拦一下 */
+      if (s.profiles.length >= MAX_PROFILES) return;
+      created = freshProfile(name, avatar);
+      s.profiles.push(created);
+      s.activeId = created.id;
+    });
+    return created;
   }
 
   function setActive(id) {
@@ -433,14 +452,19 @@
       if (byDate[U.daysAgo(i)]) streak++;
       else if (i > 0) break;
     }
-    var emotionCount = {};
-    p.checkins.forEach(function (c) { emotionCount[c.emotion] = (emotionCount[c.emotion] || 0) + 1; });
+    var emotionCount = Object.create(null);
     var arc = (read().archive || {})[p.id];
+    var archived = arc && Array.isArray(arc.checkins) ? arc.checkins : [];
+    /* 统计要包含已归档的更早记录，否则家长面板里「记下过的心情」会在第 401 条后突然缩水 */
+    p.checkins.concat(archived).forEach(function (c) {
+      emotionCount[c.emotion] = (emotionCount[c.emotion] || 0) + 1;
+    });
     return {
       totalLevels: levels.length, doneLevels: done,
       stars: p.stars, stickers: p.stickers.length,
-      checkins: p.checkins.length, streak: streak,
-      archivedCheckins: arc && Array.isArray(arc.checkins) ? arc.checkins.length : 0,
+      checkins: p.checkins.length, checkinsTotal: p.checkins.length + archived.length,
+      streak: streak,
+      archivedCheckins: archived.length,
       skills: p.skills, emotionCount: emotionCount,
       strategyCount: p.strategyCount
     };
@@ -448,7 +472,7 @@
 
   window.SEL.state = {
     SKILLS: SKILLS,
-    limits: { checkins: MAX_CHECKINS, flowers: MAX_FLOWERS, archivedCheckins: MAX_ARCHIVE_CHECKINS, archivedFlowers: MAX_ARCHIVE_FLOWERS },
+    limits: { checkins: MAX_CHECKINS, flowers: MAX_FLOWERS, profiles: MAX_PROFILES, archivedCheckins: MAX_ARCHIVE_CHECKINS, archivedFlowers: MAX_ARCHIVE_FLOWERS },
     get memoryOnly() { return memoryOnly; },
     save: read, current: current, profiles: function () { return read().profiles; },
     update: update, data: data, allLevels: allLevels, findLevel: findLevel,
