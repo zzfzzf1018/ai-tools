@@ -92,6 +92,7 @@
     opts = opts || {};
     var old = document.getElementById('overlay');
     if (!old) return;
+    var lastFocus = document.activeElement;
     /* 换掉 overlay 节点，避免每次弹窗都叠加一层事件委托 */
     var ov = document.createElement('div');
     ov.id = 'overlay';
@@ -114,13 +115,35 @@
     U.delegate(ov, 'click', '[data-modal-act]', function (e, t) {
       if (onAct) onAct(t.getAttribute('data-modal-act'), ov);
     });
+    /* 键盘可达：打开时把焦点移进弹窗，Tab 只在弹窗内循环，关闭后还给原来的元素 */
+    ov._lastFocus = lastFocus;
+    function focusable() {
+      return U.$$('button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])', ov);
+    }
+    var firstBtn = focusable()[0];
+    if (firstBtn && firstBtn.focus) { try { firstBtn.focus(); } catch (e) {} }
+    ov.addEventListener('keydown', function (e) {
+      if (e.key !== 'Tab') return;
+      var f = focusable();
+      if (!f.length) return;
+      var first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
     document.body.classList.add('modal-open');
     if (opts.onMount) opts.onMount(ov);
   }
 
   function closeModal() {
     var ov = document.getElementById('overlay');
-    if (ov) ov.innerHTML = '';
+    if (ov) {
+      var back = ov._lastFocus;
+      ov.innerHTML = '';
+      if (back && back.focus && document.body.contains(back)) {
+        try { back.focus(); } catch (e) {}
+      }
+      ov._lastFocus = null;
+    }
     document.body.classList.remove('modal-open');
   }
 

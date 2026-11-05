@@ -11,19 +11,19 @@
 
 | 小岛 | 对应 SEL 能力 | 练什么 |
 |---|---|---|
-| 🟡 自我觉察岛 | Self-Awareness | 识别 10 种情绪、给心情打分、觉察身体信号 |
-| 🟢 自我管理岛 | Self-Management | 呼吸练习、冷静角、把冲动变成可选择的行动 |
-| 🔵 社会觉察岛 | Social Awareness | 站在别人角度想、读懂场景里的情绪线索 |
-| 🟣 人际关系岛 | Relationship Skills | 表达、倾听、道歉、合作、解决小冲突 |
-| 🟠 负责任决定岛 | Responsible Decision-Making | 做选择前想后果、权衡轻重、承担后果 |
+| 🔍 情绪侦探岛 | Self-Awareness · 自我认知 | 识别 10 种情绪、给心情打分、觉察身体信号 |
+| 🫧 冷静能量岛 | Self-Management · 自我管理 | 呼吸练习、冷静角、把冲动变成可选择的行动 |
+| 🔭 同理望远镜岛 | Social Awareness · 社会认知 | 站在别人角度想、读懂场景里的情绪线索 |
+| 🌉 友谊桥梁岛 | Relationship Skills · 人际关系 | 表达、倾听、道歉、合作、解决小冲突 |
+| 🗼 智慧灯塔岛 | Responsible Decision-Making · 负责任决策 | 做选择前想后果、权衡轻重、承担后果 |
 
 ## 二、核心功能
 
-- **每日情绪签到**：4 步流程（选情绪 → 给强度 → 选原因 → 小策略），形成可回看的"心情日历"。
+- **每日情绪签到**：4 步流程（选情绪 → 强度与原因 → 送自己一个小方法 → 种一朵心情花），形成可回看的"心情日历"。
 - **19 个互动关卡**，覆盖 7 种题型：情境选择、连一连、排顺序、心情温度计（滑块）、呼吸练习、分支故事、分分类。
-- **10 种情绪脸谱 + 情绪花园**：完成关卡获得贴纸，种进"心情花园"，用成长可视化激励坚持。
+- **10 种情绪脸谱 + 贴纸册 + 心情花园**：完成关卡收集贴纸，每日签到在心情花园里种下一朵花，用成长可视化激励坚持。
 - **5 个"策略肌肉"**：觉察 / 呼吸 / 应对 / 拉开距离 / 表达——可随时打开练习。
-- **家长面板**（算术家长门保护）：数据雷达、打卡日历、关卡进度、贴纸墙、JSON 备份导入导出。
+- **家长面板**（算术家长门保护）：能力练习次数雷达、近 14 天签到日历、情绪统计、每一关完成情况、JSON 备份导入导出与进度清空。
 - **多档案**：同一设备上可建立多个孩子档案，互不干扰。
 
 ## 三、面向儿童的安全设计
@@ -66,13 +66,14 @@ children-social-emotional-learning/
 │  └─ ui/                # art(内联SVG) / components / games(7种题型) / screens(全部页面)
 ├─ desktop/
 │  ├─ main.js            # Electron 主进程：loadFile 加载页面，禁用外部跳转
-│  └─ serve.mjs          # 零依赖本地静态服务器
+│  └─ serve.mjs          # 零依赖本地静态服务器（仅绑定 127.0.0.1，不进便携版）
 ├─ tools/
 │  ├─ verify.mjs         # 静态校验：数据契约/引用完整性/离线资源
 │  └─ smoke.mjs          # 运行时冒烟测试（jsdom）：全部页面+关卡+签到闭环+题型
 ├─ scripts/
 │  ├─ version.cjs        # GitVersion 版本解析
-│  └─ release.cjs        # 发布计划/版本校验/资产打包（CI 用）
+│  ├─ release.cjs        # 发布计划/版本校验/资产打包（CI 用）
+│  └─ release-notes.cjs  # 从 CHANGELOG 生成 Release 说明
 ├─ build/
 │  ├─ icon.svg           # 应用图标源文件（云朵团团）
 │  └─ icon.png           # 打包用 512×512 图标
@@ -87,13 +88,13 @@ children-social-emotional-learning/
 - **Electron 外壳**：`desktop/main.js` 用 `loadFile` 直接打开仓库内的 `index.html`；`nodeIntegration:false` + `contextIsolation:true`，页面无法访问 Node，更安全；拦截一切新窗口与外部导航；单实例锁避免重复启动写坏同一份存档。
 - **内容安全策略**：`index.html` 内置 CSP，只允许本地脚本/样式与 `data:` 图标，禁止外部连接、`unsafe-eval` 与内联脚本。
 - **全离线资源**：音效用 Web Audio API 实时合成（无音频文件），中文语音用浏览器 `speechSynthesis`，美术全部为内联 SVG，**0 个外部 `<script src>`**。
-- **本地存档**：`localStorage` 持久化，不可用时降级为内存态；支持多档案与 JSON 备份。
+- **本地存档**：`localStorage` 持久化，不可用时降级为内存态；支持多档案与 JSON 备份。为控制本机存储占用，签到最多保留 400 条、心情花最多 365 朵，达到上限时界面会提示，更早的记录建议先导出备份。
 
 ## 七、开发与测试
 
 ```bash
 npm install
-npm run serve    # 本地静态预览（:http://localhost:5173）
+npm run serve    # 本地静态预览（http://127.0.0.1:5173，仅本机可访问）
 npm run verify   # 数据契约/引用/离线资源静态校验
 npm run smoke    # jsdom 运行时冒烟测试（需 jsdom，已在 devDependencies）
 npm run build:win
@@ -108,7 +109,7 @@ npm run build:win
 
 - **版本号来源**：GitVersion 从 git 历史与 tag 计算语义化版本。
 - **Tag 约定**：`children-social-emotional-learning-vX.Y.Z`（例如 `children-social-emotional-learning-v1.0.0`）。
-- **发布流程**（` .github/workflows/children-social-emotional-learning-release.yml`）：
+- **发布流程**（`.github/workflows/children-social-emotional-learning-release.yml`）：
   1. 在 `package.json` 把 `version` 改为新版本并提交/推送 `main`。
   2. CI 检测到版本变化（对比推送前后）后，自动打 tag、用 GitVersion 计算版本、构建 Windows 便携版 + Web ZIP。
   3. 自动在校验通过后将产物发布为 GitHub Release（便携 exe + web.zip + `SHA256SUMS.txt` + `release.json`）。

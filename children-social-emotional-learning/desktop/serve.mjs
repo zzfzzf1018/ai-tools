@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..'); // 仓库根目录
 const PORT = Number(process.env.PORT) || 5173;
+// 只监听本机回环地址：这是开发预览服务，会把整个项目目录按路径开放读取，
+// 绝不能绑到 0.0.0.0 让局域网内的其他设备访问。
+const HOST = process.env.HOST || '127.0.0.1';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -56,7 +59,7 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`Static server ready: http://localhost:${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log('Static server ready: http://' + HOST + ':' + PORT);
   console.log(`Root: ${ROOT}`);
 });

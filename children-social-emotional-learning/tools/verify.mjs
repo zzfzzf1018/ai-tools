@@ -148,6 +148,16 @@ let reachableStars = 0;
   reachableStars += (island.levels || []).length * 3;
 });
 
+/* ---------- 最低星路径：孩子一路选非最优 / 呼吸中途停止，会不会被卡住 ---------- */
+const MIN_STARS = { choice: 2, match: 2, order: 2, slider: 3, breathe: 1, story: 3, classify: 2 };
+let minStars = 0;
+(d.islands || []).forEach(island => {
+  if (typeof island.unlockAt === 'number' && island.unlockAt > minStars) {
+    W(`岛屿 ${island.id} 需 ${island.unlockAt} 星，一路拿最低星只攒到 ${minStars} 星，孩子得重玩前面的关卡补星才能继续`);
+  }
+  (island.levels || []).forEach(lv => { minStars += MIN_STARS[lv.type] || 2; });
+});
+
 /* ---------- 贴纸可获得性：每张贴纸都必须至少作为一次关卡奖励出现 ---------- */
 const rewarded = new Set(allLevels.map(x => x.lv.reward && x.lv.reward.sticker).filter(Boolean));
 (d.stickers || []).forEach(s => {
@@ -222,6 +232,14 @@ if (lock.version !== pkg.version || (lock.packages && lock.packages[''] && lock.
 }
 const winIcon = pkg.build && pkg.build.win && pkg.build.win.icon;
 if (winIcon && !fs.existsSync(path.join(root, winIcon))) E('构建配置引用的应用图标不存在: ' + winIcon);
+/* 开发预览服务会按路径开放整个项目目录，必须只监听本机回环地址 */
+const serveSrc = fs.readFileSync(path.join(root, 'desktop/serve.mjs'), 'utf8');
+if (!/server\.listen\(\s*PORT\s*,\s*HOST\s*,/.test(serveSrc) || !/127\.0\.0\.1/.test(serveSrc)) {
+  E('desktop/serve.mjs 未绑定 127.0.0.1，局域网内其他设备可读取整个项目目录');
+}
+if (!(pkg.build && Array.isArray(pkg.build.files) && pkg.build.files.includes('!desktop/serve.mjs'))) {
+  W('构建白名单未排除 desktop/serve.mjs，便携版会附带开发服务器');
+}
 if (!/http-equiv="Content-Security-Policy"/i.test(html)) E('index.html 缺少 Content-Security-Policy，Electron 会告警');
 else {
   const csp = (html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/i) || [])[1] || '';

@@ -69,9 +69,9 @@
 
       UI.sectionHead('今天想玩什么？', '每一个入口都是一小段旅程', 'EXPLORE') +
       '<div class="quick-grid">' +
-        '<a class="quick-card" href="#/map" data-nav="#/map"><span class="qc-icon">🏝️</span><b>五座小岛</b><span>' + totalLevels() + ' 个互动关卡</span></a>' +
+        '<a class="quick-card" href="#/map" data-nav="#/map"><span class="qc-icon">🏝️</span><b>' + S.data().islands.length + ' 座小岛</b><span>' + totalLevels() + ' 个互动关卡</span></a>' +
         '<a class="quick-card" href="#/emotions" data-nav="#/emotions"><span class="qc-icon">🎭</span><b>情绪图鉴</b><span>认出心里的小天气</span></a>' +
-        '<a class="quick-card" href="#/strategies" data-nav="#/strategies"><span class="qc-icon">🧰</span><b>冷静工具箱</b><span>5 个随时能用的小方法</span></a>' +
+        '<a class="quick-card" href="#/strategies" data-nav="#/strategies"><span class="qc-icon">🧰</span><b>冷静工具箱</b><span>' + S.data().strategies.length + ' 个随时能用的小方法</span></a>' +
         '<a class="quick-card" href="#/garden" data-nav="#/garden"><span class="qc-icon">🌷</span><b>心情花园</b><span>看看记下的每一天</span></a>' +
       '</div>' +
 
@@ -100,7 +100,7 @@
 
       '<div class="grid grid-2">' +
         '<div class="card"><h3>🌤 每天心情签到</h3>' +
-          '<p class="muted">选一个现在的情绪、说说为什么，再种一朵心情花。每天第一次签到会得 1 颗星，连续签到还有小惊喜。</p></div>' +
+          '<p class="muted">选一个现在的情绪、说说为什么，再种一朵心情花。每天第一次签到会得 1 颗星，连着签几天还能在首页和成长记录里看到连续天数。</p></div>' +
         '<div class="card"><h3>🏝️ ' + S.data().islands.length + ' 座小岛 ' + totalLevels() + ' 关</h3>' +
           '<p class="muted">用星星解锁新岛，按顺序玩更顺。每关有情境选择、连一连、排顺序等 ' + gameTypeCount() + ' 种小游戏，完成得星星和贴纸。</p></div>' +
         '<div class="card"><h3>🧰 冷静工具箱</h3>' +
@@ -124,7 +124,7 @@
     var p = S.current(), st = S.stats();
     var islands = D().islands || [];
     var html = backRow('#/home', '回首页') +
-      UI.sectionHead('五座小岛', '攒星星解锁新岛屿，按顺序玩更有趣', 'ADVENTURE MAP') +
+      UI.sectionHead(S.data().islands.length + ' 座小岛', '攒星星解锁新岛屿，按顺序玩更有趣', 'ADVENTURE MAP') +
       '<div class="card soft" style="margin-bottom:20px"><div class="spread">' +
         '<div><b>⭐ ' + p.stars + ' 颗星星</b><div class="small muted">完成 ' + st.doneLevels + ' / ' + st.totalLevels + ' 个小关卡</div></div>' +
         '<div style="flex:1;min-width:200px">' + UI.progressBar(st.totalLevels ? st.doneLevels / st.totalLevels * 100 : 0) + '</div>' +
@@ -452,7 +452,7 @@
       '<div class="row" style="justify-content:center;margin-top:10px">' +
       (st.steps || []).map(function (x, i) { return '<span class="chip blue">' + (i + 1) + '. ' + esc(x) + '</span>'; }).join('') + '</div>' +
       '<div style="margin-top:18px"><button class="btn primary" data-modal-act="start">开始 ' + seconds + ' 秒 ▶</button></div>' +
-      '<div class="small muted" style="margin-top:10px">随时可以关掉，练过一点点也算数。</div></div>';
+      '<div class="small muted" style="margin-top:10px">随时可以关掉，完整做完一次才会记下练习次数。</div></div>';
     UI.modal({ title: st.emoji + ' ' + st.name, body: body, actions: [{ label: '结束练习', cls: 'ghost', close: true }] }, function (act, ov) {
       if (act !== 'start') return;
       var run = U.$('[data-run]', ov);
@@ -500,10 +500,14 @@
     flowers.forEach(function (f) { counts[f.emotion] = (counts[f.emotion] || 0) + 1; });
     var emotionName = {};
     (D().emotions || []).forEach(function (e) { emotionName[e.id] = e; });
+    var cap = S.limits ? S.limits.flowers : 365;
+    var capped = flowers.length >= cap;
     var html = backRow('#/home', '回首页') +
       UI.sectionHead('心情花园', '每一次签到，都会长出一朵花', 'MIND GARDEN') +
       '<div class="card soft" style="margin-bottom:18px"><div class="spread">' +
-        '<div><b>🌷 一共 ' + flowers.length + ' 朵</b><div class="small muted">这里有各种各样的心情，每一朵都好好留着。</div></div>' +
+        '<div><b>🌷 ' + (capped ? '最近 ' : '一共 ') + flowers.length + ' 朵</b><div class="small muted">' +
+        (capped ? '花园最多留住最近 ' + cap + ' 朵，更早的花会自动收起来；想长期保存可以用家长专区导出备份。'
+                : '这里有各种各样的心情，每一朵都好好留着。') + '</div></div>' +
         '<button class="btn primary" data-nav="#/checkin">再种一朵 🌱</button></div></div>' +
       (flowers.length ? '<div class="garden-grid">' + flowers.map(function (f, i) {
         var e = emotionName[f.emotion] || {};

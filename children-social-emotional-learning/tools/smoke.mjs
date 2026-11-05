@@ -307,6 +307,71 @@ try {
   click(q('#topbar [data-nav="#/profile"]'));
   w.SEL.render();   // jsdom 的 hashchange 是异步派发，这里手动触发一次等价的渲染
   must((q('#screen').textContent || '').includes('小玩家档案'), '顶栏档案入口没有跳到档案页');
+
+  /* --- 18. 发布后复查回归 --- */
+  // 18a 弹窗焦点：打开移入、关闭还原
+  route('#/strategies');
+  const beforeFocus = w.document.activeElement;
+  click(q('[data-practice]'));
+  must(w.document.getElementById('overlay').contains(w.document.activeElement), '弹窗打开后焦点没有移入弹窗');
+  w.SEL.ui.closeModal();
+  must(w.document.activeElement === beforeFocus, '弹窗关闭后焦点没有还给原来的元素');
+
+  // 18b 数量由数据驱动 + 文案不再承诺不存在的奖励
+  const homeHtml = route('#/home');
+  must(homeHtml.includes((w.SEL_DATA.islands || []).length + ' 座小岛'), '首页小岛数量没有从数据读取');
+  must(homeHtml.includes((w.SEL_DATA.strategies || []).length + ' 个随时能用的小方法'), '首页方法数量没有从数据读取');
+  must(!route('#/help').includes('小惊喜'), '玩法说明仍在承诺不存在的连续签到奖励');
+  route('#/strategies');
+  click(q('[data-practice]'));
+  must(!(q('#overlay').textContent || '').includes('练过一点点也算数'), '练习弹窗文案与实际计次行为不一致');
+  w.SEL.ui.closeModal();
+
+  // 18c 坏档只备份一次，且主存档立刻修好（独立 window，避免污染主流程）
+  {
+    const dom2 = new JSDOM(html, {
+      url: 'http://localhost/sunny-isles/', runScripts: 'outside-only',
+      pretendToBeVisual: true, virtualConsole: vc
+    });
+    const w2 = dom2.window;
+    w2.localStorage.setItem('sunny-isles-save-v1', '{坏档');
+    for (let i = 0; i < 3; i++) {
+      w2.eval(fs.readFileSync(path.join(root, 'src/data/curriculum.js'), 'utf8'));
+      w2.eval(fs.readFileSync(path.join(root, 'src/core/utils.js'), 'utf8'));
+      w2.eval(fs.readFileSync(path.join(root, 'src/core/state.js'), 'utf8'));
+      w2.SEL.state.save();
+    }
+    const backupKeys = Object.keys(w2.localStorage).filter(k => k.startsWith('sunny-isles-save-v1-corrupt'));
+    must(backupKeys.length === 1, '坏档每次启动都新生成一个备份 key（应固定为一个）');
+    let repaired = null;
+    try { repaired = JSON.parse(w2.localStorage.getItem('sunny-isles-save-v1')); } catch (e) {}
+    must(!!(repaired && repaired.profiles && repaired.profiles.length), '坏档后主存档没有写回可用新档');
+    w2.close();
+  }
+
+  // 18d 导入文本限长 + 超大备份拒绝
+  const bare = () => ({ version: 1, activeId: 'p1', profiles: [{
+    id: 'p1', name: '小玩家', avatar: 'cloud', checkins: [], flowers: [],
+    levels: {}, stickers: [], skills: {}, strategyCount: {}, settings: {}
+  }] });
+  const longSave = bare();
+  longSave.profiles[0].checkins.push({ date: '2026-11-05', emotion: 'happy', reason: '很'.repeat(200000) });
+  w.SEL.state.importSave(JSON.stringify(longSave));
+  must(w.SEL.state.current().checkins[0].reason.length <= 500, '导入的超长文本没有被截断');
+  let tooBig = false;
+  try { w.SEL.state.importSave('x'.repeat(5 * 1024 * 1024 + 1)); } catch (e) { tooBig = true; }
+  must(tooBig, '超过 5MB 的备份文件没有被拒绝');
+
+  // 18e 花园达到上限时如实提示
+  const capSave = bare();
+  for (let i = 0; i < 400; i++) {
+    capSave.profiles[0].flowers.push({ id: 'f' + i, date: '2026-11-05', emotion: 'happy', color: '#FFC94A', petal: 1 });
+  }
+  w.SEL.state.importSave(JSON.stringify(capSave));
+  must(w.SEL.state.current().flowers.length === 365, '心情花上限不是 365 朵');
+  const gardenTxt = route('#/garden');
+  must(gardenTxt.includes('最近 365 朵'), '花园达到上限时没有写明「最近 N 朵」');
+  must(gardenTxt.includes('自动收起来'), '花园达到上限时没有说明更早的花会被收起来');
 } catch (e) {
   fails.push('测试流程异常: ' + (e && e.stack || e));
 }

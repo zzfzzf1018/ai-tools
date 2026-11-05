@@ -11,10 +11,17 @@
   var SKILLS = ['awareness', 'management', 'social', 'relationship', 'decision'];
   var HEX = /^#[0-9a-fA-F]{3,8}$/;
   var DAY = /^\d{4}-\d{2}-\d{2}$/;
+  var MAX_CHECKINS = 400;
+  var MAX_FLOWERS = 365;      // 约一年的心情花，避免 localStorage 无限增长
+  var MAX_IMPORT = 5 * 1024 * 1024;
 
   function intIn(v, lo, hi, dflt) {
     var n = typeof v === 'number' && isFinite(v) ? Math.round(v) : dflt;
     return Math.max(lo, Math.min(hi, n));
+  }
+  /* 用户/备份可控的字符串一律限长，防止一份超大备份把 localStorage 配额撑爆 */
+  function str(v, max, dflt) {
+    return typeof v === 'string' ? v.slice(0, max) : (dflt || '');
   }
 
   function freshProfile(name, avatar) {
@@ -56,12 +63,13 @@
         if (p[k] === undefined || p[k] === null) p[k] = base[k];
       });
       if (typeof p.id !== 'string' || !p.id) p.id = base.id;
+      p.id = str(p.id, 60);
       if (usedIds[p.id]) p.id = base.id;
       usedIds[p.id] = true;
-      p.name = (typeof p.name === 'string' && p.name.trim() ? p.name.trim() : base.name).slice(0, 12);
-      p.avatar = typeof p.avatar === 'string' && p.avatar ? p.avatar : 'cloud';
-      p.createdAt = typeof p.createdAt === 'string' ? p.createdAt : base.createdAt;
-      p.lastVisit = typeof p.lastVisit === 'string' ? p.lastVisit : '';
+      p.name = str(p.name, 12, base.name).trim() || base.name;
+      p.avatar = str(p.avatar, 40) || 'cloud';
+      p.createdAt = str(p.createdAt, 20) || base.createdAt;
+      p.lastVisit = str(p.lastVisit, 20);
       p.stars = Math.max(0, intIn(p.stars, 0, 1e9, 0));
 
       if (!p.skills || typeof p.skills !== 'object' || Array.isArray(p.skills)) p.skills = {};
@@ -85,7 +93,7 @@
             done: r.done === true,
             stars: intIn(r.stars, 0, 3, 0),
             attempts: Math.max(0, intIn(r.attempts, 0, 1e6, 0)),
-            lastAt: typeof r.lastAt === 'string' ? r.lastAt : ''
+            lastAt: str(r.lastAt, 20)
           };
         });
       }
@@ -106,31 +114,31 @@
           typeof c.emotion === 'string' && c.emotion;
       }).map(function (c) {
         return {
-          date: c.date, emotion: c.emotion,
+          date: c.date, emotion: str(c.emotion, 40),
           intensity: intIn(c.intensity, 1, 5, 3),
-          reason: typeof c.reason === 'string' ? c.reason : '',
-          strategy: typeof c.strategy === 'string' ? c.strategy : '',
-          note: typeof c.note === 'string' ? c.note : '',
-          at: typeof c.at === 'string' ? c.at : ''
+          reason: str(c.reason, 500),
+          strategy: str(c.strategy, 40),
+          note: str(c.note, 500),
+          at: str(c.at, 40)
         };
-      }).slice(-400);
+      }).slice(-MAX_CHECKINS);
 
       p.flowers = (Array.isArray(p.flowers) ? p.flowers : []).filter(function (f) {
         return f && typeof f === 'object' && typeof f.date === 'string' && DAY.test(f.date) &&
           typeof f.emotion === 'string' && f.emotion;
       }).map(function (f) {
         return {
-          id: typeof f.id === 'string' && f.id ? f.id : U.uid('f'),
-          date: f.date, emotion: f.emotion,
+          id: str(f.id, 60) || U.uid('f'),
+          date: f.date, emotion: str(f.emotion, 40),
           color: typeof f.color === 'string' && HEX.test(f.color) ? f.color : '#FFC94A',
           petal: intIn(f.petal, 0, 4, 0)
         };
-      }).slice(-120);
+      }).slice(-MAX_FLOWERS);
 
       var counts = {};
       if (p.strategyCount && typeof p.strategyCount === 'object' && !Array.isArray(p.strategyCount)) {
-        Object.keys(p.strategyCount).forEach(function (id) {
-          counts[id] = Math.max(0, intIn(p.strategyCount[id], 0, 1e6, 0));
+        Object.keys(p.strategyCount).slice(0, 100).forEach(function (id) {
+          counts[str(id, 40)] = Math.max(0, intIn(p.strategyCount[id], 0, 1e6, 0));
         });
       }
       p.strategyCount = counts;
@@ -157,9 +165,15 @@
     var safe = null;
     try { safe = normalize(JSON.parse(raw)); } catch (e) { safe = null; }
     if (safe) { memory = safe; return memory; }
-    /* 存档坏了：先原样备份一份原始文本，再以新档启动，避免用户数据被无声覆盖 */
-    try { window.localStorage.setItem(KEY + '-corrupt-' + Date.now(), raw); } catch (e) {}
+    /* 存档坏了：原样备份一次（固定 key，不用时间戳，避免每次启动都新增一份），
+       随后立刻把可用新档写回主 KEY —— 否则原始坏文本一直在，启动一次就多一个备份 key */
+    var backed = false;
+    try { window.localStorage.setItem(KEY + '-corrupt', raw); backed = true; } catch (e) {}
     memory = freshSave();
+    if (backed) {
+      try { window.localStorage.setItem(KEY, JSON.stringify(memory)); }
+      catch (e) { memoryOnly = true; }
+    }
     return memory;
   }
 
@@ -269,20 +283,20 @@
     update(function (p) {
       p.checkins.push({
         date: day,
-        emotion: entry.emotion,
+        emotion: str(entry.emotion, 40),
         intensity: intIn(entry.intensity, 1, 5, 3),
-        reason: typeof entry.reason === 'string' ? entry.reason : '',
-        strategy: typeof entry.strategy === 'string' ? entry.strategy : '',
-        note: typeof entry.note === 'string' ? entry.note : '',
+        reason: str(entry.reason, 500),
+        strategy: str(entry.strategy, 40),
+        note: str(entry.note, 500),
         at: new Date().toISOString()
       });
-      if (p.checkins.length > 400) p.checkins = p.checkins.slice(-400);
+      if (p.checkins.length > MAX_CHECKINS) p.checkins = p.checkins.slice(-MAX_CHECKINS);
       p.flowers.push({
-        id: U.uid('f'), date: day, emotion: entry.emotion,
+        id: U.uid('f'), date: day, emotion: str(entry.emotion, 40),
         color: typeof entry.color === 'string' && HEX.test(entry.color) ? entry.color : '#FFC94A',
         petal: Math.floor(Math.random() * 5)
       });
-      if (p.flowers.length > 120) p.flowers = p.flowers.slice(-120);
+      if (p.flowers.length > MAX_FLOWERS) p.flowers = p.flowers.slice(-MAX_FLOWERS);
       if (firstToday) p.stars += 1;
       p.lastVisit = today;
     });
@@ -334,8 +348,10 @@
   function exportSave() { return JSON.stringify(read(), null, 2); }
 
   function importSave(text) {
+    var raw = String(text);
+    if (raw.length > MAX_IMPORT) throw new Error('备份文件太大，换一份试试');
     var obj;
-    try { obj = JSON.parse(String(text)); }
+    try { obj = JSON.parse(raw); }
     catch (e) { throw new Error('这不是有效的 JSON 备份文件'); }
     if (!obj || typeof obj !== 'object' || !Array.isArray(obj.profiles) || !obj.profiles.length) {
       throw new Error('备份里没有小玩家档案');
@@ -353,7 +369,7 @@
     var byDate = {};
     p.checkins.forEach(function (c) { byDate[c.date] = (byDate[c.date] || 0) + 1; });
     var streak = 0;
-    for (var i = 0; i < 400; i++) {
+    for (var i = 0; i < MAX_CHECKINS; i++) {
       if (byDate[U.daysAgo(i)]) streak++;
       else if (i > 0) break;
     }
@@ -370,6 +386,7 @@
 
   window.SEL.state = {
     SKILLS: SKILLS,
+    limits: { checkins: MAX_CHECKINS, flowers: MAX_FLOWERS },
     get memoryOnly() { return memoryOnly; },
     save: read, current: current, profiles: function () { return read().profiles; },
     update: update, data: data, allLevels: allLevels, findLevel: findLevel,

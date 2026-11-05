@@ -125,7 +125,7 @@
         window.SEL.art.buddy('owl', 'happy', 76) + window.SEL.art.buddy('cloud', 'happy', 118) +
         window.SEL.art.buddy('fox', 'happy', 78) + '</div>',
       body: '<p>我是小云朵<b>团团</b>，这两位是<b>咕咕老师</b>和<b>小火苗</b>。</p>' +
-        '<p class="muted">这里有五座小岛、会开花的签到、还有一整个冷静工具箱。' +
+        '<p class="muted">这里有 ' + (window.SEL_DATA.islands || []).length + ' 座小岛、会开花的签到、还有一整个冷静工具箱。' +
         '没有「答错」，每个选择都会告诉你接下来会发生什么。</p>' +
         '<div class="row" style="justify-content:center"><span class="chip">🔍 认识情绪</span>' +
         '<span class="chip blue">🫧 练会冷静</span><span class="chip green">💛 听懂别人</span></div>',
