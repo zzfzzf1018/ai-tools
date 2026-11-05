@@ -3,7 +3,7 @@
   'use strict';
   window.SEL = window.SEL || {};
   var U = window.SEL.utils, A = window.SEL.art, Audio = window.SEL.audio;
-  var S = window.SEL.state, UI = window.SEL.ui, G = window.SEL.games, C = window.SEL.ui;
+  var S = window.SEL.state, UI = window.SEL.ui, G = window.SEL.games;
 
   var TYPE_NAME = {
     choice: '情境选择', match: '连一连', order: '排顺序', slider: '心情温度计',

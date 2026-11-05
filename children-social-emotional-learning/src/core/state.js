@@ -72,6 +72,13 @@
   function safeId(id) {
     return typeof id === 'string' && SAFE_ID.test(id) && RESERVED_ID.indexOf(id) < 0 ? id : null;
   }
+  /* 日期不仅要长得像 YYYY-MM-DD，还得是真的那一天：
+     '2026-99-99' 能过正则，但会在花园里显示成「99月99日」。用解析再回写比对挡掉。 */
+  function validDay(s) {
+    if (typeof s !== 'string' || !DAY.test(s)) return false;
+    var d = U.parseDay(s);
+    return !!d && U.today(d) === s;
+  }
 
   /* ---------- 家长 PIN ---------- */
   /* 4 位 PIN 只有 1 万种组合，任何哈希都能被穷举；这里的加盐哈希只是避免明文躺在
@@ -147,7 +154,7 @@
 
   function cleanCheckins(list) {
     return (Array.isArray(list) ? list : []).filter(function (c) {
-      return c && typeof c === 'object' && typeof c.date === 'string' && DAY.test(c.date) &&
+      return c && typeof c === 'object' && validDay(c.date) &&
         typeof c.emotion === 'string' && c.emotion;
     }).map(function (c) {
       return {
@@ -163,7 +170,7 @@
 
   function cleanFlowers(list) {
     return (Array.isArray(list) ? list : []).filter(function (f) {
-      return f && typeof f === 'object' && typeof f.date === 'string' && DAY.test(f.date) &&
+      return f && typeof f === 'object' && validDay(f.date) &&
         typeof f.emotion === 'string' && f.emotion;
     }).map(function (f) {
       return {
@@ -194,8 +201,8 @@
       usedIds[p.id] = true;
       p.name = str(p.name, 12, base.name).trim() || base.name;
       p.avatar = str(p.avatar, 40) || 'cloud';
-      p.createdAt = str(p.createdAt, 20) || base.createdAt;
-      p.lastVisit = str(p.lastVisit, 20);
+      p.createdAt = validDay(p.createdAt) ? p.createdAt : base.createdAt;
+      p.lastVisit = validDay(p.lastVisit) ? p.lastVisit : '';
       p.stars = Math.max(0, intIn(p.stars, 0, 1e9, 0));
 
       if (!p.skills || typeof p.skills !== 'object' || Array.isArray(p.skills)) p.skills = {};
@@ -254,7 +261,7 @@
       /* 使用时长：只保留"今天"的计数，跨天的旧数据直接归零（不参与统计） */
       var today = U.today();
       if (!p.usage || typeof p.usage !== 'object' || Array.isArray(p.usage)) p.usage = { date: today, seconds: 0 };
-      p.usage.date = DAY.test(String(p.usage.date || '')) ? p.usage.date : today;
+      p.usage.date = validDay(p.usage.date) ? p.usage.date : today;
       p.usage.seconds = p.usage.date === today ? Math.max(0, intIn(p.usage.seconds, 0, 86400, 0)) : 0;
       if (p.usage.date !== today) p.usage.date = today;
 
@@ -293,9 +300,13 @@
     var arch = {};
     if (s.archive && typeof s.archive === 'object' && !Array.isArray(s.archive)) {
       Object.keys(s.archive).forEach(function (pid) {
+        /* JSON.parse 会把 "__proto__" 做成自有键，但 arch[pid] 赋值会改成设置原型；
+           归档键和档案 id 走同一套安全白名单，不让导入的备份污染对象原型 */
+        var spid = safeId(pid);
+        if (!spid) return;
         var a = s.archive[pid];
         if (!a || typeof a !== 'object') return;
-        arch[pid] = {
+        arch[spid] = {
           checkins: cleanCheckins(a.checkins).slice(-MAX_ARCHIVE_CHECKINS),
           flowers: cleanFlowers(a.flowers).slice(-MAX_ARCHIVE_FLOWERS)
         };
@@ -449,7 +460,7 @@
       return { firstToday: false, star: 0 };
     }
     var today = U.today();
-    var day = typeof entry.date === 'string' && DAY.test(entry.date) ? entry.date : today;
+    var day = typeof entry.date === 'string' && validDay(entry.date) ? entry.date : today;
     var firstToday = !current().checkins.some(function (c) { return c.date === day; });
     /* 注意：update 的回调签名是 (profile, save)。超出展示上限时要把旧记录搬进
        save.archive，所以这里必须接收第二个参数，否则会抛 ReferenceError，
@@ -671,8 +682,14 @@
         var f = freshProfile(p.name, p.avatar);
         f.id = p.id;
         f.createdAt = p.createdAt || f.createdAt;
-        /* 清空的是「进度」，不是孩子调好的声音/动效偏好 */
-        f.settings = { voice: p.settings.voice, sfx: p.settings.sfx, reduceMotion: p.settings.reduceMotion };
+        /* 清空的是「进度」，不是调好的偏好，更不是家长设的护栏：
+           每日时长上限与睡前锁必须跨「清空进度」存活，否则家长一清空，
+           孩子的使用限制就静默失效了。 */
+        f.settings = {
+          voice: p.settings.voice, sfx: p.settings.sfx, reduceMotion: p.settings.reduceMotion,
+          screenLimit: p.settings.screenLimit, bedtimeOn: p.settings.bedtimeOn,
+          bedtimeStart: p.settings.bedtimeStart, bedtimeEnd: p.settings.bedtimeEnd
+        };
         return f;
       });
     });

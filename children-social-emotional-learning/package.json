@@ -1,7 +1,7 @@
 {
   "name": "sunny-isles-sel",
   "productName": "心晴岛",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
   "description": "心晴岛：面向儿童的社会情绪学习桌面应用（静态网页的 Electron 外壳）",
   "author": "心晴岛",

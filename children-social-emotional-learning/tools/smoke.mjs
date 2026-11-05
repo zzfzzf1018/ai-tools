@@ -668,6 +668,122 @@ try {
   fails.push('计时器测试异常: ' + (e && e.stack || e));
 }
 
+/* --- 27. 回归组：家长护栏跨「清空进度」存活 / 非法日期与归档键清洗 / 睡前锁全流程 / 日期工具 --- */
+try {
+  const bare = () => ({ version: 1, activeId: 'p1', profiles: [{
+    id: 'p1', name: '小玩家', avatar: 'cloud', checkins: [], flowers: [],
+    levels: {}, stickers: [], skills: {}, strategyCount: {}, settings: {}
+  }] });
+  // 27a 「清空进度」只清进度：家长的时长上限与睡前锁必须存活
+  {
+    const s = bare();
+    s.profiles[0].settings = { voice: true, sfx: true, reduceMotion: false, screenLimit: 30, bedtimeOn: true, bedtimeStart: '21:00', bedtimeEnd: '07:00' };
+    s.profiles[0].stars = 42;
+    s.profiles[0].levels['aw-1'] = { done: true, stars: 3, attempts: 1, lastAt: '2026-11-01' };
+    w.SEL.state.importSave(JSON.stringify(s));
+    w.SEL.state.resetProfile(w.SEL.state.current().id);
+    const se = w.SEL.state.current().settings;
+    must(se.screenLimit === 30, '「清空进度」把每日时长上限也清掉了（家长护栏应跨清空存活）');
+    must(se.bedtimeOn === true, '「清空进度」把睡前锁也关掉了');
+    must(se.bedtimeStart === '21:00' && se.bedtimeEnd === '07:00', '「清空进度」把睡前时段清掉了');
+    must(w.SEL.state.current().stars === 0, '「清空进度」没有清掉星星');
+    must(!w.SEL.state.current().levels['aw-1'], '「清空进度」没有清掉关卡进度');
+  }
+
+  // 27b 语义非法日期（2026-99-99 / 2026-02-30）不能进存档、不能上屏
+  {
+    const s = bare();
+    s.profiles[0].checkins.push({ date: '2026-99-99', emotion: 'happy', intensity: 3 });
+    s.profiles[0].checkins.push({ date: '2026-02-30', emotion: 'sad', intensity: 2 });
+    s.profiles[0].flowers.push({ id: 'fx', date: '2026-99-99', emotion: 'happy', color: '#FFC94A', petal: 0 });
+    w.SEL.state.importSave(JSON.stringify(s));
+    must(w.SEL.state.current().checkins.length === 0, '语义非法的签到日期（如 2026-99-99）混进了存档');
+    must(w.SEL.state.current().flowers.length === 0, '语义非法的心情花日期混进了存档');
+    const gardenHtml = route('#/garden');
+    must(!gardenHtml.includes('99月99日'), '花园把非法日期显示成了「99月99日」');
+  }
+
+  // 27c 导入备份的归档键走白名单：__proto__ / constructor 不能污染对象原型
+  {
+    const evil = JSON.parse('{"profiles":[{"id":"p1","name":"小玩家","avatar":"cloud","checkins":[],"flowers":[],"levels":{},"stickers":[],"skills":{},"strategyCount":{},"settings":{}}],"archive":{"__proto__":{"checkins":[],"flowers":[]},"constructor":{"checkins":[],"flowers":[]}}}');
+    w.SEL.state.importSave(JSON.stringify(evil));
+    const arc = w.SEL.state.save().archive;
+    /* jsdom 页面脚本跑在独立 realm，Object.prototype 不能跨 realm 直接比对；
+       改查「污染后必从原型链泄漏」的键，断言与 realm 无关 */
+    must(arc.checkins === undefined && arc.flowers === undefined, '导入备份的归档键 __proto__ 污染了归档对象（checkins/flowers 从原型链泄漏）');
+    must(!Object.prototype.hasOwnProperty.call(arc, 'constructor'), '导入备份的保留键 constructor 被写进归档');
+  }
+
+  // 27d 睡前锁全流程：到点盖休息卡、挡住冷静角、家长门解锁后当天不再打扰
+  {
+    const U = w.SEL.utils;
+    const now = new Date();
+    const cur = now.getHours() * 60 + now.getMinutes();
+    const wrap = (m) => U.pad(Math.floor((((m % 1440) + 1440) % 1440) / 60)) + ':' + U.pad((((m % 1440) + 1440) % 1440) % 60);
+    const start = wrap(cur - 30), end = wrap(cur + 30);
+    must(start !== end, '睡前锁测试窗口构造异常');
+    const s = bare();
+    s.profiles[0].settings = { voice: true, sfx: true, reduceMotion: false, screenLimit: 0, bedtimeOn: true, bedtimeStart: start, bedtimeEnd: end };
+    w.SEL.state.importSave(JSON.stringify(s));
+    w.sessionStorage.removeItem('sunny-time-ok');
+    route('#/home');
+    must(q('#time-lock') && q('#time-lock').hidden === false, '睡前时段内没有出现休息提醒');
+    must((q('#time-lock').textContent || '').includes('休息时间'), '睡前锁没有说明休息时段');
+    must(q('#screen').getAttribute('aria-hidden') === 'true', '睡前锁没有把主内容标记为不可访问');
+    must(q('#calm-fab').hidden === true, '睡前锁出现时冷静角按钮仍显示');
+    click(q('[data-time-unlock]'));
+    const expr = (q('.modal h3') && q('.modal h3').textContent) || '';
+    const nums = expr.match(/(\d+)\s*\+\s*(\d+)/);
+    must(!!nums, '睡前锁的「请大人来解锁」没有出算术题');
+    if (nums) {
+      q('[data-gate-input]').value = String(Number(nums[1]) + Number(nums[2]));
+      click(q('[data-modal-act="ok"]'));
+      must(q('#time-lock').hidden === true, '家长解锁后睡前锁仍未消失');
+      must(w.sessionStorage.getItem('sunny-time-ok') === U.today(), '家长解锁后没有记下「今天不再提醒」');
+    }
+    w.sessionStorage.removeItem('sunny-time-ok');
+  }
+
+  // 27e 签到强度滑块的选择要落库
+  {
+    w.SEL.state.importSave(JSON.stringify(bare()));
+    route('#/checkin');
+    click(q('[data-pick="0"]'));
+    click(q('[data-next]'));
+    const range = q('[data-range]');
+    range.value = '5';
+    range.dispatchEvent(new w.Event('input', { bubbles: true }));
+    must((q('[data-val]').textContent || '') === '5', '签到强度滑块没有更新显示');
+    click(q('[data-next]'));
+    click(q('[data-next]'));
+    click(q('[data-plant]'));
+    const c = w.SEL.state.current().checkins;
+    must(c.length === 1 && c[0].intensity === 5, '签到选择的强度没有写进存档');
+    w.SEL.ui.closeModal();
+  }
+
+  // 27f 日期工具单元：周一为一周开始、跨月跨年运算、睡前锁跨午夜判断
+  {
+    const U = w.SEL.utils;
+    must(U.weekStart('2026-11-05') === '2026-11-02', 'weekStart 没有回到本周一（周四应归到周一）');
+    must(U.weekStart('2026-11-02') === '2026-11-02', 'weekStart 把周一本身归到了上周');
+    must(U.weekStart('2026-11-01') === '2026-10-26', 'weekStart 把周日（一周最后一天）当成了本周一');
+    must(U.addDays('2026-11-30', 1) === '2026-12-01', 'addDays 跨月加一天出错');
+    must(U.dayDiff('2026-12-31', '2027-01-01') === 1, 'dayDiff 跨年差一天计算出错');
+    const f = w.SEL.screentime.inBedtime;
+    const mk = (h, m) => new Date(2026, 0, 1, h, m);
+    must(f({ bedtimeOn: true, bedtimeStart: '21:00', bedtimeEnd: '07:00' }, mk(23, 0)) === true, '睡前锁跨午夜（深夜段）判断错误');
+    must(f({ bedtimeOn: true, bedtimeStart: '21:00', bedtimeEnd: '07:00' }, mk(6, 0)) === true, '睡前锁跨午夜（清晨段）判断错误');
+    must(f({ bedtimeOn: true, bedtimeStart: '21:00', bedtimeEnd: '07:00' }, mk(12, 0)) === false, '睡前锁把白天误判成休息时间');
+  }
+
+  // 收尾：还原成干净档案，不把测试数据留给下一次运行
+  w.SEL.state.importSave(JSON.stringify(bare()));
+  route('#/home');
+} catch (e) {
+  fails.push('回归组27异常: ' + (e && e.stack || e));
+}
+
 const levelCount = (w.SEL_DATA.islands || []).reduce((a, i) => a + i.levels.length, 0);
 console.log('=== 心晴岛 运行时冒烟测试 ===');
 console.log(`页面/关卡覆盖: 12 页 + ${(w.SEL_DATA.islands || []).length} 岛 + ${levelCount} 关`);
