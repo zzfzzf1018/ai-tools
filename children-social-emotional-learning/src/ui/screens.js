@@ -34,6 +34,85 @@
   }
   function wrap(inner, mount) { return { html: inner, mount: mount || function () {} }; }
 
+  /* 家长门共用逻辑：设置了 PIN 就用 4 位 PIN，否则用一道算术题。
+     时间锁的「请大人来解锁」也走这里，避免两套入口两套规则。 */
+  var trendDays = 14;
+
+  function gateInner(pinMode, a, b) {
+    if (pinMode) {
+      return '<p class="muted">请输入家长 PIN（4 位数字）。</p>' +
+        '<input type="password" inputmode="numeric" autocomplete="off" maxlength="4" data-gate-pin ' +
+        'style="width:150px;font-size:26px;text-align:center;padding:10px;border:3px solid var(--line);border-radius:14px" aria-label="家长 PIN">' +
+        '<p class="small muted" style="margin-top:12px">连续输错 5 次会锁定 1 分钟。</p>';
+    }
+    return '<p class="muted">这里放着孩子的进度记录。请大人来算一下：</p>' +
+      '<h3 style="margin:14px 0">' + a + ' + ' + b + ' = ?</h3>' +
+      '<input type="number" data-gate-input placeholder="?" aria-label="答案" ' +
+      'style="width:110px;font-size:26px;text-align:center;padding:10px;border:3px solid var(--line);border-radius:14px">' +
+      '<p class="small muted" style="margin-top:14px">这只是避免小朋友误入的小门槛，不是密码保护。</p>';
+  }
+
+  function gateCheck(root, pinMode, a, b) {
+    var input = U.$('[data-gate-pin]', root) || U.$('[data-gate-input]', root);
+    if (!input) return false;
+    if (pinMode) {
+      var r = S.verifyPin(input.value);
+      if (r.locked) { UI.toast('输错次数太多，请等 ' + r.wait + ' 秒再试'); Audio.sfx('tryagain'); return false; }
+      if (!r.ok) { UI.toast('PIN 不对，再试一次 🙂'); Audio.sfx('tryagain'); input.value = ''; return false; }
+      return true;
+    }
+    var v = Number(input.value);
+    if (v === a + b) return true;
+    UI.toast('再算一次试试 🙂'); Audio.sfx('tryagain');
+    return false;
+  }
+
+  /* 24 小时制用两个下拉，而不是 <input type="time">：
+     后者在英文系统上会显示 08:30 PM，中文家长很容易看错。 */
+  function timeField(attr, value, label) {
+    var p = String(value || '20:30').split(':');
+    var h = U.clamp(Number(p[0]) || 0, 0, 23);
+    var m = U.clamp(Number(p[1]) || 0, 0, 59);
+    var hours = '', mins = '';
+    for (var i = 0; i < 24; i++) hours += '<option value="' + i + '"' + (i === h ? ' selected' : '') + '>' + U.pad(i) + '</option>';
+    var list = [0, 15, 30, 45];
+    if (list.indexOf(m) < 0) list.push(m);
+    list.sort(function (a, b) { return a - b; });
+    list.forEach(function (v) {
+      mins += '<option value="' + v + '"' + (v === m ? ' selected' : '') + '>' + U.pad(v) + '</option>';
+    });
+    return '<span class="time-pick">' +
+      '<select data-' + attr + '-h aria-label="' + U.esc(label) + '小时">' + hours + '</select>' +
+      '<span class="time-colon">:</span>' +
+      '<select data-' + attr + '-m aria-label="' + U.esc(label) + '分钟">' + mins + '</select></span>';
+  }
+
+  /* 供时间锁调用：不跳页面，就在弹窗里过家长门 */
+  function gateModal(onPass) {
+    var pinMode = S.pinSet();
+    var a = 6 + Math.floor(Math.random() * 5), b = 4 + Math.floor(Math.random() * 6);
+    UI.modal({
+      title: pinMode ? '请输入家长 PIN' : '请大人来解锁',
+      art: '🔒',
+      body: gateInner(pinMode, a, b),
+      actions: [
+        { label: '取消', cls: 'ghost', close: true },
+        { label: '解锁', cls: 'primary', act: 'ok' }
+      ]
+    }, function (act, ov) {
+      if (act !== 'ok') return;
+      if (gateCheck(ov, pinMode, a, b)) { UI.closeModal(); if (onPass) onPass(); }
+    });
+    var box = U.$('[data-gate-pin]', document.getElementById('overlay')) || U.$('[data-gate-input]', document.getElementById('overlay'));
+    if (box) {
+      box.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter') return;
+        if (gateCheck(box.parentNode, pinMode, a, b)) { UI.closeModal(); if (onPass) onPass(); }
+      });
+      try { box.focus(); } catch (e) {}
+    }
+  }
+
   /* ==================== 首页 ==================== */
   function home() {
     var p = S.current(), st = S.stats();
@@ -517,6 +596,7 @@
         '<div><b>🌷 ' + (capped ? '最近 ' : '一共 ') + flowers.length + ' 朵</b><div class="small muted">' +
         (capped ? '花园里最多摆出最近 ' + cap + ' 朵，更早的花会自动收进档案盒（导出备份时一并保存）。'
                 : '这里有各种各样的心情，每一朵都好好留着。') + '</div></div>' +
+        '<button class="btn ghost" data-nav="#/report">本周成长卡 🖨</button>' +
         '<button class="btn primary" data-nav="#/checkin">再种一朵 🌱</button></div></div>' +
       (flowers.length ? '<div class="garden-grid">' + flowers.map(function (f, i) {
         var e = emotionName[f.emotion] || {};
@@ -575,29 +655,39 @@
     var passed = false;
     try { passed = window.sessionStorage.getItem('sunny-parent-ok') === '1'; } catch (e) {}
     if (!passed) {
+      var pinMode = S.pinSet();
       var a = 6 + Math.floor(Math.random() * 5), b = 4 + Math.floor(Math.random() * 6);
       var html = '<div class="gate card"><div style="font-size:48px">👨‍👩‍👧</div>' +
-        '<h2>家长 / 老师专区</h2><p class="muted">这里放着孩子的进度记录。请大人来算一下：</p>' +
-        '<h3 style="margin:14px 0">' + a + ' + ' + b + ' = ?</h3>' +
-        '<input type="number" data-gate-input placeholder="?" aria-label="答案">' +
+        '<h2>家长 / 老师专区</h2>' + gateInner(pinMode, a, b) +
         '<div style="margin-top:16px"><button class="btn primary" data-gate-ok>进入 →</button></div>' +
-        '<p class="small muted" style="margin-top:14px">这只是避免小朋友误入的小门槛，不是密码保护。</p>' +
-        '<div style="margin-top:10px">' + navBtn('#/home', '回首页') + '</div></div>';
+        '<div style="margin-top:10px">' + navBtn('#/home', '回首页') + '</div>' +
+        (pinMode ? '' : '<p class="small muted">想要更稳一点？进入后可以设置 4 位家长 PIN。</p>') +
+        '</div>';
       return wrap(html, function (root) {
         function check() {
-          var v = Number(U.$('[data-gate-input]', root).value);
-          if (v === a + b) {
-            try { window.sessionStorage.setItem('sunny-parent-ok', '1'); } catch (e) {}
-            window.SEL.render();
-          } else { UI.toast('再算一次试试 🙂'); Audio.sfx('tryagain'); }
+          if (!gateCheck(root, pinMode, a, b)) return;
+          try { window.sessionStorage.setItem('sunny-parent-ok', '1'); } catch (e) {}
+          window.SEL.render();
         }
         U.delegate(root, 'click', '[data-gate-ok]', check);
-        var inp = U.$('[data-gate-input]', root);
-        inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') check(); });
-        inp.focus();
+        var inp = U.$('[data-gate-pin]', root) || U.$('[data-gate-input]', root);
+        if (inp) {
+          inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') check(); });
+          try { inp.focus(); } catch (e) {}
+        }
       });
     }
     var p = S.current(), st = S.stats();
+    var trend = S.checkinTrend(trendDays);
+    var trendRecorded = trend.filter(function (x) { return x.avg !== null; });
+    var trendAvg = trendRecorded.length
+      ? trendRecorded.reduce(function (a, x) { return a + x.avg; }, 0) / trendRecorded.length : null;
+    var effects = S.strategyEffect();
+    var recs = S.recommendLevels(3);
+    var usedMin = Math.floor(S.usageToday() / 60);
+    var se = p.settings || {};
+    var timeState = window.SEL.screentime.state();
+    var pinOn = S.pinSet();
     var islands = D().islands || [];
     var labels = islands.map(function (i) { return i.skill || i.name; });
     var values = islands.map(function (i) { return p.skills[i.id] || 0; });
@@ -631,6 +721,13 @@
         '<td>' + esc(e.emoji || '') + ' ' + esc(e.name || c.emotion) + ' · ' + c.intensity + '格</td>' +
         '<td class="small">' + esc(U.cut(words, 12)) + '</td></tr>';
     }).join('');
+    var effectRows = effects.map(function (e) {
+      var dir = e.avgDelta < -0.05 ? 'down' : (e.avgDelta > 0.05 ? 'up' : 'flat');
+      var word = dir === 'down' ? '↓ ' : (dir === 'up' ? '↑ ' : '≈ ');
+      return '<tr class="' + (e.n < 3 ? 'slim' : '') + '"><td>' + esc(e.name) + '</td><td>' + e.n + ' 次</td>' +
+        '<td class="' + dir + '">' + word + Math.abs(e.avgDelta).toFixed(1) + ' 格</td>' +
+        '<td>' + Math.round(e.downRate * 100) + '%</td></tr>';
+    }).join('');
     var html = backRow('#/home', '回首页') +
       UI.sectionHead('成长记录', '只记录练习过程，不给孩子的能力打分', 'FOR GROWN-UPS') +
       '<div class="kpi-grid">' +
@@ -638,6 +735,18 @@
         '<div class="kpi"><b>' + st.stars + '</b><span>收集星星</span></div>' +
         '<div class="kpi"><b>' + st.checkinsTotal + '</b><span>心情签到</span></div>' +
         '<div class="kpi"><b>' + st.streak + '</b><span>连续天数</span></div>' +
+      '</div>' +
+      '<div class="card" style="margin-top:20px"><div class="spread">' +
+        '<div><h3>📌 本周建议 ' + recs.length + ' 关</h3>' +
+        '<p class="small muted" style="margin:2px 0 0">按「练得最少的能力」挑的，不用自己对着雷达图找。</p></div>' +
+        '<button class="btn tiny ghost" data-nav="#/report">看本周成长卡 →</button></div>' +
+        (recs.length ? '<div class="rec-list">' + recs.map(function (r) {
+          return '<button class="rec-item" data-nav="#/level/' + esc(r.level.id) + '">' +
+            '<span class="rec-emoji">' + esc(r.island.emoji || '🏝️') + '</span>' +
+            '<span style="flex:1"><b>' + esc(r.island.skill) + ' · ' + esc(r.level.title) + '</b>' +
+            '<div class="small muted">' + esc(r.reason) + ' · ' + esc(TYPE_NAME[r.level.type] || r.level.type) + '</div></span>' +
+            '<span class="rec-go">去玩 →</span></button>';
+        }).join('') + '</div>' : '<p class="small muted">所有关卡都完成了，可以去花园看看这一周的心情。</p>') +
       '</div>' +
       '<div class="parent-grid" style="margin-top:20px">' +
         '<div class="card"><h3>五种能力的练习次数</h3>' +
@@ -657,6 +766,24 @@
             (p.lastVisit ? '最近一次记录：' + esc(U.prettyDate(p.lastVisit)) : '还没有开始记录') + '</p>' +
           (st.archivedCheckins ? '<p class="small muted">另有 ' + st.archivedCheckins + ' 条更早的签到已自动归档，不会丢，包含在导出备份里。</p>' : '') + '</div>' +
       '</div>' +
+      '<div class="parent-grid" style="margin-top:20px">' +
+        '<div class="card"><div class="spread"><h3>情绪强度趋势</h3>' +
+          '<div class="seg" role="group" aria-label="趋势区间">' +
+            '<button class="' + (trendDays === 14 ? 'on' : '') + '" data-trend="14">14 天</button>' +
+            '<button class="' + (trendDays === 30 ? 'on' : '') + '" data-trend="30">30 天</button>' +
+          '</div></div>' +
+          '<div class="trend-wrap">' + A.lineChart(trend, { caption: '每天平均强度（1–5 格）' }) + '</div>' +
+          '<p class="small muted">' + (trendRecorded.length
+            ? '近 ' + trendDays + ' 天里有 ' + trendRecorded.length + ' 天留下了记录，平均强度 ' + trendAvg.toFixed(1) + ' 格。'
+            : '这段时间还没有签到记录。') +
+            '强度没有好坏，若持续偏高或突然升高，可以多问一句「最近发生了什么」。</p></div>' +
+        '<div class="card"><h3>方法有没有帮上忙</h3>' +
+          (effects.length ? '<table class="data-table effect-table"><thead><tr><th>方法</th><th>样本</th><th>下一次强度变化</th><th>下降比例</th></tr></thead><tbody>' +
+            effectRows + '</tbody></table>' +
+            '<p class="small muted" style="margin-top:10px">只看「用了这个方法 → 一周内的下一次签到」，<b>灰色行</b>表示样本少于 3 次，先当作参考。强度下降也可能只是事情本身过去了，不等于方法一定有效。</p>'
+            : '<p class="small muted">还没有可配对的记录。签到第 3 步会记下当天试的方法，下一次再签到时，这里就能看到前后变化。</p>') +
+        '</div>' +
+      '</div>' +
       '<div class="card" style="margin-top:20px"><h3>💬 可以一起试试的家庭小练习</h3>' +
         weak.map(function (w) {
           return '<div style="margin-top:12px"><b>' + esc(w.skill) + ' · ' + esc(w.name) + '</b><ul>' +
@@ -665,6 +792,37 @@
         '<p class="small muted">优先推荐练习次数较少的两项。日常对话里用一次，比在软件里做十关更有用。</p></div>' +
       '<div class="card" style="margin-top:20px"><h3>每一关的情况</h3>' +
         '<table class="data-table"><thead><tr><th>能力</th><th>关卡</th><th>状态</th><th>星星</th></tr></thead><tbody>' + levelRows + '</tbody></table></div>' +
+      '<div class="parent-grid" style="margin-top:20px">' +
+        '<div class="card"><h3>⏳ 使用时长与睡前锁</h3>' +
+          '<div class="setting-row"><div><b>每天最多玩</b><div class="small muted">到点会盖一层休息提醒，记录不受影响</div></div>' +
+            '<select class="time-select" data-limit aria-label="每日使用上限">' +
+            [0, 15, 30, 45, 60, 90].map(function (m) {
+              return '<option value="' + m + '"' + ((Number(se.screenLimit) || 0) === m ? ' selected' : '') + '>' +
+                (m ? m + ' 分钟' : '不限制') + '</option>';
+            }).join('') + '</select></div>' +
+          '<div class="setting-row"><div><b>睡前锁定</b><div class="small muted">这个时间段内不开放游戏</div></div>' +
+            '<button class="switch ' + (se.bedtimeOn ? 'on' : '') + '" data-bed-toggle role="switch" ' +
+            'aria-checked="' + (se.bedtimeOn ? 'true' : 'false') + '" aria-label="睡前锁定"></button></div>' +
+          '<div class="row" style="margin-top:12px">' +
+            '<span class="small">开始 ' + timeField('bed-start', se.bedtimeStart || '20:30', '睡前开始') + '</span>' +
+            '<span class="small">结束 ' + timeField('bed-end', se.bedtimeEnd || '07:30', '睡前结束') + '</span>' +
+          '</div>' +
+          '<div class="row" style="margin-top:14px"><button class="btn tiny primary" data-save-time>保存设置</button></div>' +
+          '<p class="small muted" style="margin-top:10px">今天已使用 ' + usedMin + ' 分钟' +
+            (Number(se.screenLimit) ? '（上限 ' + se.screenLimit + ' 分钟）' : '（未设置上限）') + '。' +
+            (timeState.locked ? '当前处于休息提醒状态。' : '') + '</p>' +
+          '<p class="small muted">解锁入口只在时间锁卡片上，需要再过一次家长门；解锁后当天不再提醒。</p>' +
+        '</div>' +
+        '<div class="card"><h3>🔐 家长 PIN</h3>' +
+          (pinOn
+            ? '<p class="muted small">已设置 4 位 PIN，进入家长区与解除时间锁都需要它。忘记 PIN 只能清除浏览器数据（会丢掉记录），请先导出备份。</p>' +
+              '<div class="row"><button class="btn tiny ghost" data-set-pin>修改 PIN</button>' +
+              '<button class="btn tiny pink" data-clear-pin>清除 PIN</button></div>'
+            : '<p class="muted small">多家庭共用一台设备时，可以设置 4 位 PIN 代替算术题。它只是防止误入，不是加密保险箱。</p>' +
+              '<button class="btn tiny blue" data-set-pin>设置 4 位 PIN</button>') +
+          '<p class="small muted" style="margin-top:12px">连续输错 5 次会锁定 1 分钟。</p>' +
+        '</div>' +
+      '</div>' +
       '<div class="card" style="margin-top:20px"><h3>🔒 数据与隐私</h3>' +
         '<div class="privacy-note">全部记录只保存在这台电脑的浏览器本地存储里。没有账号、没有服务器、不联网、没有广告，也不会采集孩子的姓名以外的个人信息、位置或设备信息。你可以随时导出备份、导入或清空。</div>' +
         '<p class="small muted" style="margin-top:12px"><b>请注意：</b>这是一款教育游戏，不是心理评估、筛查或诊断工具，也不能替代专业支持。如果孩子长时间情绪困扰、睡眠或进食明显变化、持续回避上学或社交，请联系学校心理老师、儿科医生或专业心理服务。</p>' +
@@ -678,6 +836,61 @@
         (S.memoryOnly ? '<p class="small" style="color:#C0392B;margin-top:10px">当前浏览器不允许本地存储，记录只保留到关闭窗口。请用「导出备份」保存。</p>' : '') +
       '</div>';
     return wrap(html, function (root) {
+      U.delegate(root, 'click', '[data-trend]', function (e, t) {
+        var n = Number(t.getAttribute('data-trend'));
+        if (n !== 14 && n !== 30) return;
+        trendDays = n;
+        Audio.sfx('tap');
+        window.SEL.render();
+      });
+      U.delegate(root, 'click', '[data-bed-toggle]', function (e, t) {
+        var on = !t.classList.contains('on');
+        t.classList.toggle('on', on);
+        t.setAttribute('aria-checked', on ? 'true' : 'false');
+        Audio.sfx('tap');
+      });
+      U.delegate(root, 'click', '[data-save-time]', function () {
+        var limit = Number(U.$('[data-limit]', root).value) || 0;
+        function readTime(attr) {
+          var h = U.$('[data-' + attr + '-h]', root), m = U.$('[data-' + attr + '-m]', root);
+          if (!h || !m) return '';
+          return U.pad(Number(h.value)) + ':' + U.pad(Number(m.value));
+        }
+        var start = readTime('bed-start'), end = readTime('bed-end');
+        var on = U.$('[data-bed-toggle]', root).classList.contains('on');
+        if (!/^\d{2}:\d{2}$/.test(start) || !/^\d{2}:\d{2}$/.test(end)) { UI.toast('请把时间填完整'); return; }
+        if (start === end) { UI.toast('睡前时段的开始和结束不能相同'); return; }
+        S.setSetting('screenLimit', limit);
+        S.setSetting('bedtimeOn', on);
+        S.setSetting('bedtimeStart', start);
+        S.setSetting('bedtimeEnd', end);
+        Audio.sfx('win');
+        UI.toast(limit || on ? '已保存，按新设置执行 🌙' : '已关闭时长限制');
+        window.SEL.render();
+      });
+      U.delegate(root, 'click', '[data-set-pin]', function () {
+        UI.modal({
+          title: pinOn ? '修改家长 PIN' : '设置家长 PIN',
+          art: '🔐',
+          body: '<p class="small muted">输入 4 位数字。忘记后无法找回，只能清除浏览器数据，建议先导出备份。</p>' +
+            '<input type="password" inputmode="numeric" maxlength="4" class="text-input" data-pin-1 placeholder="新的 4 位 PIN" aria-label="新的 PIN" style="text-align:center;margin-top:10px">' +
+            '<input type="password" inputmode="numeric" maxlength="4" class="text-input" data-pin-2 placeholder="再输入一次" aria-label="确认 PIN" style="text-align:center;margin-top:10px">',
+          actions: [{ label: '取消', cls: 'ghost', close: true }, { label: '保存', cls: 'primary', act: 'ok' }]
+        }, function (act, ov) {
+          if (act !== 'ok') return;
+          var a = (U.$('[data-pin-1]', ov) || {}).value || '';
+          var b = (U.$('[data-pin-2]', ov) || {}).value || '';
+          if (!/^\d{4}$/.test(a)) { UI.toast('PIN 需要是 4 位数字'); return; }
+          if (a !== b) { UI.toast('两次输入不一样'); return; }
+          try { S.setPin(a); } catch (err) { UI.toast(err.message || '设置失败'); return; }
+          UI.closeModal(); Audio.sfx('win'); UI.toast('PIN 已设置 🔐');
+          window.SEL.render();
+        });
+      });
+      U.delegate(root, 'click', '[data-clear-pin]', function () {
+        UI.confirm({ title: '清除家长 PIN？', art: '🔓', text: '清除后家长区会回到算术题门槛。', yes: '清除', danger: true },
+          function () { S.clearPin(); UI.toast('已清除 PIN'); window.SEL.render(); });
+      });
       U.delegate(root, 'click', '[data-export]', function () { exportFile(); });
       U.delegate(root, 'click', '[data-import-btn]', function () { U.$('[data-import-file]', root).click(); });
       var file = U.$('[data-import-file]', root);
@@ -716,6 +929,102 @@
       setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
       UI.toast('备份已下载 💾');
     } catch (e) { UI.toast('导出失败，请换个浏览器试试'); }
+  }
+
+  /* ==================== 成长周报 / 心情天气卡 ==================== */
+  var WEATHER_WORD = {
+    happy: ['晴天比较多 ☀️', '这一周，心里常常亮亮的。'],
+    sad: ['下过一点小雨 🌧', '难过的日子也被好好记住了。'],
+    angry: ['有过几阵小雷雨 ⛈', '生气的时候，你也在学着照顾自己。'],
+    scared: ['起过一点雾 🌫', '害怕的时候，慢慢来也没关系。'],
+    surprised: ['飘过几朵惊讶云 🌤', '这一周有不少新发现。'],
+    calm: ['大多是微风 🍃', '平静的日子，也在悄悄积累力量。'],
+    proud: ['有阳光洒下来 🌟', '为自己骄傲的时刻，值得记住。'],
+    jealous: ['吹过一点酸酸的风 🍋', '羡慕的时候，说明你有很想要的东西。'],
+    worried: ['云有点厚 ☁️', '担心的时候，说出来会轻一点。'],
+    lonely: ['有几阵安静的风 🍂', '孤单的时候，可以去找一个人说说话。']
+  };
+
+  function report() {
+    var p = S.current();
+    var start = U.weekStart(U.today());
+    var end = U.addDays(start, 6);
+    var today = U.today();
+    var days = [];
+    var byDate = Object.create(null);
+    p.checkins.forEach(function (c) {
+      if (c.date < start || c.date > end) return;
+      byDate[c.date] = c;   /* 同一天多次签到，取最后一次作为当天的"天气" */
+    });
+    for (var i = 0; i < 7; i++) {
+      var d = U.addDays(start, i);
+      days.push({ date: d, item: byDate[d] || null, future: d > today });
+    }
+    var weekCheckins = p.checkins.filter(function (c) { return c.date >= start && c.date <= end; });
+    var recorded = days.filter(function (x) { return x.item; });
+    var emById = Object.create(null);
+    (D().emotions || []).forEach(function (e) { emById[e.id] = e; });
+    var counts = Object.create(null);
+    recorded.forEach(function (x) { counts[x.item.emotion] = (counts[x.item.emotion] || 0) + 1; });
+    var top = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; })[0];
+    var topEm = emById[top] || {};
+    var avg = weekCheckins.length
+      ? weekCheckins.reduce(function (a, c) { return a + (c.intensity || 0); }, 0) / weekCheckins.length : null;
+    var flowerCount = p.flowers.filter(function (f) { return f.date >= start && f.date <= end; }).length;
+    var strategyUsed = Object.create(null);
+    var stNames = Object.create(null);
+    (D().strategies || []).forEach(function (s) { stNames[s.id] = s; });
+    weekCheckins.forEach(function (c) { if (c.strategy && stNames[c.strategy]) strategyUsed[c.strategy] = (strategyUsed[c.strategy] || 0) + 1; });
+    var dayNames = ['一', '二', '三', '四', '五', '六', '日'];
+    var weather = WEATHER_WORD[top] || ['这一周有自己的天气 🌈', '每一种心情，都值得被看见。'];
+
+    var strip = days.map(function (x, i) {
+      var em = x.item ? (emById[x.item.emotion] || {}) : null;
+      return '<div class="wk-day ' + (x.date === today ? 'today' : '') + (x.item ? ' has' : '') + (x.future ? ' future' : '') + '">' +
+        '<span class="wk-name">' + dayNames[i] + '</span>' +
+        '<span class="wk-face">' + (em ? esc(em.emoji || '🌤') : (x.future ? '·' : '—')) + '</span>' +
+        (x.item ? '<span class="wk-level">' + x.item.intensity + ' 格</span>' : '<span class="wk-level muted">' + (x.future ? '' : '没记') + '</span>') +
+        '</div>';
+    }).join('');
+
+    var html = backRow('#/home', '回首页') +
+      UI.sectionHead('本周成长卡', '一张可以打印、贴在冰箱上的心情天气', 'WEEKLY CARD') +
+      '<div class="report-card">' +
+        '<div class="rc-head"><div>' +
+          '<div class="eyebrow">SUNNY ISLES · WEEKLY</div>' +
+          '<h2>' + esc(U.prettyDate(start)) + ' – ' + esc(U.prettyDate(end)) + '</h2>' +
+          '<p class="muted small">' + esc(p.name) + ' 的一周</p>' +
+        '</div><div class="rc-weather">' + (topEm.face ? A.face(topEm.face, 84, topEm.color) : A.buddy('cloud', 'calm', 84)) + '</div></div>' +
+        '<div class="rc-title">' + weather[0] + '</div>' +
+        '<p class="rc-line">' + weather[1] + '</p>' +
+        '<div class="week-strip">' + strip + '</div>' +
+        '<div class="rc-stats">' +
+          '<div><b>' + recorded.length + '</b><span>记录天数</span></div>' +
+          '<div><b>' + (avg === null ? '—' : avg.toFixed(1)) + '</b><span>平均强度</span></div>' +
+          '<div><b>' + flowerCount + '</b><span>开出的花</span></div>' +
+          '<div><b>' + Object.keys(strategyUsed).length + '</b><span>用过的方法</span></div>' +
+        '</div>' +
+        (Object.keys(strategyUsed).length
+          ? '<div class="rc-methods"><span class="small muted">这一周试过：</span>' + Object.keys(strategyUsed).map(function (id) {
+            return '<span class="chip purple">' + esc(stNames[id].emoji || '🌿') + ' ' + esc(stNames[id].name) + ' × ' + strategyUsed[id] + '</span>';
+          }).join('') + '</div>'
+          : '') +
+        '<p class="rc-foot">' + (recorded.length
+          ? '给大人：这一周孩子记录了 ' + weekCheckins.length + ' 次心情。可以挑其中一天，问问「那天后来发生了什么」，比追问「你为什么这样」更容易聊下去。'
+          : '这一周还没有签到记录。可以从今天开始，每天花一分钟，种一朵心情花。') + '</p>' +
+      '</div>' +
+      '<div class="row no-print" style="margin-top:18px;justify-content:center">' +
+        '<button class="btn primary" data-print>打印 / 存成 PDF 🖨</button>' +
+        navBtn('#/checkin', '今天还没记，去签到', 'blue') +
+        navBtn('#/garden', '看心情花园', 'ghost') +
+      '</div>' +
+      '<p class="small muted center no-print" style="margin-top:12px">打印时只会输出这张卡片；也可以按 Ctrl/⌘ + P 选择「另存为 PDF」。</p>';
+    return wrap(html, function (root) {
+      U.delegate(root, 'click', '[data-print]', function () {
+        Audio.sfx('tap');
+        try { window.print(); } catch (e) { UI.toast('这个环境不支持打印，可以截图保存'); }
+      });
+    });
   }
 
   /* ==================== 档案 ==================== */
@@ -794,6 +1103,20 @@
         row('减少动画 🍃', '关掉漂浮和弹跳，画面更安静', 'reduceMotion') +
         '<div class="setting-row"><div><b>小玩家档案</b><div class="small muted">切换、新建或删除档案</div></div>' +
           navBtn('#/profile', '去管理 →', 'tiny ghost') + '</div>' +
+        '<div class="setting-row"><div><b>本周成长卡 🖨</b><div class="small muted">一张可以打印的心情天气卡</div></div>' +
+          navBtn('#/report', '去看看 →', 'tiny ghost') + '</div>' +
+        (function () {
+          var se = p.settings || {};
+          var bits = [];
+          if (Number(se.screenLimit)) bits.push('每天 ' + se.screenLimit + ' 分钟');
+          if (se.bedtimeOn) bits.push('睡前 ' + esc(se.bedtimeStart) + '–' + esc(se.bedtimeEnd) + ' 锁定');
+          return '<div class="setting-row"><div><b>使用时长与睡前锁 ⏳</b><div class="small muted">' +
+            (bits.length ? bits.join(' · ') : '未开启') + '（在家长专区设置）</div></div>' +
+            navBtn('#/parent', '去设置 →', 'tiny ghost') + '</div>';
+        })() +
+        '<div class="setting-row"><div><b>家长 PIN 🔐</b><div class="small muted">' +
+          (S.pinSet() ? '已设置，进入家长区需要 PIN' : '未设置，目前用算术题挡住误入') + '</div></div>' +
+          navBtn('#/parent', '去管理 →', 'tiny ghost') + '</div>' +
         '<div class="setting-row"><div><b>导出备份 💾</b><div class="small muted">把所有记录存成一个文件</div></div>' +
           '<button class="btn tiny blue" data-export>导出 JSON</button></div>' +
       '</div>' +
@@ -810,7 +1133,8 @@
     home: home, map: map, island: island, level: level, emotions: emotions,
     checkin: checkin, strategies: strategies, runStrategy: runStrategy,
     garden: garden, stickers: stickers, parent: parent, profile: profile,
-    settings: settings, help: help, exportFile: exportFile,
+    settings: settings, help: help, report: report, exportFile: exportFile,
+    gateModal: gateModal,
     TYPE_NAME: TYPE_NAME, ISLAND_LABEL: ISLAND_LABEL
   };
 })();

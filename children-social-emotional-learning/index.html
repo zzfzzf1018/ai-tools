@@ -2,14 +2,18 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' file:; style-src 'self' 'unsafe-inline' file:; img-src 'self' data:; font-src 'self' file:; connect-src 'none'; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' file:; style-src 'self' 'unsafe-inline' file:; img-src 'self' data:; font-src 'self' file:; connect-src 'none'; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; manifest-src 'self'; worker-src 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#FFF8EC">
-<meta name="app-version" content="1.0.6">
+<meta name="app-version" content="1.1.0">
 <meta name="description" content="心晴岛：面向 6-10 岁儿童的社会情绪学习（SEL）互动游戏。完全离线、无账号、无广告，帮助孩子认识情绪、练习冷静、学习与人相处。">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M10 46Q2 46 2 36q0-9 10-10Q14 12 27 12q8-8 18-2 14-3 16 10 10 3 9 14 0 12-14 12Z' fill='%23fff' stroke='%233A2E2B' stroke-width='3'/%3E%3Ccircle cx='24' cy='30' r='2.6' fill='%233A2E2B'/%3E%3Ccircle cx='42' cy='30' r='2.6' fill='%233A2E2B'/%3E%3Cpath d='M26 38q6 7 12 0' stroke='%233A2E2B' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='54' cy='12' r='7' fill='%23FFC94A'/%3E%3C/svg%3E">
 <title>心晴岛 · 儿童社会情绪学习</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="心晴岛">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="src/styles.css">
 </head>
 <body>
@@ -17,6 +21,12 @@
     <div id="sky-decor" aria-hidden="true"></div>
     <header id="topbar"></header>
     <main id="screen" role="main"></main>
+    <button id="calm-fab" class="calm-fab" type="button" data-calm-open
+      title="我现在有点难受，给自己 60 秒" aria-label="打开 60 秒冷静角">
+      <span class="calm-fab-icon" aria-hidden="true">🫧</span>
+      <span class="calm-fab-text">冷静 60 秒</span>
+    </button>
+    <div id="time-lock" class="time-lock" hidden></div>
     <div id="overlay" aria-live="polite"></div>
     <div id="toast-layer" aria-live="polite"></div>
   </div>
@@ -25,8 +35,10 @@
   <script src="src/core/utils.js"></script>
   <script src="src/core/audio.js"></script>
   <script src="src/core/state.js"></script>
+  <script src="src/core/screentime.js"></script>
   <script src="src/ui/art.js"></script>
   <script src="src/ui/components.js"></script>
+  <script src="src/ui/calm.js"></script>
   <script src="src/ui/games.js"></script>
   <script src="src/ui/screens.js"></script>
   <script src="src/main.js"></script>

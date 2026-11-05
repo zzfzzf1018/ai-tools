@@ -3,6 +3,8 @@
   'use strict';
   var U = window.SEL.utils, UI = window.SEL.ui, S = window.SEL.state;
   var Audio = window.SEL.audio, G = window.SEL.games, SC = window.SEL.screens;
+  var Calm = window.SEL.calm, ST = window.SEL.screentime;
+  var currentRoute = 'home';
 
   function parts() {
     return String(window.location.hash || '').replace(/^#\/?/, '').split('/').filter(Boolean);
@@ -27,6 +29,7 @@
     Audio.stopSpeak();
 
     var p = parts(), view;
+    currentRoute = p[0] || 'home';
     try {
       if (!window.SEL_DATA || !window.SEL_DATA.islands) throw new Error('课程内容还没加载好');
       switch (p[0]) {
@@ -40,6 +43,7 @@
         case 'strategies': view = SC.strategies(); break;
         case 'garden': view = SC.garden(); break;
         case 'stickers': view = SC.stickers(); break;
+        case 'report': view = SC.report(); break;
         case 'parent': view = SC.parent(); break;
         case 'profile': view = SC.profile(); break;
         case 'settings': view = SC.settings(); break;
@@ -76,12 +80,69 @@
         screen.focus({ preventScroll: true });
       }
     } catch (e) {}
+
+    /* 冷静角按钮跟着页面走；使用时长/睡前锁在每次换页时复核一次 */
+    syncCalm();
+    checkTimeLock();
+  }
+
+  function checkTimeLock() {
+    var info = ST.state();
+    var box = document.getElementById('time-lock');
+    if (!box) return;
+    if (!info.locked) {
+      if (!box.hidden) {
+        box.hidden = true;
+        box.innerHTML = '';
+        document.body.classList.remove('time-locked');
+        syncCalm();
+      }
+      return;
+    }
+    if (box.hidden) {
+      box.innerHTML = ST.lockView(info);
+      box.hidden = false;
+      document.body.classList.add('time-locked');
+      UI.closeModal();
+      syncCalm();
+      try { document.getElementById('screen').setAttribute('aria-hidden', 'true'); } catch (e) {}
+    }
+  }
+
+  function syncCalm() {
+    var info = ST.state();
+    if (Calm) Calm.sync(currentRoute, info.locked);
+    var screen = document.getElementById('screen');
+    if (screen) {
+      if (info.locked) screen.setAttribute('aria-hidden', 'true');
+      else screen.removeAttribute('aria-hidden');
+    }
   }
 
   /* 全局事件：一次绑定，页面重绘不重复注册 */
   document.addEventListener('click', function (e) {
     var t = e.target;
     if (!t || !t.closest) return;
+
+    /* 情绪急救：任何页面都能就地打开，不换路由、不丢当前关卡进度 */
+    if (t.closest('[data-calm-open]')) {
+      e.preventDefault();
+      Audio.unlock();
+      if (Calm) Calm.open();
+      return;
+    }
+
+    /* 时间锁请大人解锁：先过家长门（PIN 或算术），当天不再弹 */
+    if (t.closest('[data-time-unlock]')) {
+      e.preventDefault();
+      SC.gateModal(function () {
+        ST.unlockToday();
+        checkTimeLock();
+        syncCalm();
+        UI.toast('已解锁，今天不再提醒');
+      });
+      return;
+    }
 
     var nav = t.closest('[data-nav]');
     if (nav) {
@@ -122,6 +183,30 @@
   window.addEventListener('hashchange', render);
   window.SEL.render = render;
 
+  /* 使用时长按 20 秒累加：只统计窗口可见的时间，切到后台不算。
+     到点由 checkTimeLock 盖上软锁；家长解锁后当天不再打扰。 */
+  setInterval(function () {
+    try {
+      if (document.visibilityState === 'hidden') return;
+      var info = ST.state();
+      if (!info.locked) S.addUsage(20);
+      checkTimeLock();
+    } catch (e) {}
+  }, 20000);
+  document.addEventListener('visibilitychange', function () {
+    try { if (document.visibilityState === 'visible') checkTimeLock(); } catch (e) {}
+  });
+
+  /* PWA：只有 http(s) 才注册 Service Worker。Electron 走 file://，
+     注册会失败（也不该注册），所以按协议跳过，桌面版行为完全不变。 */
+  function registerServiceWorker() {
+    try {
+      if (!('serviceWorker' in navigator)) return;
+      if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
+      navigator.serviceWorker.register('sw.js').catch(function () { /* 离线预览不阻塞启动 */ });
+    } catch (e) {}
+  }
+
   function welcome() {
     var KEY = 'sunny-isles-welcomed-v1';
     var seen = false;
@@ -151,6 +236,7 @@
   function boot() {
     if (!window.location.hash) window.location.hash = '#/home';
     render();
+    registerServiceWorker();
     setTimeout(welcome, 450);
   }
 

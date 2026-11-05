@@ -27,7 +27,8 @@ try { w.sessionStorage.setItem('sunny-parent-ok', '1'); } catch (e) {}
 /* 与 index.html 保持同一加载顺序 */
 const scripts = [
   'src/data/curriculum.js', 'src/core/utils.js', 'src/core/audio.js', 'src/core/state.js',
-  'src/ui/art.js', 'src/ui/components.js', 'src/ui/games.js', 'src/ui/screens.js', 'src/main.js'
+  'src/core/screentime.js', 'src/ui/art.js', 'src/ui/components.js', 'src/ui/calm.js',
+  'src/ui/games.js', 'src/ui/screens.js', 'src/main.js'
 ];
 for (const f of scripts) {
   try { w.eval(fs.readFileSync(path.join(root, f), 'utf8')); }
@@ -59,7 +60,7 @@ try {
   /* --- 1. 所有页面 --- */
   const pages = [
     '#/home', '#/map', '#/emotions', '#/checkin', '#/strategies',
-    '#/garden', '#/stickers', '#/parent', '#/profile', '#/settings', '#/help'
+    '#/garden', '#/stickers', '#/report', '#/parent', '#/profile', '#/settings', '#/help'
   ];
   pages.forEach(h => route(h));
   const helpHtml = route('#/help');
@@ -502,9 +503,145 @@ try {
     route('#/home');
     must(w.document.activeElement === q('#screen'), '换页后焦点没有交给新的 #screen');
   }
+  /* --- 24. 新增：周报 / 趋势 / 策略有效性 / 建议 / 时长锁 / PIN / 故事探索 --- */
+  {
+    w.SEL.ui.closeModal();
+    const fixed = bare();
+    const today = w.SEL.utils.today();
+    fixed.profiles[0].usage = { date: today, seconds: 16 * 60 };
+    fixed.profiles[0].settings = {
+      voice: true, sfx: true, reduceMotion: false,
+      screenLimit: 15, bedtimeOn: false, bedtimeStart: '20:30', bedtimeEnd: '07:30'
+    };
+    fixed.profiles[0].checkins = [
+      { date: w.SEL.utils.daysAgo(3), emotion: 'angry', intensity: 5, strategy: 'breathing', at: 'a' },
+      { date: w.SEL.utils.daysAgo(2), emotion: 'calm', intensity: 3, strategy: 'coping', at: 'b' },
+      { date: w.SEL.utils.daysAgo(1), emotion: 'calm', intensity: 2, strategy: '', at: 'c' },
+      { date: today, emotion: 'happy', intensity: 2, strategy: '', at: 'd' }
+    ];
+    w.SEL.state.importSave(JSON.stringify(fixed));
+
+    /* 时长上限：到点必须出现软锁，且不能挡住回首页 */
+    route('#/home');
+    must(q('#time-lock') && q('#time-lock').hidden === false, '使用时长达到上限后没有出现休息提醒');
+    must((q('#time-lock').textContent || '').includes('15 分钟'), '时长锁没有说明约定的分钟数');
+    must(q('#calm-fab').hidden === true, '时间锁出现时冷静角按钮仍显示');
+    click(q('[data-time-unlock]'));
+    must(!!q('.modal'), '时长锁的「请大人来解锁」没有打开家长门');
+    const expr2 = (q('.modal h3') && q('.modal h3').textContent) || '';
+    const nums2 = expr2.match(/(\d+)\s*\+\s*(\d+)/);
+    must(!!nums2, '时长锁家长门没有出算术题');
+    if (nums2) {
+      q('[data-gate-input]').value = String(Number(nums2[1]) + Number(nums2[2]));
+      click(q('[data-modal-act="ok"]'));
+      must(q('#time-lock').hidden === true, '家长解锁后时间锁仍未消失');
+      must(w.sessionStorage.getItem('sunny-time-ok') === today, '家长解锁后没有记下「今天不再提醒」');
+      must(q('#calm-fab').hidden === false, '解锁后冷静角按钮没有恢复');
+    }
+    w.SEL.state.setSetting('screenLimit', 0);
+
+    /* 情绪趋势 + 策略有效性 + 本周建议 */
+    const parentHtml = route('#/parent');
+    must(parentHtml.includes('情绪强度趋势'), '家长面板缺少情绪强度趋势卡片');
+    must(parentHtml.includes('方法有没有帮上忙'), '家长面板缺少策略有效性卡片');
+    must(parentHtml.includes('本周建议'), '家长面板缺少本周建议关卡');
+    must(qa('.rec-item').length >= 1 && qa('.rec-item').length <= 3, '本周建议不是 1–3 关');
+    must(qa('.effect-table tbody tr').length >= 1, '策略有效性没有根据签到记录生成任何一行');
+    const chartBefore = (q('.trend-wrap svg') || {}).outerHTML || '';
+    must(chartBefore.includes('<path'), '趋势折线没有绘制路径');
+    click(q('[data-trend="30"]'));
+    must(route('#/parent').includes('30 天'), '趋势区间切换到 30 天后没有保留选中状态');
+    must(q('.trend-wrap svg'), '切换 30 天后趋势图消失');
+
+    /* 周报：7 天格子 + 打印入口 + 数据统计 */
+    const reportHtml = route('#/report');
+    must(reportHtml.includes('本周成长卡'), '周报页缺少标题');
+    must(qa('.wk-day').length === 7, '周报没有 7 天格子');
+    must(!!q('[data-print]'), '周报缺少打印按钮');
+    must(reportHtml.includes('记录天数'), '周报缺少统计项');
+
+    /* 故事分支探索度 */
+    const st2 = all.find(x => x.lv.type === 'story');
+    const storyData2 = (w.SEL_DATA.stories || []).find(s => s.id === st2.lv.data.storyId);
+    w.SEL.state.update(p => {
+      p.stars = 999;
+      all.forEach(({ lv }) => { if (lv.id !== st2.lv.id) p.levels[lv.id] = { done: true, stars: 3, attempts: 1, lastAt: '2026-01-01' }; });
+    });
+    route('#/level/' + st2.lv.id);
+    for (let i = 0; i < 8 && !q('[data-finish]'); i++) {
+      const opt = q('.option-btn:not([disabled])');
+      if (!opt) break;
+      click(opt);
+      const go = q('[data-go]');
+      if (go) click(go);
+    }
+    must(!!q('.story-explore'), '故事结局没有显示分支探索度');
+    const exploreBox = q('.story-explore');
+    must(!!exploreBox && (exploreBox.textContent || '').includes('/'), '故事探索度没有显示「已发现 / 总数」');
+    const sp = w.SEL.state.storyProgress(st2.lv.data.storyId);
+    must(sp.endingsSeen >= 1 && sp.endingsTotal >= 1, '故事结局没有被记进探索进度');
+    w.SEL.ui.closeModal();
+
+    /* 家长 PIN：设置 → 错误不放行 → 正确放行 → 连错锁定 → 清除 */
+    w.SEL.state.clearPin();
+    must(w.SEL.state.setPin('1234') === true, '设置 4 位 PIN 失败');
+    must(w.SEL.state.pinSet() === true, '设置 PIN 后 pinSet 仍为 false');
+    must(w.SEL.state.verifyPin('0000').ok === false, '错误 PIN 被放行');
+    must(w.SEL.state.verifyPin('1234').ok === true, '正确 PIN 没有通过');
+    w.sessionStorage.removeItem('sunny-parent-ok');
+    route('#/parent');
+    must(!!q('[data-gate-pin]'), '设置 PIN 后家长门仍是算术题');
+    q('[data-gate-pin]').value = '1234';
+    click(q('[data-gate-ok]'));
+    must(!!q('.kpi-grid'), '输入正确 PIN 后没有进入家长面板');
+    for (let i = 0; i < 5; i++) w.SEL.state.verifyPin('9999');
+    must(w.SEL.state.verifyPin('1234').locked === true, '连续输错 5 次后没有锁定');
+    w.SEL.state.clearPin();
+    must(w.SEL.state.pinSet() === false, '清除 PIN 失败');
+    w.sessionStorage.setItem('sunny-parent-ok', '1');
+  }
+
+  /* --- 25. 坏设置值不会绕过时长限制 --- */
+  {
+    const bad = bare();
+    bad.profiles[0].settings = {
+      voice: true, sfx: true, reduceMotion: false,
+      screenLimit: -5, bedtimeOn: 'yes', bedtimeStart: '99:99', bedtimeEnd: 'x'
+    };
+    bad.profiles[0].usage = { date: w.SEL.utils.today(), seconds: 999999999 };
+    w.SEL.state.importSave(JSON.stringify(bad));
+    const se = w.SEL.state.current().settings;
+    must(se.screenLimit === 0, '导入的负数时长上限没有被修正为 0');
+    must(se.bedtimeOn === false, '导入的非布尔 bedtimeOn 没有被修正');
+    must(/^\d{2}:\d{2}$/.test(se.bedtimeStart) && /^\d{2}:\d{2}$/.test(se.bedtimeEnd), '导入的非法睡前时间没有被修正');
+    must(w.SEL.state.usageToday() <= 86400, '导入的超大使用时长没有被封顶');
+  }
 } catch (e) {
   fails.push('测试流程异常: ' + (e && e.stack || e));
 }
+
+/* --- 26. 情绪急救冷静角：不换页、不丢当前进度，60 秒倒计时可随时关掉 --- */
+try {
+  route('#/home');
+  await new Promise(r => setTimeout(r, 80));   // 等上一轮 hashchange 派发完，否则会把刚打开的弹窗重绘掉
+  const hashBefore = w.location.hash;
+  must(q('#calm-fab') && q('#calm-fab').hidden === false, '首页没有显示情绪急救悬浮按钮');
+  w.SEL.calm.open();
+  must(!!q('[data-calm]'), '冷静角弹窗没有打开');
+  must((q('.modal').textContent || '').includes('60'), '冷静角没有说明 60 秒');
+  click(q('[data-modal-act="start"]'));
+  await new Promise(r => setTimeout(r, 1150));
+  const clockTxt = (q('[data-calm-clock]') || {}).textContent || '';
+  must(/5[89] 秒/.test(clockTxt), '冷静角倒计时没有走动：' + clockTxt);
+  w.SEL.ui.closeModal();
+  must(w.location.hash === hashBefore, '关闭冷静角后页面被切走');
+  must(!!q('.hero'), '关闭冷静角后首页内容丢失');
+  route('#/report');
+  must(q('#calm-fab').hidden === true, '周报（打印页）上不应显示悬浮的冷静角按钮');
+} catch (e) {
+  fails.push('冷静角测试异常: ' + (e && e.stack || e));
+}
+
 
 /* --- 20. 短暂计时器：弹窗关闭后必须停掉 --- */
 try {
@@ -533,7 +670,7 @@ try {
 
 const levelCount = (w.SEL_DATA.islands || []).reduce((a, i) => a + i.levels.length, 0);
 console.log('=== 心晴岛 运行时冒烟测试 ===');
-console.log(`页面/关卡覆盖: 11 页 + ${(w.SEL_DATA.islands || []).length} 岛 + ${levelCount} 关`);
+console.log(`页面/关卡覆盖: 12 页 + ${(w.SEL_DATA.islands || []).length} 岛 + ${levelCount} 关`);
 if (runtimeErrors.length) {
   console.log(`\n--- 运行时报错 (${runtimeErrors.length}) ---`);
   [...new Set(runtimeErrors)].slice(0, 15).forEach(e => console.log('  x ' + e));
@@ -542,6 +679,6 @@ if (fails.length) {
   console.log(`\n--- 失败 (${fails.length}) ---`);
   [...new Set(fails)].forEach(f => console.log('  x ' + f));
 } else if (!runtimeErrors.length) {
-  console.log(`\n✅ 全部页面、${levelCount} 个关卡、签到闭环、7 种题型、解锁链路、存档导入与家长面板均通过`);
+  console.log(`\n✅ 全部页面、${levelCount} 个关卡、签到闭环、7 种题型、解锁链路、存档导入、家长面板与 1.1.0 新功能均通过`);
 }
 process.exit(fails.length || runtimeErrors.length ? 1 : 0);

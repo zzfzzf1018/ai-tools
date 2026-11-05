@@ -349,8 +349,63 @@
     return svg(body, 260, 250, '0 0 260 250');
   }
 
+  /* ---------- 情绪强度折线（家长端） ----------
+     points: [{ date, count, avg }]，avg 为 null 表示那天没有签到。
+     断点不连线，避免把「没记录」画成 0 或直接跳过造成误读。 */
+  function lineChart(points, opts) {
+    opts = opts || {};
+    var W = 560, H = 230, L = 38, R = 18, T = 20, B = 34;
+    var pts = points || [];
+    var n = pts.length;
+    if (!n) return svg('', W, H, '0 0 ' + W + ' ' + H);
+    var innerW = W - L - R, innerH = H - T - B;
+    function x(i) { return L + (n === 1 ? innerW / 2 : (innerW * i) / (n - 1)); }
+    function y(v) { return T + innerH - ((v - 1) / 4) * innerH; }
+
+    var body = '';
+    for (var v = 1; v <= 5; v++) {
+      body += '<line x1="' + L + '" y1="' + y(v).toFixed(1) + '" x2="' + (W - R) + '" y2="' + y(v).toFixed(1) +
+        '" stroke="#F0E1CE" stroke-width="1.5"' + (v === 1 ? '' : ' stroke-dasharray="4 6"') + '/>';
+      body += '<text x="' + (L - 8) + '" y="' + (y(v) + 4).toFixed(1) + '" text-anchor="end" font-size="11" fill="#9A8578">' + v + '</text>';
+    }
+
+    /* 连续有记录的一段画一条折线 + 一层浅色面积 */
+    var run = [];
+    function flush() {
+      if (run.length < 1) { run = []; return; }
+      if (run.length >= 2) {
+        var d = run.map(function (p, k) { return (k ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1); }).join(' ');
+        var area = d + ' L' + run[run.length - 1][0].toFixed(1) + ' ' + y(1).toFixed(1) +
+          ' L' + run[0][0].toFixed(1) + ' ' + y(1).toFixed(1) + ' Z';
+        body += '<path d="' + area + '" fill="rgba(255,143,163,.16)"/>';
+        body += '<path d="' + d + '" fill="none" stroke="#FF8FA3" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>';
+      }
+      run = [];
+    }
+    pts.forEach(function (p, i) {
+      if (typeof p.avg === 'number') run.push([x(i), y(p.avg)]);
+      else flush();
+    });
+    flush();
+    pts.forEach(function (p, i) {
+      if (typeof p.avg !== 'number') return;
+      body += '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(p.avg).toFixed(1) + '" r="4" fill="#fff" stroke="#FF8FA3" stroke-width="2.5"/>';
+    });
+
+    /* 横轴只标首、中、尾，窄屏也不会挤成一团 */
+    [0, Math.floor((n - 1) / 2), n - 1].filter(function (v, i, a) { return a.indexOf(v) === i && v >= 0; }).forEach(function (i) {
+      var label = String(pts[i].date || '').slice(5).replace('-', '/');
+      body += '<text x="' + x(i).toFixed(1) + '" y="' + (H - 12) + '" text-anchor="' + (i === 0 ? 'start' : (i === n - 1 ? 'end' : 'middle')) +
+        '" font-size="11" fill="#9A8578">' + U.esc(label) + '</text>';
+    });
+    if (opts.caption) {
+      body += '<text x="' + (L + 4) + '" y="' + (T - 6) + '" font-size="11" fill="#9A8578">' + U.esc(opts.caption) + '</text>';
+    }
+    return svg(body, W, H, '0 0 ' + W + ' ' + H, 'style="max-width:100%;height:auto"');
+  }
+
   window.SEL.art = {
     face: face, buddy: buddy, scene: scene, flower: flower,
-    brandMark: brandMark, radar: radar, person: person, svg: svg
+    brandMark: brandMark, radar: radar, lineChart: lineChart, person: person, svg: svg
   };
 })();

@@ -259,6 +259,52 @@ if (!(pkg.build && Array.isArray(pkg.build.files) && pkg.build.files.includes('i
   E('build.files 没有包含 index.html 与 src/**/*，打包后会缺少运行文件');
 }
 
+/* ---------- PWA：manifest / Service Worker / 图标 ---------- */
+const manifestPath = path.join(root, 'manifest.webmanifest');
+if (!fs.existsSync(manifestPath)) E('缺少 manifest.webmanifest，Web 版无法安装到桌面');
+else {
+  let mf = null;
+  try { mf = JSON.parse(fs.readFileSync(manifestPath, 'utf8')); } catch (e) { E('manifest.webmanifest 不是合法 JSON'); }
+  if (mf) {
+    ['name', 'short_name', 'start_url', 'display', 'theme_color', 'background_color'].forEach(k => {
+      if (!has(mf, k)) E('manifest 缺少字段: ' + k);
+    });
+    if (mf.display !== 'standalone') E('manifest.display 应为 standalone，否则装到桌面后仍带浏览器地址栏');
+    if (!Array.isArray(mf.icons) || !mf.icons.length) E('manifest 没有图标');
+    (mf.icons || []).forEach((ic, i) => {
+      if (!ic || !ic.src) { E('manifest 图标 ' + i + ' 缺 src'); return; }
+      if (/^(https?:)?\/\//.test(ic.src)) E('manifest 图标不能引用外部地址: ' + ic.src);
+      const p = path.join(root, ic.src);
+      if (!fs.existsSync(p)) E('manifest 引用的图标不存在: ' + ic.src);
+      else if (!/^\d+x\d+$/.test(String(ic.sizes || ''))) E('manifest 图标 sizes 非法: ' + ic.sizes);
+    });
+  }
+}
+if (!/rel="manifest"/.test(html)) E('index.html 没有声明 manifest，浏览器不会提示安装');
+const cspForPwa = (html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/i) || [])[1] || '';
+if (!/manifest-src\s+'self'/.test(cspForPwa)) E('CSP 缺少 manifest-src，PWA 清单会被拦截');
+if (!/worker-src\s+'self'/.test(cspForPwa)) E('CSP 缺少 worker-src，Service Worker 无法注册');
+const swPath = path.join(root, 'sw.js');
+if (!fs.existsSync(swPath)) E('缺少 sw.js，Web 版无法离线启动');
+else {
+  const sw = fs.readFileSync(swPath, 'utf8');
+  const cacheVer = (sw.match(/var CACHE = 'sunny-isles-([^']+)'/) || [])[1];
+  if (!cacheVer) E('sw.js 缺少可识别的 CACHE 版本号');
+  else if (cacheVer !== pkg.version) E(`sw.js 的缓存版本 (${cacheVer}) 与 package.json (${pkg.version}) 不一致，升级后会继续用旧资源`);
+  const assets = [...sw.matchAll(/'(\.\/[^']*)'/g)].map(m => m[1]);
+  if (assets.length < 10) E('sw.js 预缓存列表过短，可能漏掉脚本');
+  assets.forEach(a => {
+    const rel = a.replace(/^\.\//, '') || 'index.html';
+    if (!fs.existsSync(path.join(root, rel))) E('sw.js 预缓存了不存在的文件: ' + a);
+  });
+  ['index.html', 'src/styles.css', 'src/main.js', 'src/core/state.js', 'icons/icon-192.png'].forEach(k => {
+    if (!sw.includes(k)) E('sw.js 预缓存列表缺少关键文件: ' + k);
+  });
+}
+if (!(pkg.build && Array.isArray(pkg.build.files) && pkg.build.files.includes('manifest.webmanifest') && pkg.build.files.includes('sw.js') && pkg.build.files.includes('icons/**/*'))) {
+  E('build.files 没有包含 manifest.webmanifest / sw.js / icons，桌面版会缺少 PWA 资源');
+}
+
 /* ---------- Electron 安全基线：这些开关一旦被改掉，儿童安全承诺就失效了 ---------- */
 const mainSrc = fs.readFileSync(path.join(root, 'desktop/main.js'), 'utf8');
 const security = [

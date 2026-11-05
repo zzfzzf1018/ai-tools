@@ -438,6 +438,8 @@
         function draw(nodeId) {
           var n = nodes[nodeId] || {};
           var ending = n.ending === true || !n.choices || !n.choices.length;
+          /* 记下走过的节点/结局，用来提示"还有几条路没走过"；重玩也继续累积 */
+          try { S.markStoryNode(story.id, nodeId, ending); } catch (e) {}
           var face = A.buddy('cloud', n.emotion || 'calm', 90);
           var body = pathDots() +
             '<div class="story-top"><div class="story-avatar">' + face + '</div>' +
@@ -445,7 +447,15 @@
             UI.speakBtn(n.text || '') + '</div>' +
             '<div class="story-text" style="margin-top:10px">' + U.esc(n.text || '') + '</div></div></div>';
           if (ending) {
+            var prog = { endingsSeen: 0, endingsTotal: 0, endingsRemaining: 0 };
+            try { prog = S.storyProgress(story.id); } catch (e) {}
             body += (n.moral ? '<div class="story-moral">💡 ' + U.esc(n.moral) + '</div>' : '');
+            body += '<div class="story-explore">' +
+              '<span class="chip green">已发现 ' + prog.endingsSeen + ' / ' + prog.endingsTotal + ' 个结局</span>' +
+              (prog.endingsRemaining > 0
+                ? '<span class="small muted">还有 ' + prog.endingsRemaining + ' 条路没走过，下次可以试试另一个做法。</span>'
+                : '<span class="small muted">每个结局你都看过了，真好奇宝宝 🌈</span>') +
+              '</div>';
             body += tipBox('故事走到这里啦 📖',
               '<p>你一共做了 ' + steps + ' 次选择。故事里没有「错」的选择，只有不一样的结果。</p>' +
               finishBtn(3, '故事完成', strip(n.moral || level.teach || '')), true);

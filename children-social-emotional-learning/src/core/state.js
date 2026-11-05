@@ -11,6 +11,7 @@
   var SKILLS = ['awareness', 'management', 'social', 'relationship', 'decision'];
   var HEX = /^#[0-9a-fA-F]{3,8}$/;
   var DAY = /^\d{4}-\d{2}-\d{2}$/;
+  var TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
   var MAX_CHECKINS = 400;
   var MAX_FLOWERS = 365;      // 约一年的心情花，避免 localStorage 无限增长
   var MAX_PROFILES = 12;      // 一台电脑最多 12 个小玩家
@@ -44,14 +45,24 @@
       checkins: [],        // { date, emotion, intensity, reason, strategy, note }
       flowers: [],         // { id, date, emotion, color, petal }
       strategyCount: {},   // strategyId -> 次数
-      settings: { voice: true, sfx: true, reduceMotion: false },
+      usage: { date: U.today(), seconds: 0 },   // 当天累计使用秒数（家长端时长限制用）
+      stories: {},         // storyId -> { nodes: [], endings: [] } 走过的分支
+      settings: {
+        voice: true, sfx: true, reduceMotion: false,
+        screenLimit: 0,          // 每日分钟上限，0 = 不限制
+        bedtimeOn: false,        // 睡前锁定
+        bedtimeStart: '20:30',
+        bedtimeEnd: '07:30'
+      },
       lastVisit: ''
     };
   }
 
   function freshSave() {
     var p = freshProfile('小探险家', 'cloud');
-    return { version: 1, activeId: p.id, profiles: [p], archive: {} };
+    /* gate：家长区门锁。pin 只存加盐哈希，绝不存明文；fails/lockUntil 用于连续输错后短暂锁定。
+       这是"防误入"，不是加密保险箱——4 位 PIN 本身只有 1 万种组合。 */
+    return { version: 1, activeId: p.id, profiles: [p], archive: {}, gate: { salt: '', hash: '', fails: 0, lockUntil: 0 } };
   }
 
   /* 档案 id 只允许安全字符：导入的备份可能是任意 JSON，不能让 __proto__ / constructor
@@ -60,6 +71,68 @@
   var RESERVED_ID = ['__proto__', 'constructor', 'prototype'];
   function safeId(id) {
     return typeof id === 'string' && SAFE_ID.test(id) && RESERVED_ID.indexOf(id) < 0 ? id : null;
+  }
+
+  /* ---------- 家长 PIN ---------- */
+  /* 4 位 PIN 只有 1 万种组合，任何哈希都能被穷举；这里的加盐哈希只是避免明文躺在
+     localStorage 里被顺手看到，真正的保护来自「连续输错锁定」。界面文案也如实说明。 */
+  function pinHash(salt, pin) {
+    var s = String(salt) + '|' + String(pin) + '|' + String(salt);
+    var h = 0x811c9dc5;
+    for (var round = 0; round < 3; round++) {
+      for (var i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 0x01000193) >>> 0;
+      }
+      s = h.toString(16) + s;
+    }
+    return ('00000000' + h.toString(16)).slice(-8);
+  }
+  function newSalt() {
+    return Math.floor(Math.random() * 0xffffffff).toString(16) + Date.now().toString(16).slice(-6);
+  }
+  function cleanGate(g) {
+    var out = { salt: '', hash: '', fails: 0, lockUntil: 0 };
+    if (!g || typeof g !== 'object' || Array.isArray(g)) return out;
+    var salt = typeof g.salt === 'string' && /^[0-9a-f]{6,40}$/.test(g.salt) ? g.salt : '';
+    var hash = typeof g.hash === 'string' && /^[0-9a-f]{8}$/.test(g.hash) ? g.hash : '';
+    if (salt && hash) { out.salt = salt; out.hash = hash; }
+    out.fails = intIn(g.fails, 0, 999, 0);
+    out.lockUntil = Math.max(0, intIn(g.lockUntil, 0, 4102444800000, 0));
+    return out;
+  }
+  function pinSet() {
+    var g = cleanGate(read().gate);
+    return !!(g.salt && g.hash);
+  }
+  function setPin(pin) {
+    if (!/^\d{4}$/.test(String(pin))) throw new Error('PIN 需要是 4 位数字');
+    var salt = newSalt();
+    update(function (_p, s) {
+      s.gate = { salt: salt, hash: pinHash(salt, pin), fails: 0, lockUntil: 0 };
+    });
+    return true;
+  }
+  function clearPin() {
+    update(function (_p, s) { s.gate = { salt: '', hash: '', fails: 0, lockUntil: 0 }; });
+  }
+  /* 返回 { ok, locked, wait }：locked 表示还在惩罚期内，wait 是剩余秒数 */
+  function verifyPin(pin) {
+    var g = cleanGate(read().gate);
+    if (!g.hash) return { ok: true, locked: false, wait: 0 };
+    var now = Date.now();
+    if (g.lockUntil > now) return { ok: false, locked: true, wait: Math.ceil((g.lockUntil - now) / 1000) };
+    var ok = pinHash(g.salt, String(pin || '')) === g.hash;
+    update(function (_p, s) {
+      var cur = cleanGate(s.gate);
+      if (ok) { cur.fails = 0; cur.lockUntil = 0; }
+      else {
+        cur.fails += 1;
+        if (cur.fails >= 5) { cur.lockUntil = Date.now() + 60000; cur.fails = 0; }
+      }
+      s.gate = cur;
+    });
+    return { ok: ok, locked: false, wait: 0 };
   }
 
   /* 归档槽：profileId -> { checkins: [], flowers: [] } */
@@ -129,8 +202,13 @@
       SKILLS.forEach(function (k) { p.skills[k] = Math.max(0, intIn(p.skills[k], 0, 1e9, 0)); });
 
       if (!p.settings || typeof p.settings !== 'object' || Array.isArray(p.settings)) p.settings = {};
-      ['voice', 'sfx', 'reduceMotion'].forEach(function (k) {
+      ['voice', 'sfx', 'reduceMotion', 'bedtimeOn'].forEach(function (k) {
         if (typeof p.settings[k] !== 'boolean') p.settings[k] = base.settings[k];
+      });
+      /* 0 = 不限制；允许 5–240 分钟，避免导入一份 999999 分钟把限制变成隐形关闭 */
+      p.settings.screenLimit = intIn(p.settings.screenLimit, 0, 240, 0);
+      ['bedtimeStart', 'bedtimeEnd'].forEach(function (k) {
+        p.settings[k] = TIME.test(String(p.settings[k] || '')) ? p.settings[k] : base.settings[k];
       });
 
       var levels = {};
@@ -172,6 +250,38 @@
         });
       }
       p.strategyCount = counts;
+
+      /* 使用时长：只保留"今天"的计数，跨天的旧数据直接归零（不参与统计） */
+      var today = U.today();
+      if (!p.usage || typeof p.usage !== 'object' || Array.isArray(p.usage)) p.usage = { date: today, seconds: 0 };
+      p.usage.date = DAY.test(String(p.usage.date || '')) ? p.usage.date : today;
+      p.usage.seconds = p.usage.date === today ? Math.max(0, intIn(p.usage.seconds, 0, 86400, 0)) : 0;
+      if (p.usage.date !== today) p.usage.date = today;
+
+      /* 故事分支探索：只保留当前课程里真实存在的节点，防止导入的怪 id 无限增长 */
+      var storyNodes = null;
+      try {
+        storyNodes = {};
+        (data().stories || []).forEach(function (st) {
+          storyNodes[st.id] = {};
+          Object.keys(st.nodes || {}).forEach(function (n) { storyNodes[st.id][n] = true; });
+        });
+      } catch (e) { storyNodes = null; }
+      var stories = Object.create(null);
+      if (p.stories && typeof p.stories === 'object' && !Array.isArray(p.stories)) {
+        Object.keys(p.stories).slice(0, 50).forEach(function (sid) {
+          if (storyNodes && !storyNodes[sid]) return;
+          var rec = p.stories[sid];
+          if (!rec || typeof rec !== 'object') return;
+          var keep = function (arr) {
+            return (Array.isArray(arr) ? arr : []).filter(function (n) {
+              return typeof n === 'string' && (!storyNodes || storyNodes[sid][n]);
+            }).filter(function (n, i, a) { return a.indexOf(n) === i; }).slice(0, 200);
+          };
+          stories[sid] = { nodes: keep(rec.nodes), endings: keep(rec.endings) };
+        });
+      }
+      p.stories = stories;
       return p;
     }).filter(Boolean);
 
@@ -208,6 +318,7 @@
     s.profiles.forEach(function (p) { alive[p.id] = true; });
     Object.keys(arch).forEach(function (pid) { if (!alive[pid]) delete arch[pid]; });
     s.archive = arch;
+    s.gate = cleanGate(s.gate);
     return s;
   }
 
@@ -378,6 +489,149 @@
     update(function (p) { p.strategyCount[id] = (p.strategyCount[id] || 0) + 1; });
   }
 
+  /* ---------- 使用时长 ---------- */
+  function usageToday() {
+    var p = current();
+    if (!p.usage || p.usage.date !== U.today()) return 0;
+    return Math.max(0, p.usage.seconds || 0);
+  }
+  function addUsage(seconds) {
+    var n = Math.max(0, Math.round(Number(seconds) || 0));
+    if (!n) return usageToday();
+    return update(function (p) {
+      var today = U.today();
+      if (!p.usage || p.usage.date !== today) p.usage = { date: today, seconds: 0 };
+      p.usage.seconds = Math.min(86400, p.usage.seconds + n);
+      return p.usage.seconds;
+    });
+  }
+
+  /* ---------- 故事分支探索 ---------- */
+  function markStoryNode(storyId, nodeId, ending) {
+    if (typeof storyId !== 'string' || typeof nodeId !== 'string') return;
+    update(function (p) {
+      if (!p.stories || typeof p.stories !== 'object') p.stories = {};
+      var rec = p.stories[storyId];
+      if (!rec || typeof rec !== 'object') rec = p.stories[storyId] = { nodes: [], endings: [] };
+      if (!Array.isArray(rec.nodes)) rec.nodes = [];
+      if (!Array.isArray(rec.endings)) rec.endings = [];
+      if (rec.nodes.indexOf(nodeId) < 0) rec.nodes.push(nodeId);
+      if (ending && rec.endings.indexOf(nodeId) < 0) rec.endings.push(nodeId);
+    });
+  }
+  function storyProgress(storyId) {
+    var p = current();
+    var rec = (p.stories || {})[storyId];
+    var story = null;
+    try { story = (data().stories || []).filter(function (s) { return s.id === storyId; })[0] || null; } catch (e) {}
+    var nodes = story ? Object.keys(story.nodes || {}) : [];
+    var endings = story ? nodes.filter(function (k) {
+      var n = story.nodes[k] || {};
+      return n.ending === true || !n.choices || !n.choices.length;
+    }) : [];
+    var seenEndings = rec && Array.isArray(rec.endings)
+      ? rec.endings.filter(function (k) { return endings.indexOf(k) >= 0; }) : [];
+    return {
+      seen: rec && Array.isArray(rec.nodes) ? rec.nodes.length : 0,
+      total: nodes.length,
+      endingsSeen: seenEndings.length,
+      endingsTotal: endings.length,
+      endingsRemaining: Math.max(0, endings.length - seenEndings.length)
+    };
+  }
+
+  /* ---------- 情绪趋势 / 策略有效性 ---------- */
+  /* 归档记录在前、展示区在后，按日期与写入时间排好序；"下一次签到"才有意义 */
+  function allCheckinsSorted() {
+    var p = current();
+    var arc = (read().archive || {})[p.id];
+    var archived = arc && Array.isArray(arc.checkins) ? arc.checkins : [];
+    return archived.concat(p.checkins).slice().sort(function (a, b) {
+      if (a.date === b.date) return String(a.at || '').localeCompare(String(b.at || ''));
+      return a.date < b.date ? -1 : 1;
+    });
+  }
+
+  function checkinTrend(days) {
+    var n = Math.max(1, Math.min(90, Math.round(Number(days) || 14)));
+    var buckets = Object.create(null);
+    allCheckinsSorted().forEach(function (c) {
+      var b = buckets[c.date] || (buckets[c.date] = { sum: 0, count: 0 });
+      b.sum += c.intensity || 0;
+      b.count += 1;
+    });
+    var out = [];
+    for (var i = n - 1; i >= 0; i--) {
+      var day = U.daysAgo(i);
+      var b = buckets[day];
+      out.push({ date: day, count: b ? b.count : 0, avg: b && b.count ? b.sum / b.count : null });
+    }
+    return out;
+  }
+
+  function strategyEffect() {
+    var list = allCheckinsSorted();
+    var acc = Object.create(null);
+    for (var i = 0; i < list.length - 1; i++) {
+      var c = list[i], next = list[i + 1];
+      if (!c.strategy || !next || typeof next.intensity !== 'number') continue;
+      var gap = U.dayDiff(c.date, next.date);
+      /* 只看一周内的下一次签到：隔了半个月再比，中间发生的事太多了 */
+      if (gap < 0 || gap > 7) continue;
+      var a = acc[c.strategy] || (acc[c.strategy] = { n: 0, sum: 0, down: 0, up: 0, same: 0 });
+      var delta = next.intensity - (c.intensity || 0);
+      a.n += 1; a.sum += delta;
+      if (delta < 0) a.down += 1; else if (delta > 0) a.up += 1; else a.same += 1;
+    }
+    var names = Object.create(null);
+    try { (data().strategies || []).forEach(function (s) { names[s.id] = s.name; }); } catch (e) {}
+    return Object.keys(acc).map(function (id) {
+      var a = acc[id];
+      return {
+        id: id, name: names[id] || id, n: a.n,
+        avgDelta: a.sum / a.n, down: a.down, up: a.up, same: a.same,
+        downRate: a.down / a.n
+      };
+    }).sort(function (x, y) { return y.n - x.n; });
+  }
+
+  /* 本周建议：从练得最少的能力里挑还没做的关卡；整岛都做完了就建议重玩星星最少的一关 */
+  function recommendLevels(limit) {
+    var n = Math.max(1, Math.min(5, Math.round(Number(limit) || 3)));
+    var p = current();
+    var islands = (data().islands || []).slice().sort(function (a, b) {
+      return (p.skills[a.id] || 0) - (p.skills[b.id] || 0);
+    });
+    var out = [];
+    islands.forEach(function (is) {
+      if (out.length >= n) return;
+      var levels = is.levels || [];
+      var pick = null, idx = -1;
+      for (var i = 0; i < levels.length; i++) {
+        var rec = p.levels[levels[i].id];
+        if (!(rec && rec.done) && isLevelUnlocked(is, i, p)) { pick = levels[i]; idx = i; break; }
+      }
+      if (pick) {
+        out.push({
+          island: is, level: pick, index: idx,
+          reason: (p.skills[is.id] || 0) === 0 ? '这一项还没开始练' : '这一项练得最少'
+        });
+        return;
+      }
+      /* 全做完了：找星数最少的一关重玩，保持练习不断档 */
+      var low = null;
+      levels.forEach(function (lv, i) {
+        var r = p.levels[lv.id];
+        if (!r || !r.done) return;
+        if (!low || r.stars < low.stars) low = { level: lv, stars: r.stars, index: i };
+      });
+      if (low && out.length < n) {
+        out.push({ island: is, level: low.level, index: low.index, reason: '可以再玩一次，把星星补满' });
+      }
+    });
+    return out;
+  }
+
   function setSetting(key, value) {
     update(function (p) { p.settings[key] = value; });
   }
@@ -479,6 +733,10 @@
     isIslandUnlocked: isIslandUnlocked, isLevelUnlocked: isLevelUnlocked,
     addStars: addStars, unlockSticker: unlockSticker, completeLevel: completeLevel,
     addSkill: addSkill, addCheckin: addCheckin, practiceStrategy: practiceStrategy,
+    addUsage: addUsage, usageToday: usageToday,
+    markStoryNode: markStoryNode, storyProgress: storyProgress,
+    checkinTrend: checkinTrend, strategyEffect: strategyEffect, recommendLevels: recommendLevels,
+    pinSet: pinSet, setPin: setPin, clearPin: clearPin, verifyPin: verifyPin,
     setSetting: setSetting, createProfile: createProfile, setActive: setActive,
     removeProfile: removeProfile, resetProfile: resetProfile,
     exportSave: exportSave, importSave: importSave, stats: stats

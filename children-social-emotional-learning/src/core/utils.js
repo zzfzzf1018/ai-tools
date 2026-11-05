@@ -44,6 +44,33 @@
     return today(d);
   }
 
+  /* 日期字符串按本地中午解析：避开夏令时/时区导致的 23/25 小时偏差 */
+  function parseDay(s) {
+    var p = String(s || '').split('-');
+    if (p.length !== 3) return null;
+    var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]), 12, 0, 0, 0);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  function dayDiff(a, b) {
+    var da = parseDay(a), db = parseDay(b);
+    if (!da || !db) return NaN;
+    return Math.round((db - da) / 86400000);
+  }
+  function addDays(s, n) {
+    var d = parseDay(s);
+    if (!d) return s;
+    d.setDate(d.getDate() + (Number(n) || 0));
+    return today(d);
+  }
+  /* 本周一（周一为一周开始），返回 YYYY-MM-DD */
+  function weekStart(s) {
+    var d = parseDay(s || today());
+    if (!d) return today();
+    var wd = (d.getDay() + 6) % 7;
+    d.setDate(d.getDate() - wd);
+    return today(d);
+  }
+
   function $(sel, root) { return (root || document).querySelector(sel); }
   function $$(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
 
@@ -72,6 +99,7 @@
   window.SEL.utils = {
     esc: esc, shuffle: shuffle, clamp: clamp, pad: pad, today: today,
     prettyDate: prettyDate, uid: uid, daysAgo: daysAgo, cut: cut,
+    parseDay: parseDay, dayDiff: dayDiff, addDays: addDays, weekStart: weekStart,
     $: $, $$: $$, delegate: delegate, joinSay: joinSay
   };
 })();

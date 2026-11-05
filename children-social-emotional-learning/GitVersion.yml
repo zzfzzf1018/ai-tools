@@ -5,7 +5,9 @@
 workflow: GitHubFlow/v1
 tag-prefix: '^children-social-emotional-learning-v'
 update-build-number: false
-commit-message-incrementing: Disabled
+# 默认按 Patch 递增；带功能批次的提交在 message 里写 `+semver: minor`
+# （或 `+semver: major`）时按语义化版本升级。否则每个功能发布都只能占用补丁号。
+commit-message-incrementing: Enabled
 branches:
   main:
     increment: Patch
