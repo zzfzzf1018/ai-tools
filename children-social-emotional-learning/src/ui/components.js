@@ -57,6 +57,34 @@
       '<button class="top-btn" data-nav="#/parent" title="家长/老师专区" aria-label="家长专区">👨‍👩‍👧</button>';
   }
 
+  /* 彩带/练习计时等"短暂动画"用的计时器登记：弹窗关闭或路由切换时统一清掉，
+     避免脱离 DOM 的节点背后还挂着一两个计时器空转 */
+  var transient = [];
+  function later(fn, ms) {
+    var entry = { id: null, kind: 't' };
+    entry.id = setTimeout(function () {
+      transient = transient.filter(function (x) { return x !== entry; });
+      fn();
+    }, ms);
+    transient.push(entry);
+    return entry.id;
+  }
+  function every(fn, ms) {
+    var entry = { id: setInterval(fn, ms), kind: 'i' };
+    transient.push(entry);
+    entry.stop = function () {
+      clearInterval(entry.id);
+      transient = transient.filter(function (x) { return x !== entry; });
+    };
+    return entry.stop;
+  }
+  function clearTransient() {
+    transient.splice(0).forEach(function (x) {
+      try { if (x.kind === 'i') clearInterval(x.id); else clearTimeout(x.id); } catch (e) {}
+    });
+    U.$$('.confetti', document.body).forEach(function (e) { e.remove(); });
+  }
+
   function toast(msg) {
     var layer = document.getElementById('toast-layer');
     if (!layer) return;
@@ -73,7 +101,7 @@
     try { if (window.SEL.state.current().settings.reduceMotion === true) return; } catch (e) {}
     for (var i = 0; i < n; i++) {
       (function (i) {
-        setTimeout(function () {
+        later(function () {
           var e = document.createElement('span');
           e.className = 'confetti';
           e.textContent = confettiEmoji[Math.floor(Math.random() * confettiEmoji.length)];
@@ -81,7 +109,7 @@
           e.style.top = (58 + Math.random() * 24) + 'vh';
           e.style.fontSize = (18 + Math.random() * 22) + 'px';
           document.body.appendChild(e);
-          setTimeout(function () { e.remove(); }, 1400);
+          later(function () { e.remove(); }, 1400);
         }, i * 55);
       })(i);
     }
@@ -135,6 +163,8 @@
   }
 
   function closeModal() {
+    /* 弹窗一关，挂在它上面的彩带/练习计时立刻停，不留后台空转 */
+    clearTransient();
     var ov = document.getElementById('overlay');
     if (ov) {
       var back = ov._lastFocus;
@@ -170,6 +200,7 @@
     say: say, getSay: getSay, resetSay: resetSay, speakBtn: speakBtn,
     starRow: starRow, progressBar: progressBar, sectionHead: sectionHead,
     guideRow: guideRow, topbar: topbar, toast: toast, confetti: confetti,
+    later: later, every: every, clearTransient: clearTransient,
     modal: modal, closeModal: closeModal, confirm: confirm, emptyState: emptyState
   };
 })();

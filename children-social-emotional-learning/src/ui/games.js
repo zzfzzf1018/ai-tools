@@ -412,7 +412,7 @@
       };
     }
     var nodes = story.nodes || {};
-    var goodCount = 0, steps = 0, effects = [];
+    var steps = 0;
     var html = '<div class="game-prompt center">' + U.esc(story.cover || '📖') + ' ' + U.esc(story.title) + '</div>' +
       '<div class="story-panel" data-story></div>';
 
@@ -420,6 +420,9 @@
       html: html,
       mount: function (root) {
         var panel = U.$('[data-story]', root);
+        /* 故事里的能力点只在「第一次走完这个关卡」时累加：
+           重玩可以继续探索别的分支，但不会把同一份练习反复记成新的能力点 */
+        var firstPlay = !(S.current().levels[level.id] && S.current().levels[level.id].done);
         function pathDots() {
           var max = 4, s = '<div class="story-path">';
           for (var i = 0; i < max; i++) s += '<span class="' + (i < steps ? 'on' : '') + '"></span>';
@@ -455,11 +458,6 @@
           var node = nodes[currentId] || {};
           var c = (node.choices || [])[Number(t.getAttribute('data-ci'))] || {};
           Audio.sfx('select');
-          if (c.good) goodCount++;
-          if (c.effect && c.effect.skill) {
-            effects.push(c.effect);
-            S.addSkill(c.effect.skill, c.effect.delta || 1);
-          }
           U.$$('.option-btn', panel).forEach(function (b) { b.disabled = true; b.classList.add('dim'); });
           t.classList.remove('dim'); t.classList.add('picked');
           var box = document.createElement('div');
@@ -471,6 +469,10 @@
           Audio.speak(strip(c.feedback || ''));
           U.$('[data-go]', box).addEventListener('click', function () {
             steps++;
+            /* 点「继续故事」才算真的选定了这条路：只点开看看又离开，不写库 */
+            if (firstPlay && c.effect && c.effect.skill) {
+              S.addSkill(c.effect.skill, c.effect.delta || 1);
+            }
             currentId = c.next || currentId;
             draw(currentId);
           });

@@ -13,6 +13,9 @@
   var DAY = /^\d{4}-\d{2}-\d{2}$/;
   var MAX_CHECKINS = 400;
   var MAX_FLOWERS = 365;      // 约一年的心情花，避免 localStorage 无限增长
+  /* 超出展示上限的记录不丢弃，搬进 archive（随存档一起导出/导入），上限再给一个很宽的天花板 */
+  var MAX_ARCHIVE_CHECKINS = 2000;
+  var MAX_ARCHIVE_FLOWERS = 1000;
   var MAX_IMPORT = 5 * 1024 * 1024;
 
   function intIn(v, lo, hi, dflt) {
@@ -47,7 +50,47 @@
 
   function freshSave() {
     var p = freshProfile('小探险家', 'cloud');
-    return { version: 1, activeId: p.id, profiles: [p] };
+    return { version: 1, activeId: p.id, profiles: [p], archive: {} };
+  }
+
+  /* 归档槽：profileId -> { checkins: [], flowers: [] } */
+  function archiveSlot(s, pid) {
+    if (!s.archive || typeof s.archive !== 'object' || Array.isArray(s.archive)) s.archive = {};
+    var a = s.archive[pid];
+    if (!a || typeof a !== 'object') a = s.archive[pid] = { checkins: [], flowers: [] };
+    if (!Array.isArray(a.checkins)) a.checkins = [];
+    if (!Array.isArray(a.flowers)) a.flowers = [];
+    return a;
+  }
+
+  function cleanCheckins(list) {
+    return (Array.isArray(list) ? list : []).filter(function (c) {
+      return c && typeof c === 'object' && typeof c.date === 'string' && DAY.test(c.date) &&
+        typeof c.emotion === 'string' && c.emotion;
+    }).map(function (c) {
+      return {
+        date: c.date, emotion: str(c.emotion, 40),
+        intensity: intIn(c.intensity, 1, 5, 3),
+        reason: str(c.reason, 500),
+        strategy: str(c.strategy, 40),
+        note: str(c.note, 500),
+        at: str(c.at, 40)
+      };
+    });
+  }
+
+  function cleanFlowers(list) {
+    return (Array.isArray(list) ? list : []).filter(function (f) {
+      return f && typeof f === 'object' && typeof f.date === 'string' && DAY.test(f.date) &&
+        typeof f.emotion === 'string' && f.emotion;
+    }).map(function (f) {
+      return {
+        id: str(f.id, 60) || U.uid('f'),
+        date: f.date, emotion: str(f.emotion, 40),
+        color: typeof f.color === 'string' && HEX.test(f.color) ? f.color : '#FFC94A',
+        petal: intIn(f.petal, 0, 4, 0)
+      };
+    });
   }
 
   /* 把任意来源（旧版本存档 / 用户导入文件）修成可用结构；无法修复时返回 null。
@@ -109,31 +152,8 @@
         return true;
       });
 
-      p.checkins = (Array.isArray(p.checkins) ? p.checkins : []).filter(function (c) {
-        return c && typeof c === 'object' && typeof c.date === 'string' && DAY.test(c.date) &&
-          typeof c.emotion === 'string' && c.emotion;
-      }).map(function (c) {
-        return {
-          date: c.date, emotion: str(c.emotion, 40),
-          intensity: intIn(c.intensity, 1, 5, 3),
-          reason: str(c.reason, 500),
-          strategy: str(c.strategy, 40),
-          note: str(c.note, 500),
-          at: str(c.at, 40)
-        };
-      }).slice(-MAX_CHECKINS);
-
-      p.flowers = (Array.isArray(p.flowers) ? p.flowers : []).filter(function (f) {
-        return f && typeof f === 'object' && typeof f.date === 'string' && DAY.test(f.date) &&
-          typeof f.emotion === 'string' && f.emotion;
-      }).map(function (f) {
-        return {
-          id: str(f.id, 60) || U.uid('f'),
-          date: f.date, emotion: str(f.emotion, 40),
-          color: typeof f.color === 'string' && HEX.test(f.color) ? f.color : '#FFC94A',
-          petal: intIn(f.petal, 0, 4, 0)
-        };
-      }).slice(-MAX_FLOWERS);
+      p.checkins = cleanCheckins(p.checkins);
+      p.flowers = cleanFlowers(p.flowers);
 
       var counts = {};
       if (p.strategyCount && typeof p.strategyCount === 'object' && !Array.isArray(p.strategyCount)) {
@@ -148,6 +168,36 @@
     if (!s.profiles.length) return null;
     if (s.profiles.length > 12) s.profiles = s.profiles.slice(0, 12);
     if (!s.profiles.some(function (p) { return p.id === s.activeId; })) s.activeId = s.profiles[0].id;
+
+    /* 超上限的记录不丢：搬进归档，跟着存档一起导出/导入 */
+    var arch = {};
+    if (s.archive && typeof s.archive === 'object' && !Array.isArray(s.archive)) {
+      Object.keys(s.archive).forEach(function (pid) {
+        var a = s.archive[pid];
+        if (!a || typeof a !== 'object') return;
+        arch[pid] = {
+          checkins: cleanCheckins(a.checkins).slice(-MAX_ARCHIVE_CHECKINS),
+          flowers: cleanFlowers(a.flowers).slice(-MAX_ARCHIVE_FLOWERS)
+        };
+      });
+    }
+    s.profiles.forEach(function (p) {
+      if (p.checkins.length > MAX_CHECKINS) {
+        var slotC = arch[p.id] || (arch[p.id] = { checkins: [], flowers: [] });
+        slotC.checkins = slotC.checkins.concat(p.checkins.slice(0, p.checkins.length - MAX_CHECKINS)).slice(-MAX_ARCHIVE_CHECKINS);
+        p.checkins = p.checkins.slice(-MAX_CHECKINS);
+      }
+      if (p.flowers.length > MAX_FLOWERS) {
+        var slotF = arch[p.id] || (arch[p.id] = { checkins: [], flowers: [] });
+        slotF.flowers = slotF.flowers.concat(p.flowers.slice(0, p.flowers.length - MAX_FLOWERS)).slice(-MAX_ARCHIVE_FLOWERS);
+        p.flowers = p.flowers.slice(-MAX_FLOWERS);
+      }
+    });
+    /* 档案删掉后，别把它的归档留成孤儿数据 */
+    var alive = {};
+    s.profiles.forEach(function (p) { alive[p.id] = true; });
+    Object.keys(arch).forEach(function (pid) { if (!alive[pid]) delete arch[pid]; });
+    s.archive = arch;
     return s;
   }
 
@@ -290,13 +340,21 @@
         note: str(entry.note, 500),
         at: new Date().toISOString()
       });
-      if (p.checkins.length > MAX_CHECKINS) p.checkins = p.checkins.slice(-MAX_CHECKINS);
+      if (p.checkins.length > MAX_CHECKINS) {
+        var arcC = archiveSlot(s, p.id);
+        arcC.checkins = arcC.checkins.concat(p.checkins.slice(0, p.checkins.length - MAX_CHECKINS)).slice(-MAX_ARCHIVE_CHECKINS);
+        p.checkins = p.checkins.slice(-MAX_CHECKINS);
+      }
       p.flowers.push({
         id: U.uid('f'), date: day, emotion: str(entry.emotion, 40),
         color: typeof entry.color === 'string' && HEX.test(entry.color) ? entry.color : '#FFC94A',
         petal: Math.floor(Math.random() * 5)
       });
-      if (p.flowers.length > MAX_FLOWERS) p.flowers = p.flowers.slice(-MAX_FLOWERS);
+      if (p.flowers.length > MAX_FLOWERS) {
+        var arcF = archiveSlot(s, p.id);
+        arcF.flowers = arcF.flowers.concat(p.flowers.slice(0, p.flowers.length - MAX_FLOWERS)).slice(-MAX_ARCHIVE_FLOWERS);
+        p.flowers = p.flowers.slice(-MAX_FLOWERS);
+      }
       if (firstToday) p.stars += 1;
       p.lastVisit = today;
     });
@@ -327,12 +385,14 @@
     update(function (_p, s) {
       if (s.profiles.length <= 1) return;
       s.profiles = s.profiles.filter(function (x) { return x.id !== id; });
+      if (s.archive) delete s.archive[id];
       if (s.activeId === id) s.activeId = s.profiles[0].id;
     });
   }
 
   function resetProfile(id) {
     update(function (_p, s) {
+      if (s.archive) delete s.archive[id];   /* 清空进度也包括归档，避免旧记录被导出回来 */
       s.profiles = s.profiles.map(function (p) {
         if (p.id !== id) return p;
         var f = freshProfile(p.name, p.avatar);
@@ -375,10 +435,12 @@
     }
     var emotionCount = {};
     p.checkins.forEach(function (c) { emotionCount[c.emotion] = (emotionCount[c.emotion] || 0) + 1; });
+    var arc = (read().archive || {})[p.id];
     return {
       totalLevels: levels.length, doneLevels: done,
       stars: p.stars, stickers: p.stickers.length,
       checkins: p.checkins.length, streak: streak,
+      archivedCheckins: arc && Array.isArray(arc.checkins) ? arc.checkins.length : 0,
       skills: p.skills, emotionCount: emotionCount,
       strategyCount: p.strategyCount
     };
@@ -386,7 +448,7 @@
 
   window.SEL.state = {
     SKILLS: SKILLS,
-    limits: { checkins: MAX_CHECKINS, flowers: MAX_FLOWERS },
+    limits: { checkins: MAX_CHECKINS, flowers: MAX_FLOWERS, archivedCheckins: MAX_ARCHIVE_CHECKINS, archivedFlowers: MAX_ARCHIVE_FLOWERS },
     get memoryOnly() { return memoryOnly; },
     save: read, current: current, profiles: function () { return read().profiles; },
     update: update, data: data, allLevels: allLevels, findLevel: findLevel,

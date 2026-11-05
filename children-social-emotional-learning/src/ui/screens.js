@@ -100,7 +100,7 @@
 
       '<div class="grid grid-2">' +
         '<div class="card"><h3>🌤 每天心情签到</h3>' +
-          '<p class="muted">选一个现在的情绪、说说为什么，再种一朵心情花。每天第一次签到会得 1 颗星，连着签几天还能在首页和成长记录里看到连续天数。</p></div>' +
+          '<p class="muted">选一个现在的情绪、说说为什么，再种一朵心情花；最后还可以给自己留一句话（不想写就跳过）。每天第一次签到会得 1 颗星，连着签几天还能在首页和成长记录里看到连续天数。</p></div>' +
         '<div class="card"><h3>🏝️ ' + S.data().islands.length + ' 座小岛 ' + totalLevels() + ' 关</h3>' +
           '<p class="muted">用星星解锁新岛，按顺序玩更顺。每关有情境选择、连一连、排顺序等 ' + gameTypeCount() + ' 种小游戏，完成得星星和贴纸。</p></div>' +
         '<div class="card"><h3>🧰 冷静工具箱</h3>' +
@@ -294,7 +294,7 @@
   function checkin() {
     var list = D().emotions || [];
     var strategies = D().strategies || [];
-    var state = { step: 0, emotion: null, intensity: 3, reason: '', strategy: null };
+    var state = { step: 0, emotion: null, intensity: 3, reason: '', strategy: null, note: '' };
     var html = backRow('#/home', '回首页') +
       UI.sectionHead('今天的心情签到', '四小步，种一朵属于今天的花', 'DAILY CHECK-IN') +
       '<div class="step-dots" data-dots></div>' +
@@ -351,20 +351,25 @@
             '<div class="center"><b>' + esc(em3.name || '') + ' · ' + state.intensity + ' 格</b>' +
             (state.reason ? '<div class="small muted">因为：' + esc(state.reason) + '</div>' : '') +
             '<p class="small muted" style="margin-top:8px">' + (doneToday ? '今天已经记过一次，还可以再种一朵。' : '今天的第一次签到，会收到 1 颗星 ⭐') + '</p></div>' +
+            '<h4 style="margin:16px 0 8px">想给自己留一句话吗？（可以不写）✏️</h4>' +
+            '<textarea class="text-input" data-note rows="2" maxlength="120" ' +
+            'placeholder="比如：今天体育课跑步赢了，我特别开心" aria-label="今天想留下的一句话">' + esc(state.note) + '</textarea>' +
             '<div class="row" style="margin-top:18px"><button class="btn ghost" data-back>← 上一步</button>' +
             '<button class="btn green" data-plant>种下这朵花 🌱</button></div>';
         }
         body.innerHTML = s;
-        bindRange();
+        bindInputs();
       }
 
-      /* 每次重绘只需给新的滑块绑事件；事件委托在下面只注册一次，避免重复触发 */
-      function bindRange() {
+      /* 每次重绘只需给新的滑块/输入框绑事件；事件委托在下面只注册一次，避免重复触发 */
+      function bindInputs() {
         var range = U.$('[data-range]', body);
         if (range) range.addEventListener('input', function () {
           state.intensity = Number(range.value);
           var v = U.$('[data-val]', body); if (v) v.textContent = range.value;
         });
+        var note = U.$('[data-note]', body);
+        if (note) note.addEventListener('input', function () { state.note = note.value.slice(0, 120); });
       }
 
       (function bindOnce() {
@@ -394,8 +399,9 @@
           var em = list.filter(function (x) { return x.id === state.emotion; })[0] || {};
           var r = S.addCheckin({
             date: U.today(), emotion: state.emotion, intensity: state.intensity,
-            reason: state.reason, strategy: state.strategy, color: em.color || '#FFC94A'
+            reason: state.reason, strategy: state.strategy, note: state.note, color: em.color || '#FFC94A'
           });
+          state.note = '';
           Audio.sfx('plant'); UI.confetti(14);
           UI.modal({
             title: '种好啦 🌷', art: A.flower(em.color || '#FFC94A', 1, 110),
@@ -461,8 +467,9 @@
       var left = seconds;
       U.$('[data-modal-act="start"]', run).disabled = true;
       Audio.unlock(); Audio.sfx('pop');
-      var timer = setInterval(function () {
-        if (!document.body.contains(run)) { clearInterval(timer); return; }
+      /* 用 UI.every 登记，弹窗一关（closeModal）计时器立刻被清掉，不会在后台空转 */
+      var tick = UI.every(function () {
+        if (!document.body.contains(run)) { tick(); return; }
         left--;
         var phase = isBreath ? (left % 8) : 0;
         if (isBreath) {
@@ -476,7 +483,7 @@
         }
         if (left % 4 === 0) Audio.sfx('bubble');
         if (left <= 0) {
-          clearInterval(timer);
+          tick();
           orb.className = 'breath-orb';
           orb.textContent = '做到啦';
           cue.textContent = '你刚刚给自己留了一点点空间 🌿';
@@ -500,13 +507,15 @@
     flowers.forEach(function (f) { counts[f.emotion] = (counts[f.emotion] || 0) + 1; });
     var emotionName = {};
     (D().emotions || []).forEach(function (e) { emotionName[e.id] = e; });
+    var strategyName = {};
+    (D().strategies || []).forEach(function (x) { strategyName[x.id] = x.name; });
     var cap = S.limits ? S.limits.flowers : 365;
     var capped = flowers.length >= cap;
     var html = backRow('#/home', '回首页') +
       UI.sectionHead('心情花园', '每一次签到，都会长出一朵花', 'MIND GARDEN') +
       '<div class="card soft" style="margin-bottom:18px"><div class="spread">' +
         '<div><b>🌷 ' + (capped ? '最近 ' : '一共 ') + flowers.length + ' 朵</b><div class="small muted">' +
-        (capped ? '花园最多留住最近 ' + cap + ' 朵，更早的花会自动收起来；想长期保存可以用家长专区导出备份。'
+        (capped ? '花园里最多摆出最近 ' + cap + ' 朵，更早的花会自动收进档案盒（导出备份时一并保存）。'
                 : '这里有各种各样的心情，每一朵都好好留着。') + '</div></div>' +
         '<button class="btn primary" data-nav="#/checkin">再种一朵 🌱</button></div></div>' +
       (flowers.length ? '<div class="garden-grid">' + flowers.map(function (f, i) {
@@ -534,6 +543,8 @@
           title: U.prettyDate(f.date) + ' 的花', art: A.flower(f.color, f.petal, 100),
           body: '<p><b>' + esc(em.emoji || '') + ' ' + esc(em.name || '') + '</b>' + (rec.intensity ? ' · ' + rec.intensity + ' 格' : '') + '</p>' +
             (rec.reason ? '<p class="muted">因为：' + esc(rec.reason) + '</p>' : '') +
+            (rec.note ? '<div class="feedback-box" style="text-align:left"><b>✏️ 那天写下的</b><div>' + esc(rec.note) + '</div></div>' : '') +
+            (rec.strategy && strategyName[rec.strategy] ? '<p class="small muted">那天试的方法：' + esc(strategyName[rec.strategy]) + '</p>' : '') +
             '<p class="small muted">那天的心情，被好好收起来了 🌿</p>',
           actions: [{ label: '关上', cls: 'primary', close: true }]
         });
@@ -607,6 +618,17 @@
     var emotionRows = emotions.map(function (e) {
       return '<tr><td>' + esc(e.emoji || '') + ' ' + esc(e.name) + '</td><td>' + (st.emotionCount[e.id] || 0) + ' 次</td></tr>';
     }).join('');
+    var emById = {};
+    emotions.forEach(function (e) { emById[e.id] = e; });
+    var recent = p.checkins.slice(-7).reverse();
+    var recentRows = recent.map(function (c) {
+      var e = emById[c.emotion] || {};
+      var words = String(c.note || c.reason || '');
+      /* 窄屏下表格列很窄：日期用 11-05 这种紧凑写法，避免中文日期被折成两行 */
+      return '<tr><td>' + esc(c.date.slice(5)) + '</td>' +
+        '<td>' + esc(e.emoji || '') + ' ' + esc(e.name || c.emotion) + ' · ' + c.intensity + '格</td>' +
+        '<td class="small">' + esc(words.slice(0, 12)) + (words.length > 12 ? '…' : '') + '</td></tr>';
+    }).join('');
     var html = backRow('#/home', '回首页') +
       UI.sectionHead('成长记录', '只记录练习过程，不给孩子的能力打分', 'FOR GROWN-UPS') +
       '<div class="kpi-grid">' +
@@ -621,7 +643,13 @@
           '<p class="small muted center">这是「练过多少次」，不是能力高低，请不要用来比较孩子。</p></div>' +
         '<div class="card"><h3>最近 14 天签到</h3><div class="calendar">' + cal + '</div>' +
           '<h4 style="margin-top:20px">记下过的心情</h4>' +
-          '<table class="data-table"><thead><tr><th>心情</th><th>次数</th></tr></thead><tbody>' + emotionRows + '</tbody></table></div>' +
+          '<table class="data-table"><thead><tr><th>心情</th><th>次数</th></tr></thead><tbody>' + emotionRows + '</tbody></table>' +
+          '<h4 style="margin-top:20px">最近的签到</h4>' +
+          (recent.length ? '<table class="data-table recent-table"><thead><tr><th>日期</th><th>心情</th><th>写下的话</th></tr></thead><tbody>' +
+            recentRows + '</tbody></table>' : '<p class="small muted">还没有签到记录。</p>') +
+          '<p class="small muted" style="margin-top:10px">' +
+            (p.lastVisit ? '最近一次记录：' + esc(U.prettyDate(p.lastVisit)) : '还没有开始记录') + '</p>' +
+          (st.archivedCheckins ? '<p class="small muted">另有 ' + st.archivedCheckins + ' 条更早的签到已自动归档，不会丢，包含在导出备份里。</p>' : '') + '</div>' +
       '</div>' +
       '<div class="card" style="margin-top:20px"><h3>💬 可以一起试试的家庭小练习</h3>' +
         weak.map(function (w) {
@@ -692,9 +720,13 @@
       '<div class="grid grid-2">' +
         '<div class="card"><h3>现在是谁在玩？</h3><div class="stack" style="margin-top:12px">' +
           profiles.map(function (x) {
+            var meta = [];
+            if (x.createdAt) meta.push(esc(U.prettyDate(x.createdAt)) + ' 加入');
+            if (x.lastVisit) meta.push('最近 ' + esc(U.prettyDate(x.lastVisit)));
             return '<div class="profile-item ' + (x.id === active.id ? 'active' : '') + '">' +
               '<span style="width:52px">' + A.buddy(x.avatar, 'happy', 52) + '</span>' +
-              '<div style="flex:1"><b>' + esc(x.name) + '</b><div class="small muted">⭐ ' + x.stars + ' · 签到 ' + x.checkins.length + ' 次</div></div>' +
+              '<div style="flex:1"><b>' + esc(x.name) + '</b><div class="small muted">⭐ ' + x.stars + ' · 签到 ' + x.checkins.length + ' 次</div>' +
+              (meta.length ? '<div class="small muted">' + meta.join(' · ') + '</div>' : '') + '</div>' +
               (x.id === active.id ? '<span class="chip green">正在玩</span>' : '<button class="btn tiny" data-switch="' + esc(x.id) + '">切换</button>') +
               '</div>';
           }).join('') + '</div></div>' +

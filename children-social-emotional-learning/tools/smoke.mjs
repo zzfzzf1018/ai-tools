@@ -90,9 +90,13 @@ try {
   must(!!q('[data-practice]'), '签到第 3 步缺策略练习入口');
   click(q('[data-next]'));
   must(!!q('[data-plant]'), '签到第 4 步缺种花按钮');
+  must(!!q('[data-note]'), '签到第 4 步缺自由备注输入');
+  q('[data-note]').value = '今天和小伙伴搭了积木';
+  q('[data-note]').dispatchEvent(new w.Event('input', { bubbles: true }));
   click(q('[data-plant]'));
   const after = w.SEL.state.current().checkins.length;
   must(after === before + 1, `签到未写入存档: ${before} -> ${after}`);
+  must(w.SEL.state.current().checkins[after - 1].note === '今天和小伙伴搭了积木', '签到备注没有写入存档');
   must(!!q('.modal'), '签到完成弹窗未出现');
   w.SEL.ui.closeModal();
 
@@ -289,7 +293,12 @@ try {
   /* --- 16. 花园 / 贴纸 / 工具箱 --- */
   route('#/garden');
   const flower = q('[data-flower]');
-  if (flower) { click(flower); must(!!q('.modal'), '点击心情花没有打开详情'); w.SEL.ui.closeModal(); }
+  if (flower) {
+    click(flower);
+    must(!!q('.modal'), '点击心情花没有打开详情');
+    must((q('.modal').textContent || '').includes('今天和小伙伴搭了积木'), '花朵详情没有显示签到备注');
+    w.SEL.ui.closeModal();
+  }
   else fails.push('签到后花园里没有花');
   route('#/stickers');
   must(qa('.sticker-card').length === (w.SEL_DATA.stickers || []).length, '贴纸册数量与数据不一致');
@@ -371,9 +380,92 @@ try {
   must(w.SEL.state.current().flowers.length === 365, '心情花上限不是 365 朵');
   const gardenTxt = route('#/garden');
   must(gardenTxt.includes('最近 365 朵'), '花园达到上限时没有写明「最近 N 朵」');
-  must(gardenTxt.includes('自动收起来'), '花园达到上限时没有说明更早的花会被收起来');
+  must(gardenTxt.includes('自动收进档案盒'), '花园达到上限时没有说明更早的花会被归档');
+
+  // 18f 溢出记录自动归档：导出/导入保留，清空进度一并清掉
+  const arcSave = bare();
+  for (let i = 0; i < 402; i++) {
+    arcSave.profiles[0].checkins.push({ date: '2026-11-05', emotion: 'happy', note: 'n' + i });
+  }
+  w.SEL.state.importSave(JSON.stringify(arcSave));
+  const curId = w.SEL.state.current().id;
+  const arcOf = () => (w.SEL.state.save().archive || {})[curId] || null;
+  must(w.SEL.state.current().checkins.length === 400, '签到展示上限不是 400 条');
+  must(!!arcOf() && arcOf().checkins.length === 2, '溢出签到没有被移入归档');
+  must(arcOf() && arcOf().checkins[0].note === 'n0', '归档没有保留最早的记录');
+  w.SEL.state.importSave(w.SEL.state.exportSave());
+  must(!!arcOf() && arcOf().checkins.length === 2, '导出/导入后归档丢失');
+  must((route('#/parent') || '').includes('已自动归档'), '家长面板没有提示归档记录');
+  w.SEL.state.resetProfile(curId);
+  must(!arcOf(), '清空进度后归档仍然存在');
+
+  /* --- 19. 故事：能力点只在「继续故事」时结算，重玩不重复累加 --- */
+  const story2 = all.find(x => x.lv.type === 'story');
+  const sumSkills = () => Object.values(w.SEL.state.current().skills).reduce((a, b) => a + b, 0);
+  const storyData = (w.SEL_DATA.stories || []).find(s => s.id === story2.lv.data.storyId);
+  const startNode = storyData.nodes[storyData.start];
+  const firstChoice = startNode.choices[0];
+  const firstDelta = firstChoice.effect && firstChoice.effect.skill ? (firstChoice.effect.delta || 1) : 0;
+  w.SEL.state.update(p => {
+    p.stars = 999;
+    all.forEach(({ lv }) => {
+      if (lv.id !== story2.lv.id) p.levels[lv.id] = { done: true, stars: 3, attempts: 1, lastAt: '2026-01-01' };
+    });
+    delete p.levels[story2.lv.id];
+  });
+  route('#/level/' + story2.lv.id);
+  const skillAtOpen = sumSkills();
+  click(q('.option-btn'));
+  must(sumSkills() === skillAtOpen, '只点开故事选项、还没继续，就把能力点写进了存档');
+  click(q('[data-go]'));
+  must(sumSkills() === skillAtOpen + firstDelta, `点「继续故事」后能力点结算不对（应为 +${firstDelta}）`);
+  for (let i = 0; i < 8 && !q('[data-finish]'); i++) {
+    const opt = q('.option-btn:not([disabled])');
+    if (!opt) break;
+    click(opt);
+    const go = q('[data-go]');
+    if (go) click(go);
+  }
+  must(!!q('[data-finish]'), '故事（首次）走到结局后没有完成按钮');
+  click(q('[data-finish]'));
+  w.SEL.ui.closeModal();
+  route('#/level/' + story2.lv.id);
+  const replaySkill = sumSkills();
+  for (let i = 0; i < 8 && !q('[data-finish]'); i++) {
+    const opt = q('.option-btn:not([disabled])');
+    if (!opt) break;
+    click(opt);
+    const go = q('[data-go]');
+    if (go) click(go);
+  }
+  must(sumSkills() === replaySkill, '重玩故事仍在重复累加能力点');
 } catch (e) {
   fails.push('测试流程异常: ' + (e && e.stack || e));
+}
+
+/* --- 20. 短暂计时器：弹窗关闭后必须停掉 --- */
+try {
+  /* 前面 route() 排队的 hashchange 会在下一轮事件循环里触发 render()，而 render 会清掉
+     登记的计时器（这正是预期行为）。先等队列排空，否则对照项会被上一次渲染清掉。 */
+  await new Promise(r => setTimeout(r, 100));
+  let fired = false;
+  w.SEL.ui.later(() => { fired = true; }, 60);
+  w.SEL.ui.closeModal();
+  let ticks = 0;
+  w.SEL.ui.every(() => { ticks++; }, 40);
+  w.SEL.ui.closeModal();
+  let alive = 0;
+  const stop2 = w.SEL.ui.every(() => { alive++; }, 40);
+  await new Promise(r => setTimeout(r, 160));
+  stop2();
+  const aliveAfterStop = alive;
+  await new Promise(r => setTimeout(r, 100));
+  must(!fired, '弹窗关闭后，已登记的 setTimeout 仍然执行了');
+  must(ticks === 0, '弹窗关闭后，已登记的 setInterval 仍在运行');
+  must(aliveAfterStop >= 2, 'UI.every 正常计时路径没有生效（对照项失败）');
+  must(alive === aliveAfterStop, '调用 stop 后 interval 仍在运行');
+} catch (e) {
+  fails.push('计时器测试异常: ' + (e && e.stack || e));
 }
 
 const levelCount = (w.SEL_DATA.islands || []).reduce((a, i) => a + i.levels.length, 0);

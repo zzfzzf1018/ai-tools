@@ -182,6 +182,12 @@ Object.keys(d.checkinReasons || {}).forEach(id => {
       if (!has(c, 'text')) E(`故事 ${s.id}/${k} 选项缺 text`);
       if (!nodes[c.next]) E(`故事 ${s.id}/${k} 死链 -> ${c.next}`);
       if (c.effect && !ISLAND_IDS.includes(c.effect.skill)) E(`故事 ${s.id}/${k} effect.skill 非法`);
+      if (c.effect) {
+        const d = c.effect.delta;
+        if (!(typeof d === 'number' && Number.isInteger(d) && d >= 1 && d <= 3)) {
+          W(`故事 ${s.id}/${k} effect.delta 应是 1–3 的整数，当前为 ${d}`);
+        }
+      }
     });
     else if (!has(n, 'moral')) W(`故事 ${s.id}/${k} 结局缺 moral`);
   });
