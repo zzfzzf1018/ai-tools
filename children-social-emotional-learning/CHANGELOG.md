@@ -2,6 +2,12 @@
 
 本文件记录心晴岛（Sunny Isles）的版本变更。版本号遵循语义化版本（SemVer），并与 git tag `children-social-emotional-learning-vX.Y.Z` 对应。
 
+## [1.1.1] - 修复 Web 发布包缺失 PWA 资源
+
+- **发布包（严重）**：`1.1.0` 的 `SunnyIsles-SEL-1.1.0-web.zip` 只打包了 `index.html`、`src`、`desktop` 与文档，漏掉了 `manifest.webmanifest`、`sw.js` 与 `icons/`。用户下载后能正常打开网页，但**装不到桌面、也离线不了**。现在 Web 包会一并带上 PWA 三件套，并在打包后重新打开 zip 逐项核对，缺文件直接让发布失败。
+- **预览服务**：`desktop/serve.mjs` 为 `.webmanifest` 补上 `application/manifest+json`（此前落到 `application/octet-stream`，Chrome 不认安装清单）；入口 HTML、脚本与清单改为 `no-store`，避免换了版本浏览器还在用旧的 `sw.js`。
+- **测试**：`verify` 新增两项契约检查——`release.cjs` 的 Web 打包清单必须含 PWA 三件套、预览服务必须给 `.webmanifest` 正确 MIME，防止同类漏打包再次发生。
+
 ## [1.1.0] - 情绪急救、家长洞察与离线安装
 
 - **情绪急救悬浮按钮**：所有儿童页面右下角新增「冷静 60 秒」按钮，任何页面一键打开 60 秒呼吸（4-2-6 节奏），只盖一层弹窗、不换路由、不重绘当前关卡；关掉就回到刚才那一题，练习完成计入冷静工具箱次数。

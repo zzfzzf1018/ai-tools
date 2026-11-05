@@ -18,6 +18,9 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png',
+  // Service Worker / 清单必须是标准 MIME，否则浏览器会拒绝注册或忽略安装提示
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
+  '.ico': 'image/x-icon',
 };
 
 const server = http.createServer((req, res) => {
@@ -54,7 +57,13 @@ const server = http.createServer((req, res) => {
       return;
     }
     const ext = path.extname(filePath).toLowerCase();
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+    // 预览服务要能立刻看到改动：入口与 Service Worker 一律不缓存，
+    // 否则换了版本浏览器还在用旧 sw.js / 旧页面。
+    const noStore = ext === '.html' || ext === '.js' || ext === '.webmanifest';
+    res.writeHead(200, {
+      'Content-Type': MIME[ext] || 'application/octet-stream',
+      'Cache-Control': noStore ? 'no-store' : 'public, max-age=3600',
+    });
     res.end(data);
   });
 });

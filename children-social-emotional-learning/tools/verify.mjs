@@ -304,6 +304,17 @@ else {
 if (!(pkg.build && Array.isArray(pkg.build.files) && pkg.build.files.includes('manifest.webmanifest') && pkg.build.files.includes('sw.js') && pkg.build.files.includes('icons/**/*'))) {
   E('build.files 没有包含 manifest.webmanifest / sw.js / icons，桌面版会缺少 PWA 资源');
 }
+// Web 发布包（release.cjs 的 Compress-Archive 清单）同样必须带上 PWA 三件套，
+// 否则用户下到的 zip 能打开、却装不了也离线不了。
+const releaseSrc = fs.readFileSync(path.join(root, 'scripts/release.cjs'), 'utf8');
+['manifest.webmanifest', 'sw.js', "'icons'"].forEach(k => {
+  if (!releaseSrc.includes(k)) E('release.cjs 的 Web 打包清单缺少 ' + k.replace(/'/g, '') + '，发布出的 web.zip 会没有 PWA 能力');
+});
+// 预览服务必须给 .webmanifest 正确的 MIME，否则 Chrome 不认安装清单
+const serveMimeSrc = fs.readFileSync(path.join(root, 'desktop/serve.mjs'), 'utf8');
+if (!/\.webmanifest'\s*:\s*'application\/manifest\+json/.test(serveMimeSrc)) {
+  E("desktop/serve.mjs 没有为 .webmanifest 配置 application/manifest+json");
+}
 
 /* ---------- Electron 安全基线：这些开关一旦被改掉，儿童安全承诺就失效了 ---------- */
 const mainSrc = fs.readFileSync(path.join(root, 'desktop/main.js'), 'utf8');

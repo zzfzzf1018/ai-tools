@@ -679,6 +679,6 @@ if (fails.length) {
   console.log(`\n--- 失败 (${fails.length}) ---`);
   [...new Set(fails)].forEach(f => console.log('  x ' + f));
 } else if (!runtimeErrors.length) {
-  console.log(`\n✅ 全部页面、${levelCount} 个关卡、签到闭环、7 种题型、解锁链路、存档导入、家长面板与 1.1.0 新功能均通过`);
+  console.log(`\n✅ 全部页面、${levelCount} 个关卡、签到闭环、7 种题型、解锁链路、存档导入、家长面板与 1.1.x 新功能均通过`);
 }
 process.exit(fails.length || runtimeErrors.length ? 1 : 0);

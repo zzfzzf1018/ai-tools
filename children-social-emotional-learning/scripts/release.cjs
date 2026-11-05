@@ -4,6 +4,7 @@ const { createHash } = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const semver = require('semver');
 const { resolveVersion } = require('./version.cjs');
+const { createZip } = require('../tools/lib/zip.cjs');
 
 const projectRoot = path.resolve(__dirname, '..');
 const TAG_RE = /^children-social-emotional-learning-v(\d+\.\d+\.\d+)$/;
@@ -138,29 +139,41 @@ function prepareAssets(root, version) {
   addAsset(portable, portableName);
 
   // Web 版：纯前端文件打包（可用浏览器直接打开或静态托管）
+  // 注意：manifest / Service Worker / 图标必须一起打包，否则「安装到桌面 + 离线启动」失效。
   const webName = `SunnyIsles-SEL-${version.SemVer}-web.zip`;
   const webZip = path.join(destination, webName);
-  const ps = [
-    `Compress-Archive`,
-    `-Path '${path.join(root, 'index.html')}',`,
-    `'${path.join(root, 'src')}',`,
-    `'${path.join(root, 'desktop')}',`,
-    `'${path.join(root, 'README.md')}',`,
-    `'${path.join(root, 'CHANGELOG.md')}'`,
-    `-DestinationPath '${webZip}'`,
-    `-CompressionLevel Optimal -Force`,
-  ].join(' ');
-  const r = spawnSync('powershell', ['-NoProfile', '-Command', ps], {
-    cwd: root,
-    encoding: 'utf8',
-    shell: false,
+  const webEntries = [
+    'index.html',
+    'manifest.webmanifest',
+    'sw.js',
+    'icons',
+    'src',
+    'desktop',
+    'README.md',
+    'CHANGELOG.md',
+  ].map((e) => path.join(root, e));
+  webEntries.forEach((p) => {
+    if (!fs.existsSync(p)) throw new Error(`Web 打包缺文件: ${path.relative(root, p)}`);
   });
-  if (r.error || r.status !== 0) {
-    throw new Error(`Web zip failed: ${r.error?.message || r.stderr || r.stdout}`);
-  }
-  if (!existsFile(webZip)) {
-    throw new Error(`Web zip not created: ${webName}`);
-  }
+  const packed = createZip(webZip, webEntries);
+  // 打完再验一遍：缺了 PWA 文件的包看起来"能跑"，但装不了也离线不了，必须在发布前拦住。
+  // 同时也确认条目名统一用 '/'——反斜杠在 macOS/Linux 解压会变成文件名的一部分，路径全废。
+  const required = [
+    'index.html',
+    'manifest.webmanifest',
+    'sw.js',
+    'icons/icon-192.png',
+    'icons/icon-512.png',
+    'src/main.js',
+    'src/core/screentime.js',
+    'src/ui/calm.js',
+    'desktop/serve.mjs',
+  ];
+  const missing = required.filter((f) => !packed.includes(f));
+  if (missing.length) throw new Error(`web.zip 缺少 PWA 文件: ${missing.join(', ')}`);
+  const backslash = packed.filter((f) => f.includes('\\'));
+  if (backslash.length) throw new Error(`web.zip 条目名用了反斜杠: ${backslash.slice(0, 3).join(', ')}`);
+  if (!existsFile(webZip)) throw new Error(`Web zip not created: ${webName}`);
   addAsset(webZip, webName);
 
   fs.writeFileSync(

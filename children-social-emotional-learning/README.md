@@ -42,7 +42,7 @@
 
 - 直接**双击 `index.html`**，用浏览器打开即可（以 `file://` 运行，无需服务器、无需联网）。
 - 或运行 `start-web.bat`（会尝试起一个本地静态服务并打开页面）。
-- **安装到桌面（PWA）**：用 `npm run serve`（http://127.0.0.1:5173）或任意静态托管打开后，浏览器会提示「安装心晴岛」。安装后断网也能启动；Service Worker 会缓存全部脚本与图标（`file://` 下不注册，双击打开仍然可用）。
+- **安装到桌面（PWA）**：用 `npm run serve`（http://127.0.0.1:5173）或任意静态托管打开后，浏览器会提示「安装心晴岛」。安装后断网也能启动；Service Worker 会缓存全部脚本与图标（`file://` 下不注册，双击打开仍然可用）。发行包 `*-web.zip` 已包含 `manifest.webmanifest`、`sw.js` 与 `icons/`，解压后 `node desktop/serve.mjs` 即可安装（该预览服务给清单返回 `application/manifest+json`，入口与 SW 不缓存）。
 
 ### 方式 B：Windows 桌面版（单文件便携）
 
@@ -111,7 +111,7 @@ npm run build:win
 ```
 
 - `tools/verify.mjs`：校验课程数据字段、主键唯一性、关卡引用、题型合法性、解锁可达性、Electron 安全基线、样式表结构、无外部 URL。
-- `tools/smoke.mjs`：在 jsdom 中渲染全部页面与 19 个关卡，跑通签到闭环、7 种题型交互、存档溢出归档、导入安全、焦点管理、家长面板，以及时长锁、PIN、趋势/有效性、周报、故事探索度、情绪急救角等 1.1.0 新功能。
+- `tools/smoke.mjs`：在 jsdom 中渲染全部页面与 19 个关卡，跑通签到闭环、7 种题型交互、存档溢出归档、导入安全、焦点管理、家长面板，以及时长锁、PIN、趋势/有效性、周报、故事探索度、情绪急救角等 1.1.x 新功能。
 - `tools/visual.cjs`：用 Electron 在固定时间（2026-01-15）截取桌面 1280px 与手机 390px 的 13 个页面，与 `tools/visual/baseline/` 逐像素对比；差异超过 0.2% 失败并输出 `actual/` 与 `diff-*.png`。确认视觉改动符合预期后运行 `npm run visual:update` 更新基线。
 
 ## 八、版本管理与自动发布（GitVersion + GitHub Actions）
