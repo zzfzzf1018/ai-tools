@@ -2,6 +2,103 @@
 
 本文件记录 WordMemory 的所有重要变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [2.1.0] - 2026-11-07
+
+EXE 主方案改为 Electron 桌面应用，并接入 GitHub Actions 自动构建与发布。
+
+### 新增
+
+- **Electron 便携版**：`npm run build:exe` 现在用 Electron 45 + electron-builder 26 的 `portable` target 产出 `dist/WordMemory.exe`（约 106 MB）
+  - 真正的桌面窗口：自带 Chromium 内核，无地址栏、无控制台，不依赖系统 Chrome/Edge
+  - 中文菜单（文件 / 视图 / 帮助）、自定义 256×256 图标、窗口尺寸与位置记忆、单实例锁
+  - `desktop/electron/main.mjs` 复用 `desktop/server.mjs` 的零依赖本地服务与文件 KV，前端代码完全不变
+  - 数据目录优先取 `PORTABLE_EXECUTABLE_DIR`（用户放置 EXE 的位置），而不是 portable 自解压的临时目录，U 盘携带有效
+  - 新增 `WordMemory-data/{runtime.json,window-state.json,wordmemory.log}`：运行端口、窗口状态、无控制台时的排错日志
+  - 关闭窗口即退出，移除 SEA 版的心跳计时器
+- **CI 自动发布 EXE**：`word-memory-release.yml` 新增 `build-exe` job（windows-latest）
+  - 缓存 Electron / electron-builder 下载、Windows 平台单元测试、`build:exe`、`verify:exe`、上传 EXE artifact
+  - `release` job 把 `WordMemory.exe` 与 `exe-info.json` 一起附到 GitHub Release；EXE 构建失败不影响 HTML/Pages 发布（带 warning）
+  - `word-memory-ci.yml` 增加 `desktop/` 语法检查与 `build-exe.mjs --bundle-only` 主进程打包校验；Linux 任务用 `ELECTRON_SKIP_BINARY_DOWNLOAD=1` 避免下载二进制
+- **自动化测试模式**：`WM_HEADLESS=1` 只启动服务、不创建窗口，端口写入 `runtime.json`；`verify:exe` / `test:e2e:exe` 改用它验证打包后的 EXE
+- **备用方案保留**：`npm run build:sea` 仍可产出 v2.0 的 Node SEA 版 `dist/sea/WordMemory.exe`（约 84 MB）
+
+### 变更
+
+- `desktop/env.mjs` 的 `resolveDataDir()` 新增 `portableDir` / `packaged` 参数，按 `WM_DATA_DIR → PORTABLE_EXECUTABLE_DIR → EXE 目录 → 用户目录` 依次回退
+- `server.mjs` 的 `/api/shutdown` 延迟 150 ms 再断开连接，避免 `closeAllConnections()` 截断响应
+- `scripts/build.mjs` 不再整目录删除 `dist`，改为精确清理自身产物（避免误删 EXE 打包中间目录）
+- `scripts/build-exe.mjs` 重写为 Electron 打包，并支持 `--bundle-only` 快速校验；新增 `electron-builder.yml` 与 `scripts/build-sea.mjs`
+- 依赖新增 `electron@45.2.1`、`electron-builder@26.18.0`；`postject` 保留给 SEA 备用方案
+
+### 修复
+
+- Electron 从 Electron 宿主派生的终端启动时若继承了 `ELECTRON_RUN_AS_NODE=1`，会退化成纯 Node 并崩溃；主进程现在给出明确报错，测试脚本启动前清除该变量
+- portable EXE 首次启动需要自解压，测试脚本的端口等待改为轮询 `runtime.json`（GUI 程序 stdout 不可靠），超时放宽到 120 秒
+- `/api/shutdown` 增加 `app.exit()` 兜底，保证 headless 无窗口时也能退出
+
+### 工程
+
+- 测试从 140 增至 141 个（新增 portable 数据目录优先级用例）
+- 验证链：141 单测 · 7 产物校验 · **13** EXE 冒烟 · **17** EXE 浏览器端到端 · 18 Web 端到端，全部通过
+- 额外验证：Electron GUI 窗口模式能启动、数据目录正确落在 EXE 同目录、窗口状态写入、退出无残留进程
+
+### 已知限制
+
+- Electron 便携版约 106 MB，未做代码签名，个别杀毒软件可能误报（用 `dist/exe-info.json` 的 SHA-256 校验）
+- 只在 Windows 构建；`portable` target 首次启动需自解压，比 SEA 版略慢
+- CI 的 Windows 任务首次构建需下载 Electron 与 NSIS 工具（已加缓存），约 3–6 分钟
+
+---
+
+## [2.0.0] - 2026-11-07
+
+多账户、可替换词库与 Windows EXE 便携版。学习记录从「一份存档」升级为「账户 × 词库」二维隔离。
+
+### 新增
+
+- **EXE 便携版**：`npm run build:exe` 产出单文件 `dist/WordMemory.exe`，基于 Node 22 SEA + postject，免安装、免装 Node、约 84 MB
+  - 双击后用 Chrome / Edge `--app` 模式打开独立窗口，使用独立浏览器配置
+  - 数据写入 EXE 同目录 `WordMemory-data/kv/*.json`，整个目录可放 U 盘随身带走
+  - 内置零依赖 HTTP 服务：静态资源内嵌、快照读取、单键原子写入
+  - 每次启动生成随机会话令牌 + 校验 Host，只监听 `127.0.0.1`；页面心跳消失 2 分钟自动退出
+  - 支持 `WM_DATA_DIR` / `WM_NO_BROWSER` 环境变量，目录不可写时回退用户目录
+- **可替换词库**：内置 8000 词作为默认词库（不可删除），可导入任意多个自定义词库并随时切换
+  - 支持 JSON（本项目结构 / 对象数组 / 单词→释义映射）、CSV、TXT/Tab 分隔
+  - 表头与注释跳过、重复词去重、空释义过滤、频段按 1:2:2.5:2.5 自动分档
+  - 词库可重命名、导出、删除；删除时清理所有账户在该词库下的进度
+- **多账户**：可创建任意多个账户（不同人背单词），顶栏随时切换
+  - 学习记录 / 统计 / 标记按「账户 × 词库」独立，设置按账户共享（跨词库不重置）
+  - 每个账户记住自己上次使用的词库
+  - 支持新建、重命名、删除，至少保留一个账户
+- **全量备份**：导出 / 导入包含所有账户、自定义词库、设置与进度的工作区备份；原「单库进度」导出保留
+- **v1 自动迁移**：首次启动把 `localStorage['word-memory/v1']` 迁到「默认账户 × 内置词库」，原数据不删除
+- **顶栏工作区切换条**：账户 / 词库下拉 + 存储模式提示 + 管理入口，桌面与移动端均可用
+- **设置页管理区**：账户与词库列表、导入入口、账户设置共享说明
+
+### 变更
+
+- 浏览器版存储从 `localStorage['word-memory/v1']` 改为 IndexedDB（数据库 `word-memory`），不可用时逐级降级 localStorage / 内存
+- `store.js` 新增可选 `settingsKey`，把账户级设置从学习记录中分离；不传该参数时保持 v1 行为，既有测试与备份格式不变
+- `main.js` 启动时先准备 KV 后端与工作区，再同步挂载应用；Web / 单文件 / EXE 共用同一份前端代码
+- `e2e.mjs` 改为从 IndexedDB 读取断言数据，适配新的存储结构
+
+### 工程
+
+- 新增 `src/core/kv.js`、`workspace.js`、`bookparse.js`，`src/ui/views/workspace.js`、`topbar.js`
+- 新增 `desktop/main.mjs`、`server.mjs`、`env.mjs`
+- 新增 `scripts/build-exe.mjs`、`verify-exe.mjs`、`e2e-exe.mjs` 与 npm 命令 `build:exe` / `verify:exe` / `test:e2e:exe`
+- 新增 `postject` 开发依赖；测试从 102 增至 140 个（新增 KV / 词库解析 / 工作区 / 工作区 UI / 便携版服务 5 组）
+- 产物校验 7 项、EXE 冒烟 12 项、EXE 浏览器端到端 16 项、Web 浏览器端到端 18 项全部通过
+
+### 已知限制
+
+- EXE 只在 Windows 构建；产物约 84 MB，未做代码签名，个别杀毒软件可能误报（可用 `dist/exe-info.json` 的 SHA-256 校验）
+- EXE 尚未接入 GitHub Actions 发布，需要本地构建后手动上传到 Release —— **2.1.0 已接入 CI**
+- 便携版依赖系统 Chrome / Edge；找不到时只启动服务并打印地址，需手动打开 —— **2.1.0 Electron 版已自带窗口**
+- 自定义词库单库上限 50000 词；学习记录仍以词库索引为主键，因此重新导入同一词库时应保持词条顺序稳定
+
+---
+
 ## [1.0.0] - 2026-11-07
 
 首个正式版本。

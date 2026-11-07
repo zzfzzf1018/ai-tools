@@ -2,6 +2,7 @@
 
 import { escapeHtml } from '../dom.js';
 import { LEVEL_LABEL } from './browse.js';
+import { renderAccountsCard, renderBooksCard, renderBackupRows } from './workspace.js';
 
 function stepper(key, value, min, max, step = 1) {
   return `<div class="stepper">
@@ -16,8 +17,9 @@ function toggle(key, checked, label) {
 }
 
 export function renderSettings(ctx) {
-  const { settings, wordbook, version } = ctx;
+  const { settings, wordbook, version, workspaceInfo } = ctx;
   const meta = wordbook.meta || {};
+  const ws = workspaceInfo || { enabled: false };
 
   const levelChips = [1, 2, 3, 4]
     .map(
@@ -34,6 +36,9 @@ export function renderSettings(ctx) {
         <p class="page-desc">参数改动会立即保存，并影响下一轮学习。</p>
       </div>
     </div>
+
+    ${renderAccountsCard(ws)}
+    ${renderBooksCard(ws)}
 
     <div class="card" style="margin-bottom:14px">
       <h2 class="card__title">学习计划</h2>
@@ -123,10 +128,11 @@ export function renderSettings(ctx) {
 
     <div class="card danger-zone" style="margin-bottom:14px">
       <h2 class="card__title">数据</h2>
+      ${renderBackupRows(ws)}
       <div class="setting">
         <div>
-          <div class="setting__label">导出学习数据</div>
-          <div class="setting__desc">生成 JSON 备份文件，包含全部进度与设置，可换设备导入。</div>
+          <div class="setting__label">导出当前词库进度</div>
+          <div class="setting__desc">仅导出「当前账户 × 当前词库」的学习记录，可用于单库迁移。</div>
         </div>
         <button class="btn btn--ghost" data-action="export">导出</button>
       </div>
@@ -151,6 +157,8 @@ export function renderSettings(ctx) {
       <h2 class="card__title">关于</h2>
       <div style="display:flex;flex-direction:column;gap:8px;font-size:13px" class="muted">
         <div style="display:flex;justify-content:space-between"><span>应用版本</span><span class="mono">${escapeHtml(version)}</span></div>
+        ${ws.enabled ? `<div style="display:flex;justify-content:space-between"><span>当前账户</span><span class="mono">${escapeHtml((ws.accounts.find((a) => a.id === ws.activeAccountId) || {}).name || '—')}</span></div>` : ''}
+        <div style="display:flex;justify-content:space-between"><span>当前词库</span><span class="mono">${escapeHtml(meta.name || '内置词库')}</span></div>
         <div style="display:flex;justify-content:space-between"><span>词库词条</span><span class="mono">${wordbook.size}</span></div>
         <div style="display:flex;justify-content:space-between"><span>词库版本</span><span class="mono">${escapeHtml(meta.version || '—')}</span></div>
         <div style="display:flex;justify-content:space-between"><span>数据来源</span><span class="mono">${escapeHtml(meta.source || '—')}</span></div>

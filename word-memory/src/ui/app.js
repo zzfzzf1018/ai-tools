@@ -7,6 +7,8 @@
  */
 
 import { createStore, createLocalAdapter, createMemoryAdapter } from '../core/store.js';
+import { createKVAdapter } from '../core/kv.js';
+import { parseBook, serializeBook } from '../core/bookparse.js';
 import { createWordbook } from '../core/wordbook.js';
 import { buildQueue } from '../core/scheduler.js';
 import { createSession } from '../core/session.js';
@@ -14,8 +16,9 @@ import { buildQuestion, checkAnswer } from '../core/quiz.js';
 import { overview } from '../core/stats.js';
 import { GRADE, STATUS } from '../core/srs.js';
 import { dateKey } from '../core/util.js';
-import { qs, qsa, delegate, toast, confirmDialog, speak, downloadFile, escapeHtml } from './dom.js';
+import { qs, qsa, delegate, toast, confirmDialog, promptDialog, speak, downloadFile, escapeHtml } from './dom.js';
 import { icon } from './icons.js';
+import { renderTopbar } from './views/topbar.js';
 import { renderToday } from './views/today.js';
 import { renderStudy } from './views/study.js';
 import { renderBrowse } from './views/browse.js';
@@ -50,16 +53,40 @@ function resolveAdapter() {
   }
 }
 
-export function createApp({ root, payload, version = '1.0.0' }) {
-  const wordbook = createWordbook(payload);
-  const adapter = resolveAdapter();
-  const store = createStore({ adapter, key: 'word-memory/v1' });
-  const loadResult = store.load();
+export function createApp({ root, payload, version = '1.0.0', workspace = null, portable = null }) {
+  let wordbook;
+  let store;
+  let loadResult;
 
-  // 词库版本对齐
-  if (!store.dataVersion) {
-    store._setDataVersion(wordbook.dataVersion);
-    store.flush();
+  /** 按「当前账户 × 当前词库」重建 wordbook 与 store */
+  function bindWorkspace() {
+    const accountId = workspace.activeAccountId();
+    const bookId = workspace.activeBookId(accountId);
+    const bookPayload = workspace.bookPayload(bookId) || workspace.builtinPayload;
+    wordbook = createWordbook(bookPayload);
+    store = createStore({
+      adapter: createKVAdapter(workspace.kv),
+      key: workspace.progressKey(accountId, bookId),
+      settingsKey: workspace.settingsKey(accountId),
+    });
+    loadResult = store.load();
+    if (!store.dataVersion) {
+      store._setDataVersion(wordbook.dataVersion);
+      store.flush();
+    }
+  }
+
+  if (workspace) {
+    bindWorkspace();
+  } else {
+    // 兼容不带工作区的调用（单元测试 / 嵌入式用法），保持 v1 行为
+    wordbook = createWordbook(payload);
+    store = createStore({ adapter: resolveAdapter(), key: 'word-memory/v1' });
+    loadResult = store.load();
+    if (!store.dataVersion) {
+      store._setDataVersion(wordbook.dataVersion);
+      store.flush();
+    }
   }
 
   const state = {
@@ -91,6 +118,7 @@ export function createApp({ root, payload, version = '1.0.0' }) {
 
   let mainEl = null;
   let viewRoot = null;
+  let topbarEl = null;
   let navEls = [];
   let badgeEl = null;
 
@@ -104,7 +132,7 @@ export function createApp({ root, payload, version = '1.0.0' }) {
             <div class="brand__mark">W</div>
             <div class="brand__text">
               <span class="brand__name">WordMemory</span>
-              <span class="brand__sub">8000 核心词</span>
+              <span class="brand__sub" id="brand-sub">${escapeHtml(wordbook.meta?.name || '多词库')}</span>
             </div>
           </div>
           <nav class="nav" aria-label="主导航">
@@ -122,12 +150,38 @@ export function createApp({ root, payload, version = '1.0.0' }) {
             间隔重复 · 本地存储
           </div>
         </aside>
-        <main class="main" id="main"><div id="view-root"></div></main>
+        <main class="main" id="main">
+          ${workspace ? '<div class="topbar" id="topbar"></div>' : ''}
+          <div id="view-root"></div>
+        </main>
       </div>`;
     mainEl = qs('#main', root);
     viewRoot = qs('#view-root', root);
+    topbarEl = qs('#topbar', root);
     navEls = qsa('.nav__item', root);
     badgeEl = qs('#nav-badge', root);
+  }
+
+  /** 设置页与顶栏共用的工作区快照 */
+  function workspaceInfo() {
+    if (!workspace) return { enabled: false };
+    const accounts = workspace.accounts();
+    const books = workspace.books();
+    const activeAccountId = workspace.activeAccountId();
+    const activeBookId = workspace.activeBookId(activeAccountId);
+    return {
+      enabled: true,
+      version,
+      accounts: accounts.map((a) => ({
+        ...a,
+        activeBookName: workspace.bookById(workspace.activeBookId(a.id))?.name || '—',
+      })),
+      books,
+      activeAccountId,
+      activeBookId,
+      portable: !!portable,
+      dataMode: portable ? 'http' : workspace.kv.kind || 'local',
+    };
   }
 
   function buildCtx() {
@@ -140,6 +194,7 @@ export function createApp({ root, payload, version = '1.0.0' }) {
       wordbook,
       store,
       settings,
+      workspaceInfo: workspaceInfo(),
       overview: overview({ wordbook, store, settings, now }),
       session: state.session,
       question: state.question,
@@ -168,6 +223,9 @@ export function createApp({ root, payload, version = '1.0.0' }) {
 
     const ctx = buildCtx();
     document.documentElement.dataset.theme = ctx.settings.theme;
+    if (topbarEl) topbarEl.innerHTML = renderTopbar(ctx.workspaceInfo);
+    const brandSub = qs('#brand-sub', root);
+    if (brandSub) brandSub.textContent = wordbook.meta?.name || '自定义词库';
     viewRoot.innerHTML = VIEWS[state.view](ctx);
 
     if (mainEl) mainEl.scrollTop = scroll;
@@ -292,6 +350,58 @@ export function createApp({ root, payload, version = '1.0.0' }) {
     render();
   }
 
+  /* ---------------- 工作区切换 ---------------- */
+
+  function flushAll() {
+    store.flush();
+    if (workspace) workspace.kv.flush();
+  }
+
+  /** 切换账户 / 词库后重置会话并重建数据绑定 */
+  function afterWorkspaceChange(message) {
+    flushAll();
+    state.session = null;
+    state.question = null;
+    state.phase = 'quiz';
+    state.picked = '';
+    state.feedback = null;
+    state.browse = { query: '', filter: 'all', level: 0, page: 0, pageSize: state.browse.pageSize };
+    bindWorkspace();
+    render();
+    if (message) toast(message, 'ok');
+  }
+
+  function safeFileName(name) {
+    return String(name || 'wordmemory').replace(/[\\/:*?"<>|]/g, '_').slice(0, 60);
+  }
+
+  function readTextFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('文件读取失败'));
+      reader.readAsText(file);
+    });
+  }
+
+  function pickFile(inputId) {
+    const input = document.getElementById(inputId);
+    if (input) input.click();
+  }
+
+  function switchTo({ accountId, bookId } = {}) {
+    if (!workspace) return;
+    try {
+      if (accountId) workspace.setActiveAccount(accountId);
+      if (bookId) workspace.setActiveBook(bookId);
+      const acc = workspace.activeAccount();
+      const book = workspace.activeBook();
+      afterWorkspaceChange(`已切换：${acc.name} · ${book.name}`);
+    } catch (err) {
+      toast(err.message, 'err');
+    }
+  }
+
   /* ---------------- 动作分发 ---------------- */
 
   const actions = {
@@ -300,7 +410,7 @@ export function createApp({ root, payload, version = '1.0.0' }) {
       if (!VIEWS[target]) return;
       if (state.view === 'study' && target !== 'study' && state.session && !state.session.finished) {
         // 离开学习页时保存进度
-        store.flush();
+        flushAll();
       }
       setView(target);
       render();
@@ -443,6 +553,121 @@ export function createApp({ root, payload, version = '1.0.0' }) {
       toast('已清空学习进度', 'ok');
       render();
     },
+
+    /* ---- 账户 ---- */
+    'switch-account'(el) {
+      switchTo({ accountId: el.dataset.id });
+    },
+    async 'account-add'() {
+      const name = await promptDialog({
+        title: '新建账户',
+        body: '给使用者起个名字，例如「小明」或「雅思备考」。学习记录彼此完全独立。',
+        placeholder: '账户名称',
+        confirmText: '创建并切换',
+      });
+      if (!name) return;
+      const account = workspace.addAccount(name);
+      switchTo({ accountId: account.id });
+    },
+    async 'account-rename'(el) {
+      const account = workspace.accountById(el.dataset.id);
+      if (!account) return;
+      const name = await promptDialog({
+        title: '重命名账户',
+        body: '仅修改显示名称，不影响任何学习记录。',
+        value: account.name,
+        confirmText: '保存',
+      });
+      if (!name) return;
+      workspace.renameAccount(account.id, name);
+      afterWorkspaceChange(`已重命名为「${name}」`);
+    },
+    async 'account-delete'(el) {
+      const account = workspace.accountById(el.dataset.id);
+      if (!account) return;
+      const ok = await confirmDialog({
+        title: `删除账户「${escapeHtml(account.name)}」？`,
+        body: '该账户在所有词库下的学习记录与设置都会被永久删除，无法撤销。<br/>建议先导出全量备份。',
+        confirmText: '确认删除',
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        workspace.deleteAccount(account.id);
+        afterWorkspaceChange(`已删除账户「${account.name}」`);
+      } catch (err) {
+        toast(err.message, 'err');
+      }
+    },
+
+    /* ---- 词库 ---- */
+    'switch-book'(el) {
+      switchTo({ bookId: el.dataset.id });
+    },
+    'book-add'() {
+      pickFile('import-book-file');
+    },
+    async 'book-rename'(el) {
+      const book = workspace.bookById(el.dataset.id);
+      if (!book) return;
+      const name = await promptDialog({
+        title: '重命名词库',
+        body: '仅修改显示名称，词库内容与已有学习记录不变。',
+        value: book.name,
+        confirmText: '保存',
+      });
+      if (!name) return;
+      workspace.renameBook(book.id, name);
+      afterWorkspaceChange(`已重命名为「${name}」`);
+    },
+    async 'book-delete'(el) {
+      const book = workspace.bookById(el.dataset.id);
+      if (!book || book.builtin) return;
+      const ok = await confirmDialog({
+        title: `删除词库「${escapeHtml(book.name)}」？`,
+        body: '词库内容以及所有账户在该词库下的学习记录都会被删除，无法撤销。',
+        confirmText: '确认删除',
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        workspace.deleteBook(book.id);
+        afterWorkspaceChange(`已删除词库「${book.name}」`);
+      } catch (err) {
+        toast(err.message, 'err');
+      }
+    },
+    'book-export'(el) {
+      const book = workspace.bookById(el.dataset.id);
+      const payload = book && workspace.bookPayload(book.id);
+      if (!payload) {
+        toast('词库内容已损坏，无法导出', 'err');
+        return;
+      }
+      downloadFile(`${safeFileName(book.name)}.json`, serializeBook(payload));
+      toast('词库已导出', 'ok');
+    },
+
+    /* ---- 全量备份 ---- */
+    'export-all'() {
+      flushAll();
+      downloadFile(`wordmemory-workspace-${dateKey()}.json`, workspace.exportBundle());
+      toast('全量备份已导出', 'ok');
+    },
+    'import-all'() {
+      pickFile('import-all-file');
+    },
+    async 'reset-all'() {
+      const ok = await confirmDialog({
+        title: '重置整个工作区？',
+        body: '所有账户、自定义词库、设置与学习记录都会被删除并恢复为初始状态，无法撤销。',
+        confirmText: '确认重置',
+        danger: true,
+      });
+      if (!ok) return;
+      workspace.resetAll();
+      afterWorkspaceChange('工作区已重置');
+    },
   };
 
   /* ---------------- 事件绑定 ---------------- */
@@ -453,7 +678,13 @@ export function createApp({ root, payload, version = '1.0.0' }) {
     if (!fn) return;
     event.preventDefault();
     try {
-      fn(el);
+      const result = fn(el);
+      if (result && typeof result.catch === 'function') {
+        result.catch((err) => {
+          console.error(err);
+          toast(`操作失败：${err.message}`, 'err');
+        });
+      }
     } catch (err) {
       console.error(err);
       toast(`操作失败：${err.message}`, 'err');
@@ -480,6 +711,43 @@ export function createApp({ root, payload, version = '1.0.0' }) {
   delegate(root, 'change', '[data-select]', (event, el) => {
     store.updateSettings({ [el.dataset.select]: el.value });
     render();
+  });
+
+  delegate(root, 'change', '#account-select', (event, el) => {
+    switchTo({ accountId: el.value });
+  });
+
+  delegate(root, 'change', '#book-select', (event, el) => {
+    switchTo({ bookId: el.value });
+  });
+
+  delegate(root, 'change', '#import-book-file', (event, el) => {
+    const file = el.files && el.files[0];
+    el.value = '';
+    if (!file || !workspace) return;
+    readTextFile(file)
+      .then((text) => {
+        const payload = parseBook(text, {
+          filename: file.name,
+          name: file.name.replace(/\.[^.]+$/, ''),
+        });
+        const book = workspace.addBook(payload.meta.name, payload);
+        workspace.setActiveBook(book.id);
+        afterWorkspaceChange(`已导入「${book.name}」：${book.count} 词`);
+      })
+      .catch((err) => toast(err.message, 'err'));
+  });
+
+  delegate(root, 'change', '#import-all-file', (event, el) => {
+    const file = el.files && el.files[0];
+    el.value = '';
+    if (!file || !workspace) return;
+    readTextFile(file)
+      .then((text) => {
+        const stats = workspace.importBundle(text);
+        afterWorkspaceChange(`已导入 ${stats.accounts} 个账户、${stats.books} 个词库`);
+      })
+      .catch((err) => toast(err.message, 'err'));
   });
 
   delegate(root, 'change', '#import-file', (event, el) => {
@@ -559,7 +827,7 @@ export function createApp({ root, payload, version = '1.0.0' }) {
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
-      store.flush();
+      flushAll();
     } else if (state.view === 'today') {
       render();
     }
@@ -573,13 +841,22 @@ export function createApp({ root, payload, version = '1.0.0' }) {
   });
 
   window.addEventListener('beforeunload', () => {
-    store.flush();
+    flushAll();
   });
 
   // pagehide 在移动端与 bfcache 场景比 beforeunload 更可靠
   window.addEventListener('pagehide', () => {
-    store.flush();
+    flushAll();
+    if (portable && typeof portable.beacon === 'function') portable.beacon();
   });
+
+  // 便携版心跳：关闭浏览器窗口后服务端自动退出
+  let heartbeat = null;
+  if (portable && typeof portable.ping === 'function') {
+    heartbeat = setInterval(() => portable.ping(), 20000);
+    if (heartbeat && typeof heartbeat === 'object' && 'unref' in heartbeat) heartbeat.unref();
+    portable.ping();
+  }
 
   /* ---------------- 启动 ---------------- */
 
@@ -588,14 +865,27 @@ export function createApp({ root, payload, version = '1.0.0' }) {
   if (initialView) state.view = initialView;
   render();
 
-  if (loadResult.fresh) {
+  if (workspace?.initResult.migrated) {
+    toast('已将旧版学习进度迁移到「默认账户」', 'ok');
+  } else if (loadResult.fresh) {
     toast('欢迎使用 WordMemory，从今日任务开始吧', 'ok');
   } else if (!loadResult.ok) {
-    toast('本地存档损坏，已重新开始（原数据仍保留在浏览器中）', 'err');
+    toast('存档损坏，已重新开始', 'err');
   }
   if (!store.isPersistent) {
     setTimeout(() => toast('当前环境无法自动保存进度，请在设置中导出备份', 'err'), 2600);
   }
 
-  return { store, wordbook, state, render };
+  return {
+    get store() {
+      return store;
+    },
+    get wordbook() {
+      return wordbook;
+    },
+    state,
+    render,
+    workspace,
+    switchTo,
+  };
 }

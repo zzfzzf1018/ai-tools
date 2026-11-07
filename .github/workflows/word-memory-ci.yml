@@ -6,11 +6,13 @@ on:
     paths:
       - "word-memory/**"
       - ".github/workflows/word-memory-ci.yml"
+      - ".github/workflows/word-memory-release.yml"
   pull_request:
     branches: [main]
     paths:
       - "word-memory/**"
       - ".github/workflows/word-memory-ci.yml"
+      - ".github/workflows/word-memory-release.yml"
   workflow_dispatch:
 
 permissions:
@@ -44,12 +46,15 @@ jobs:
           cache-dependency-path: word-memory/package-lock.json
 
       - name: 安装依赖
+        # 此任务只校验代码，不运行 Electron，跳过二进制下载
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
         run: npm ci --no-audit --no-fund
 
       - name: 语法检查
         run: |
           set -e
-          for file in src/main.js src/core/*.js src/ui/*.js src/ui/views/*.js scripts/*.mjs; do
+          for file in src/main.js src/core/*.js src/ui/*.js src/ui/views/*.js scripts/*.mjs desktop/*.mjs desktop/electron/*.mjs; do
             node --check "$file"
           done
           echo "语法检查通过"
@@ -75,6 +80,10 @@ jobs:
 
       - name: 校验产物
         run: node scripts/verify.mjs
+
+      - name: 校验 Electron 主进程可打包
+        # 只做 esbuild bundle，不产出 100 MB EXE；完整打包在 Release 的 Windows 任务中
+        run: node scripts/build-exe.mjs --bundle-only
 
       - name: 上传单文件版
         uses: actions/upload-artifact@v4

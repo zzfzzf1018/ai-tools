@@ -87,6 +87,61 @@ export function confirmDialog({ title, body, confirmText = '确定', cancelText 
   });
 }
 
+/**
+ * 输入框对话框（Promise）
+ * @returns {Promise<string|null>} 取消时返回 null
+ */
+export function promptDialog({ title, body = '', value = '', placeholder = '', confirmText = '确定', danger = false }) {
+  return new Promise((resolve) => {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.innerHTML = `
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <h2 class="modal__title" id="modal-title">${escapeHtml(title)}</h2>
+        <div class="modal__body">${body}<input id="modal-input" class="modal__input" type="text"
+             value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" maxlength="40" /></div>
+        <div class="modal__actions">
+          <button class="btn btn--ghost" data-modal="cancel">取消</button>
+          <button class="btn ${danger ? 'btn--danger' : 'btn--primary'}" data-modal="ok">${escapeHtml(confirmText)}</button>
+        </div>
+      </div>`;
+    const close = (result) => {
+      document.removeEventListener('keydown', onKey);
+      backdrop.remove();
+      resolve(result);
+    };
+    const onKey = (event) => {
+      if (event.key === 'Escape') close(null);
+    };
+    backdrop.addEventListener('click', (event) => {
+      if (event.target === backdrop) close(null);
+      const btn = event.target.closest('[data-modal]');
+      if (!btn) return;
+      if (btn.dataset.modal === 'ok') {
+        const input = backdrop.querySelector('#modal-input');
+        close(input ? input.value.trim() || null : null);
+      } else {
+        close(null);
+      }
+    });
+    const input = backdrop.querySelector('#modal-input');
+    if (input) {
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          close(input.value.trim() || null);
+        }
+      });
+    }
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(backdrop);
+    if (input) {
+      input.focus();
+      input.select();
+    }
+  });
+}
+
 /** 浏览器语音合成朗读 */
 let voiceCache = null;
 

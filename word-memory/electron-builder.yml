@@ -1,0 +1,33 @@
+# Electron 便携版打包配置
+# 由 scripts/build-exe.mjs 调用：esbuild 先生成 dist/electron-app，
+# 再用本配置产出单文件 dist/electron-out/WordMemory.exe。
+
+appId: cn.zzf.wordmemory
+productName: WordMemory
+copyright: Copyright (c) 2026 zzf
+compression: maximum
+asar: true
+
+# 直接使用 npm 安装好的 Electron 运行时，避免打包时重复下载二进制
+electronDist: node_modules/electron/dist
+
+directories:
+  app: dist/electron-app
+  output: dist/electron-out
+  buildResources: dist/electron-app
+
+files:
+  - main.cjs
+  - package.json
+
+win:
+  icon: icon.ico
+  target:
+    - target: portable
+      arch:
+        - x64
+  artifactName: WordMemory.exe
+
+portable:
+  artifactName: WordMemory.exe
+  unpackDirName: WordMemory

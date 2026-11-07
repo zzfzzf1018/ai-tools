@@ -92,8 +92,12 @@ async function main() {
   const template = readTemplate();
   const { text: dataText, json: data } = readData();
 
-  // 清理旧产物，避免残留文件造成困惑
-  fs.rmSync(DIST, { recursive: true, force: true });
+  // 精确清理本脚本生成的产物。
+  // 不要整目录 rmSync(DIST)：dist 下还会有 EXE 打包的中间产物
+  // （electron-out/win-unpacked 含上百个文件），整目录删除既危险也会被安全策略拦截。
+  for (const rel of ['word-memory.html', 'version.json', 'web']) {
+    fs.rmSync(path.join(DIST, rel), { recursive: true, force: true });
+  }
   ensureDir(path.join(DIST_WEB, 'assets'));
   ensureDir(path.join(DIST_WEB, 'data'));
 

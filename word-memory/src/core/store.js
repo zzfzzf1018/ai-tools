@@ -169,13 +169,15 @@ function sanitizeDaily(raw) {
  * 创建存储实例
  * @param {object} options
  * @param {object} options.adapter 存储适配器
- * @param {string} options.key 存储键
+ * @param {string} options.key 学习记录存储键（按账户 + 词库区分）
+ * @param {string} options.settingsKey 账户级设置键；为空时设置随记录一起存（v1 行为）
  * @param {() => number} options.now 时间源（便于测试）
  */
 export function createStore(options = {}) {
   const {
     adapter = createMemoryAdapter(),
     key = STORAGE_KEY,
+    settingsKey = '',
     now = () => Date.now(),
     autoSaveDelay = 400,
   } = options;
@@ -207,13 +209,20 @@ export function createStore(options = {}) {
   }
 
   function serialize() {
-    return JSON.stringify(data);
+    if (!settingsKey) return JSON.stringify(data);
+    // 设置提升到账户级后，学习记录里不再重复保存
+    const { settings: _unused, ...rest } = data;
+    return JSON.stringify(rest);
   }
 
   function save() {
     if (!dirty) return true;
     data.meta.updatedAt = now();
-    const ok = adapter.set(key, serialize());
+    let ok = true;
+    if (settingsKey) {
+      ok = adapter.set(settingsKey, JSON.stringify(data.settings)) && ok;
+    }
+    ok = adapter.set(key, serialize()) && ok;
     dirty = !ok;
     lastError = ok ? null : '存储写入失败（可能是隐私模式或空间不足）';
     if (ok) emit('save');
@@ -222,15 +231,27 @@ export function createStore(options = {}) {
 
   function load() {
     const raw = adapter.get(key);
-    if (!raw) {
+    const rawSettings = settingsKey ? adapter.get(settingsKey) : null;
+    if (!raw && !rawSettings) {
       data = blankData();
       dirty = false;
       return { ok: true, fresh: true };
     }
     try {
-      const parsed = JSON.parse(raw);
+      const parsed = raw ? JSON.parse(raw) : {};
+      if (rawSettings) {
+        try {
+          parsed.settings = JSON.parse(rawSettings);
+        } catch {
+          /* 设置损坏时忽略，由 migrate 使用默认值 */
+        }
+      }
       data = migrate(parsed);
       dirty = false;
+      // 设置与记录分键存储时，首次加载需要把默认值写回设置键
+      if (settingsKey && !rawSettings) {
+        adapter.set(settingsKey, JSON.stringify(data.settings));
+      }
       return { ok: true, fresh: false, fromVersion: parsed?.v };
     } catch (err) {
       data = blankData();

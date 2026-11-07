@@ -5,7 +5,7 @@
  * 用真实浏览器（系统 Chrome / Edge）跑一遍关键用户路径：
  *   学习 → 落盘 → 刷新 → 标记 → 搜索 → 设置 → 导出 → 清空 → 导入 → 键盘 → 主题
  *
- * 与 jsdom 测试的区别：这里验证的是真实渲染、真实 localStorage、
+ * 与 jsdom 测试的区别：这里验证的是真实渲染、真实 IndexedDB、
  * 真实下载行为，能捕获 jsdom 环境掩盖的问题。
  *
  * 用法：
@@ -92,10 +92,31 @@ async function main() {
     if (m.type() === 'error') errors.push(`console: ${m.text()}`);
   });
 
+  // v2 起数据存放在 IndexedDB 的 KV 表中：进度按账户+词库分键，设置按账户分键。
+  // 这里把两者拼回 e2e 断言使用的 { settings, words, daily } 形状。
   const readStore = () =>
-    page.evaluate(() => {
-      const raw = localStorage.getItem('word-memory/v1');
-      return raw ? JSON.parse(raw) : null;
+    page.evaluate(async () => {
+      const db = await new Promise((resolve, reject) => {
+        const req = indexedDB.open('word-memory', 1);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      const rows = await new Promise((resolve, reject) => {
+        const tx = db.transaction('kv', 'readonly');
+        const query = tx.objectStore('kv').getAll();
+        tx.oncomplete = () => resolve(query.result || []);
+        tx.onerror = () => reject(tx.error);
+      });
+      db.close();
+      const kv = {};
+      for (const row of rows) kv[row.key] = row.value;
+      const progressKey = Object.keys(kv).find((k) => k.startsWith('wm/v2/progress/'));
+      const settingsKey = Object.keys(kv).find((k) => k.startsWith('wm/v2/settings/'));
+      let progress = {};
+      let settings = {};
+      try { progress = JSON.parse(kv[progressKey] || '{}'); } catch { /* 忽略 */ }
+      try { settings = JSON.parse(kv[settingsKey] || '{}'); } catch { /* 忽略 */ }
+      return { v: 2, settings, words: progress.words || {}, daily: progress.daily || {} };
     });
 
   try {
@@ -137,7 +158,7 @@ async function main() {
 
     await page.waitForTimeout(650); // 等待防抖落盘
     const stored = await readStore();
-    check(!!stored, '数据写入 localStorage');
+    check(!!stored, '数据写入 IndexedDB');
     const records = Object.keys(stored?.words || {}).length;
     check(records >= 7, `保存了 ${records} 条词状态`);
     const answered = Object.values(stored?.daily || {}).reduce((s, d) => s + d.a, 0);

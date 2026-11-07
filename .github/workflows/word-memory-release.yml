@@ -47,6 +47,9 @@ jobs:
           cache-dependency-path: word-memory/package-lock.json
 
       - name: 安装依赖
+        # Linux 任务只产出 HTML，不需要 Electron 二进制
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
         run: npm ci --no-audit --no-fund
 
       - name: 运行测试
@@ -92,9 +95,73 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
+  build-exe:
+    name: 构建 Electron 便携版 EXE
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          persist-credentials: false
+
+      - name: 配置 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: word-memory/package-lock.json
+
+      # Electron 运行时约 160 MB、NSIS 工具约 10 MB，缓存后二次构建可省数分钟
+      - name: 缓存 Electron 与打包工具
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: ${{ runner.os }}-wordmemory-electron-${{ hashFiles('word-memory/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-wordmemory-electron-
+
+      - name: 安装依赖
+        run: npm ci --no-audit --no-fund
+
+      - name: Windows 平台单元测试
+        run: npm test
+
+      - name: 构建 EXE（含 Web 产物）
+        run: npm run build:exe
+
+      - name: EXE 冒烟测试
+        run: npm run verify:exe
+
+      - name: 校验产物信息
+        run: |
+          node -e '
+            const fs = require("fs");
+            const info = JSON.parse(fs.readFileSync("dist/exe-info.json", "utf8"));
+            if (info.engine !== "electron") throw new Error("EXE 引擎不是 Electron");
+            if (info.exeSize < 40 * 1024 * 1024) throw new Error("EXE 体积异常");
+            console.log(`EXE ${info.exe} · ${(info.exeSize / 1024 / 1024).toFixed(1)} MB · Electron ${info.electronVersion}`);
+            console.log(`SHA-256 ${info.sha256}`);
+          '
+
+      - name: 上传 EXE 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: word-memory-exe
+          path: |
+            word-memory/dist/WordMemory.exe
+            word-memory/dist/exe-info.json
+          retention-days: 30
+          if-no-files-found: error
+
   release:
     name: 创建 GitHub Release
-    needs: build
+    needs: [build, build-exe]
+    # EXE 构建失败时仍发布 HTML / Pages，避免阻塞常规发布
+    if: always() && needs.build.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # 该任务不在 word-memory 子目录内工作（未检出代码），覆盖顶层默认值
@@ -109,14 +176,28 @@ jobs:
           name: release-files
           path: release
 
+      - name: 下载 EXE 产物
+        if: needs.build-exe.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: word-memory-exe
+          path: exe
+
       - name: 创建 Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.build.outputs.version }}
+          EXE_AVAILABLE: ${{ needs.build-exe.result }}
         run: |
           set -e
-          gh release create "word-memory-v${VERSION}" \
-            "release/word-memory-${VERSION}.html" \
+          files=("release/word-memory-${VERSION}.html")
+          if [ -f exe/WordMemory.exe ]; then
+            files+=("exe/WordMemory.exe" "exe/exe-info.json")
+            echo "附带 Electron 便携版 EXE"
+          else
+            echo "::warning::EXE 构建未成功，本次只发布单文件 HTML（状态 ${EXE_AVAILABLE}）"
+          fi
+          gh release create "word-memory-v${VERSION}" "${files[@]}" \
             --repo "${{ github.repository }}" \
             --title "WordMemory v${VERSION}" \
             --notes-file release/RELEASE_NOTES.md

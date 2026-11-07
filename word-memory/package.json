@@ -1,9 +1,9 @@
 {
   "name": "word-memory",
-  "version": "1.0.0",
+  "version": "2.1.0",
   "private": true,
   "type": "module",
-  "description": "WordMemory · 8000 核心词汇间隔重复记忆工具（Web 版 + 单文件离线版）",
+  "description": "WordMemory · 多账户 / 多词库间隔重复记忆工具（Web 版 + 单文件离线版 + Windows EXE 便携版）",
   "keywords": [
     "vocabulary",
     "spaced-repetition",
@@ -20,11 +20,18 @@
     "build": "node scripts/build.mjs",
     "test": "node --test tests/*.test.js",
     "verify": "npm run test && npm run build && node scripts/verify.mjs",
-    "test:e2e": "node scripts/e2e.mjs"
+    "build:exe": "node scripts/build.mjs && node scripts/build-exe.mjs",
+    "build:sea": "node scripts/build.mjs && node scripts/build-sea.mjs",
+    "verify:exe": "node scripts/verify-exe.mjs",
+    "test:e2e": "node scripts/e2e.mjs",
+    "test:e2e:exe": "node scripts/e2e-exe.mjs"
   },
   "devDependencies": {
+    "electron": "^45.2.1",
+    "electron-builder": "^26.18.0",
     "esbuild": "^0.25.0",
     "jsdom": "^26.1.0",
-    "playwright-core": "^1.65.0"
+    "playwright-core": "^1.65.0",
+    "postject": "^1.0.0-alpha.6"
   }
 }
