@@ -126,6 +126,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Pages 需要仓库在 Settings → Pages 中选择 GitHub Actions 作为源。
+    # fork 后若未启用，此任务失败不影响 Release 产出。
+    continue-on-error: true
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
