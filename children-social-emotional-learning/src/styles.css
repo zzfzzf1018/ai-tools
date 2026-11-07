@@ -621,3 +621,89 @@ body.modal-open { overflow: hidden; }
   }
 }
 :focus-visible { outline: 4px solid var(--blue); outline-offset: 3px; }
+
+/* ---------- 题目朗读播报条（v1.2.0） ---------- */
+.voice-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: linear-gradient(100deg, var(--blue-soft), var(--purple-soft));
+  border: 2px solid rgba(102, 196, 238, .35); border-radius: 18px;
+  padding: 10px 14px; margin-bottom: 18px;
+}
+.voice-bar .vb-icon { font-size: 25px; line-height: 1; }
+.voice-bar.speaking .vb-icon { animation: pulse 1s ease-in-out infinite; }
+.voice-bar .vb-text {
+  flex: 1; min-width: 170px; font-size: 15px; font-weight: 700; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.voice-bar .btn { flex: 0 0 auto; }
+
+/* ---------- 说一说 · 勇气小话筒（v1.2.0） ---------- */
+.say-card {
+  background: var(--paper); border: 3px solid var(--green-soft);
+  border-radius: var(--r-md); box-shadow: var(--shadow-sm);
+  padding: 22px; margin-top: 22px;
+}
+.say-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.say-emoji { font-size: 36px; line-height: 1; }
+.say-head-text { flex: 1; min-width: 170px; }
+.say-head-text h3 { font-size: 20px; }
+.say-head-text p { margin: 2px 0 0; }
+.say-scene {
+  background: var(--yellow-soft); border-radius: 16px;
+  padding: 14px 16px; margin-top: 14px;
+}
+.say-frames { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+.say-frame {
+  display: flex; gap: 9px; align-items: flex-start;
+  background: var(--cream); border-radius: 14px; padding: 12px;
+}
+.say-frame .sf-emoji { font-size: 24px; line-height: 1.1; }
+.say-frame b { font-size: 16px; }
+.say-audience { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.say-audience select {
+  border: 2px solid var(--line); border-radius: 12px;
+  padding: 8px 12px; font-size: 15px; background: var(--paper); color: var(--ink);
+}
+.say-demo { background: var(--blue-soft); border-radius: 16px; padding: 14px 16px; margin-top: 14px; }
+.say-demo p { margin: 8px 0; font-weight: 700; }
+.say-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
+.say-feedback { margin-top: 12px; }
+.say-badge {
+  margin-top: 10px; padding: 10px 12px; border-radius: 12px;
+  background: var(--yellow-soft); font-weight: 700;
+}
+.say-folded { display: none; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+.say-card.folded .say-scene,
+.say-card.folded .say-frames,
+.say-card.folded .say-audience,
+.say-card.folded .say-demo,
+.say-card.folded .say-actions,
+.say-card.folded .say-feedback { display: none; }
+.say-card.folded .say-folded { display: flex; }
+.say-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.say-stats > div {
+  background: var(--paper); border-radius: 16px; padding: 12px 8px; text-align: center;
+}
+.say-stats b { display: block; font-size: 26px; line-height: 1.2; }
+.say-stats span, .kpi span { font-size: 12px; color: var(--ink-soft); }
+.say-week { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+.say-day {
+  width: 30px; height: 30px; border-radius: 10px; background: var(--cream);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; color: var(--ink-soft);
+}
+.say-day.on { background: var(--green); color: #fff; font-weight: 700; }
+.say-badges { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+.say-badge-item {
+  background: var(--cream); border-radius: 14px; padding: 12px; text-align: center;
+  opacity: .72;
+}
+.say-badge-item.got { background: var(--green-soft); opacity: 1; }
+.say-badge-item > span { display: block; font-size: 26px; }
+.say-badge-item b { display: block; font-size: 15px; }
+@media (max-width: 620px) {
+  .voice-bar .vb-text { min-width: 100%; white-space: normal; }
+  .say-card { padding: 18px; }
+  .say-frames, .say-badges { grid-template-columns: 1fr; }
+  .say-stats { grid-template-columns: repeat(2, 1fr); }
+}

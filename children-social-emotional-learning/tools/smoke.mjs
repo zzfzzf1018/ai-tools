@@ -24,11 +24,36 @@ w.HTMLElement.prototype.scrollIntoView = function () {};
 try { w.localStorage.setItem('sunny-isles-welcomed-v1', '1'); } catch (e) {}
 try { w.sessionStorage.setItem('sunny-parent-ok', '1'); } catch (e) {}
 
+/* v1.2.0：模拟系统中文语音。默认同步结束，让朗读队列一次跑完；
+   第 28 组会临时关掉同步结束，用来验证「停掉后旧 utterance 不再推进队列」。 */
+let syncEnd = true;
+const utterances = [];
+let cancelCount = 0;
+function MockUtterance(text) {
+  this.text = String(text);
+  this.lang = ''; this.rate = 1; this.pitch = 1; this.volume = 1;
+  this.onend = null; this.onerror = null; this.onstart = null;
+}
+Object.defineProperty(w, 'SpeechSynthesisUtterance', { value: MockUtterance, configurable: true, writable: true });
+Object.defineProperty(w, 'speechSynthesis', {
+  configurable: true,
+  value: {
+    getVoices: () => [],
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    cancel: () => { cancelCount++; },
+    speak: (u) => {
+      utterances.push(u);
+      if (syncEnd && u.onend) u.onend();
+    }
+  }
+});
+
 /* 与 index.html 保持同一加载顺序 */
 const scripts = [
   'src/data/curriculum.js', 'src/core/utils.js', 'src/core/audio.js', 'src/core/state.js',
   'src/core/screentime.js', 'src/ui/art.js', 'src/ui/components.js', 'src/ui/calm.js',
-  'src/ui/games.js', 'src/ui/screens.js', 'src/main.js'
+  'src/ui/games.js', 'src/ui/expression.js', 'src/ui/screens.js', 'src/main.js'
 ];
 for (const f of scripts) {
   try { w.eval(fs.readFileSync(path.join(root, f), 'utf8')); }
@@ -447,11 +472,14 @@ try {
   {
     const many = bare();
     many.profiles[0].id = 'p1';
+    /* 用「今天」而不是写死的日期：这组断言的是「同一天第二次签到不给星」，
+       写死 2026-11-05 会让测试在之后的每一天都误报（时间炸弹）。 */
+    const overflowDay = w.SEL.utils.today();
     for (let i = 0; i < 400; i++) {
-      many.profiles[0].checkins.push({ date: '2026-11-05', emotion: 'happy', note: 'n' + i });
+      many.profiles[0].checkins.push({ date: overflowDay, emotion: 'happy', note: 'n' + i });
     }
     many.profiles[0].flowers = Array.from({ length: 365 }, (_, i) => ({
-      id: 'f' + i, date: '2026-11-05', emotion: 'happy', color: '#FFC94A', petal: 1
+      id: 'f' + i, date: overflowDay, emotion: 'happy', color: '#FFC94A', petal: 1
     }));
     w.SEL.state.importSave(JSON.stringify(many));
     const pid = w.SEL.state.current().id;
@@ -784,6 +812,419 @@ try {
   fails.push('回归组27异常: ' + (e && e.stack || e));
 }
 
+/* ==================== 28. v1.2.0：全关卡朗读 + 说一说 ==================== */
+try {
+  const A = w.SEL.audio;
+  const U = w.SEL.utils;
+  const backup28 = w.SEL.state.exportSave();
+  const levels = w.SEL.state.allLevels();
+  const spoken = () => utterances.map(u => u.text);
+  const choiceLv = levels.find(x => x.level.type === 'choice').level;
+
+  w.SEL.state.clearPin();
+  w.SEL.state.update(p => {
+    p.stars = 999;
+    levels.forEach(x => { p.levels[x.level.id] = { done: true, stars: 3, attempts: 1, lastAt: '2026-01-01' }; });
+  });
+  w.SEL.state.setSetting('voice', true);
+  w.SEL.state.setSetting('autoRead', true);
+  w.SEL.state.setSetting('voiceRate', 0.9);
+  function freshRoute(hash) {
+    utterances.length = 0;
+    A.clearLog();
+    route(hash);
+    return spoken();
+  }
+
+  // 28a 19 关的每一段静态文字（题干 / 说明 / 全部选项卡片）都进了自动朗读
+  // 期望值必须直接从课程数据取，不能拿 readScript 自己的输出自证，
+  // 否则「连一连漏念左侧线索」这类问题它一个都发现不了。
+  function mustReadForLevel(lv) {
+    const d = lv.data || {};
+    const out = [lv.title, lv.intro];
+    switch (lv.type) {
+      case 'choice':
+        if (d.prompt) out.push(d.prompt);
+        (d.options || []).forEach(o => { if (o.text) out.push(o.text); });
+        break;
+      case 'match':
+        if (d.instruction) out.push(d.instruction);
+        (d.pairs || []).forEach(p => {
+          if (p.left && p.left.label) out.push(p.left.label);
+          if (p.right && p.right.label) out.push(p.right.label);
+        });
+        break;
+      case 'order':
+        if (d.instruction) out.push(d.instruction);
+        (d.items || []).forEach(i => { if (i.text) out.push(i.text); });
+        break;
+      case 'slider':
+        if (d.prompt) out.push(d.prompt);
+        if (d.minLabel) out.push(d.minLabel);
+        if (d.maxLabel) out.push(d.maxLabel);
+        break;
+      case 'breathe':
+        if (d.title) out.push(d.title);
+        (d.cues || []).forEach(c => out.push(c));
+        break;
+      case 'classify':
+        if (d.instruction) out.push(d.instruction);
+        (d.buckets || []).forEach(b => { if (b.label) out.push(b.label); });
+        (d.items || []).forEach(i => { if (i.text) out.push(i.text); });
+        break;
+      case 'story': {
+        const st = (w.SEL_DATA.stories || []).filter(s => s.id === d.storyId)[0];
+        const n = st && st.nodes && st.nodes[st.start];
+        if (n) {
+          if (n.text) out.push(n.text);
+          (n.choices || []).forEach(c => { if (c.text) out.push(c.text); });
+        }
+        break;
+      }
+    }
+    return out.filter(Boolean).map(t => String(t).trim()).filter(Boolean);
+  }
+  {
+    const missing = [];
+    levels.forEach(({ level: lv }) => {
+      const script = w.SEL.games.readScript(lv);
+      const texts = freshRoute('#/level/' + lv.id);
+      const joined = texts.join('|');
+      script.head.concat(script.options).map(t => String(t).trim()).filter(Boolean).forEach(t => {
+        if (!joined.includes(t)) missing.push(lv.id + ' → ' + t.slice(0, 18));
+      });
+      mustReadForLevel(lv).forEach(t => {
+        if (!joined.includes(t)) missing.push(lv.id + ' [数据] → ' + t.slice(0, 18));
+      });
+    });
+    must(missing.length === 0, '自动读题漏字: ' + missing.slice(0, 6).join(' / '));
+    const bar = q('[data-voice-bar]');
+    must(!!bar && !!q('[data-voice-replay]') && !!q('[data-voice-stop]'), '关卡缺少朗读播报条或重听/停止按钮');
+  }
+
+  // 28b 朗读队列串行；停掉后旧 utterance 的 onend 不得继续推进队列
+  {
+    utterances.length = 0;
+    A.speakSequence(['第一句', '第二句', '第三句']);
+    must(spoken().join('|') === '第一句|第二句|第三句', '朗读队列没有按顺序连读');
+    syncEnd = false;
+    utterances.length = 0;
+    cancelCount = 0;
+    A.speakSequence(['甲', '乙']);
+    must(spoken().length === 1, '异步语音下队列不应一次把两句都念出来');
+    A.stopSpeak();
+    must(cancelCount > 0, '停止朗读没有调用 speechSynthesis.cancel');
+    const old = utterances[0];
+    if (old && old.onend) old.onend();
+    must(spoken().length === 1, '停掉后旧朗读的 onend 仍推进了队列（会串到下一页念）');
+    syncEnd = true;
+  }
+
+  // 28c 自动读题开关 / 总开关 / 语速
+  {
+    w.SEL.state.setSetting('autoRead', false);
+    const quiet = freshRoute('#/level/' + choiceLv.id);
+    must(!quiet.some(t => t.includes(choiceLv.data.prompt)), '关掉自动读题后仍在读题');
+    utterances.length = 0;
+    click(q('[data-voice-replay]'));
+    must(spoken().some(t => t.includes(choiceLv.data.prompt)), '关掉自动读题后手动「再听一遍」也被静音了');
+    w.SEL.state.setSetting('voice', false);
+    utterances.length = 0;
+    click(q('[data-voice-replay]'));
+    must(spoken().length === 0, '总开关关掉后手动重听仍然出声');
+    w.SEL.state.setSetting('voice', true);
+    w.SEL.state.setSetting('autoRead', true);
+    w.SEL.state.setSetting('voiceRate', 1.2);
+    utterances.length = 0;
+    A.speak('试听一句');
+    must(utterances[0] && Math.abs(utterances[0].rate - 1.2) < 0.001, '朗读语速设置没有生效');
+    w.SEL.state.setSetting('voiceRate', 0.9);
+  }
+
+  // 28d 结算弹窗把「今天学到 / 给大人」也念出来
+  {
+    freshRoute('#/level/' + choiceLv.id);
+    click(q('.option-btn'));
+    utterances.length = 0;
+    click(q('[data-finish]'));
+    const done = spoken().join('|');
+    must(done.includes('今天学到'), '结算弹窗没有朗读「今天学到」');
+    must(done.includes('给大人'), '结算弹窗没有朗读给大人的话');
+    w.SEL.ui.closeModal();
+  }
+
+  // 28e 说一说：示范朗读、计次、勇气星、首枚贴纸、鼓励语
+  {
+    freshRoute('#/level/' + choiceLv.id);
+    must(!!q('[data-say-card]'), '关卡页缺少「说一说」卡片');
+    must(!!q('[data-say-hide]'), '关卡页的说一说卡片不能收起');
+    const before = w.SEL.state.expressionStats().total;
+    const starsBefore = w.SEL.state.current().stars;
+    utterances.length = 0;
+    click(q('[data-say-demo]'));
+    must(spoken().length > 0, '「听示范」没有朗读示范句');
+    click(q('[data-say-done]'));
+    must(w.SEL.state.expressionStats().total === before + 1, '说一说没有累计次数');
+    must(w.SEL.state.current().stars === starsBefore + 1, '第一次开口没有给勇气星');
+    must((w.SEL.state.current().stickers || []).includes('st-voice-first'), '首次开口没有解锁「开口第一句」贴纸');
+    must((q('[data-say-feedback]').textContent || '').includes('勇气星'), '说一说没有给出反馈');
+    must(spoken().length > 1, '说完后没有朗读鼓励语');
+    must(q('[data-say-done]').disabled === true, '说完后按钮没锁住，连点会重复计次');
+  }
+
+  // 28f 每天最多 3 颗勇气星，超出仍累计次数；未知话题不写库
+  {
+    const topics = w.SEL_DATA.expression.prompts;
+    for (let i = 0; i < 3; i++) w.SEL.state.recordExpression(topics[i].id, 'feel');
+    const st = w.SEL.state.expressionStats();
+    must(st.todayStars === 3, '每日勇气星上限没有生效，实际 ' + st.todayStars);
+    const r = w.SEL.state.recordExpression(topics[3].id, 'hope');
+    must(r && r.star === 0 && r.capped === true, '超过每日上限后仍然发星');
+    must(w.SEL.state.expressionStats().total === st.total + 1, '超过上限后开口次数没有继续累计');
+    must(w.SEL.state.recordExpression('__proto__', 'feel') === null, '未知话题仍能写进存档');
+    must(w.SEL.state.recordExpression('ex-not-exist', 'feel') === null, '伪造话题仍能写进存档');
+  }
+
+  // 28g 独立练习页：换卡生效且不会叠加监听器导致重复计次
+  {
+    const html = route('#/express');
+    must(html.includes('勇气小话筒'), '说一说独立页没有渲染');
+    must(!!q('[data-say-next]') && !!q('[data-say-who]'), '独立页缺换卡或说话对象选择');
+    const firstTopic = q('[data-say-card]').getAttribute('data-topic');
+    click(q('[data-say-next]'));
+    const secondTopic = q('[data-say-card]').getAttribute('data-topic');
+    must(secondTopic && secondTopic !== firstTopic, '换一张情境卡后题目没变');
+    const before = w.SEL.state.expressionStats().total;
+    click(q('[data-say-done]'));
+    must(w.SEL.state.expressionStats().total === before + 1, '换卡后事件监听器叠加，点一次记了多次');
+    click(q('[data-say-frames]'));
+    must(spoken().length > 0, '「听一遍三句话」没有朗读');
+  }
+
+  // 28h 家长面板与成长周报能看到开口统计
+  {
+    w.SEL.state.clearPin();
+    const parentHtml = route('#/parent');
+    must(parentHtml.includes('开口表达'), '家长面板缺少开口表达统计');
+    must(parentHtml.includes('不保存孩子说过'), '家长面板没有写明不保存说过的话');
+    const reportHtml = route('#/report');
+    must(reportHtml.includes('这周把心里的话大声说出了'), '成长周报缺少表达统计');
+  }
+
+  // 28i 导入清洗：非法日期 / 负数 / 未知键 / 原型污染 / 非法设置
+  {
+    const backup = JSON.parse(w.SEL.state.exportSave());
+    const dirty = JSON.parse('{"total":-99,"days":[{"date":"2026-99-99","count":5}],' +
+      '"frames":{"__proto__":5,"feel":3,"fake":9},"prompts":{"__proto__":2,"ex-1":4},' +
+      '"todayStars":{"date":"2026-13-01","count":99},"lastAt":"bad"}');
+    dirty.days.push({ date: U.today(), count: 999999 });
+    backup.profiles[0].expression = dirty;
+    backup.profiles[0].settings.autoRead = 'yes';
+    backup.profiles[0].settings.voiceRate = 99;
+    w.SEL.state.importSave(JSON.stringify(backup));
+    const e = w.SEL.state.current().expression;
+    must(e.total === 0, '导入的非法 total 没有清洗');
+    must(e.days.length === 1 && e.days[0].date === U.today(), '导入的非法日期没有清洗');
+    must(Object.getPrototypeOf(e.frames) === null, 'frames 不是无原型对象，可能被污染');
+    must(!('__proto__' in e.frames) && !('fake' in e.frames), '未知句式键没有清洗');
+    must(!('__proto__' in e.prompts), '未知话题键没有清洗');
+    must(e.todayStars.date === '', '非法今日星星日期没有清洗');
+    must(w.SEL.state.current().settings.autoRead === true, '非法 autoRead 没有回落默认值');
+    must(w.SEL.state.current().settings.voiceRate === 1.2, '语速没有 clamp 到 1.2');
+  }
+
+  // 28j 清空进度：表达记录清掉，声音偏好保留
+  {
+    w.SEL.state.setSetting('autoRead', false);
+    w.SEL.state.setSetting('voiceRate', 0.8);
+    w.SEL.state.recordExpression('ex-2', 'hope');
+    w.SEL.state.resetProfile(w.SEL.state.current().id);
+    must(w.SEL.state.current().settings.autoRead === false, '清空进度把自动读题偏好也清掉了');
+    must(w.SEL.state.current().settings.voiceRate === 0.8, '清空进度把语速偏好也清掉了');
+    must(w.SEL.state.expressionStats().total === 0, '清空进度没有清掉开口记录');
+  }
+
+  w.SEL.state.setSetting('voice', true);
+  w.SEL.state.setSetting('autoRead', true);
+  w.SEL.state.setSetting('voiceRate', 0.9);
+  w.SEL.state.importSave(backup28);
+  syncEnd = true;
+} catch (e) {
+  syncEnd = true;
+  fails.push('回归组28异常: ' + (e && e.stack || e));
+}
+
+/* ==================== 29. 封板深度终审：打断 / 降级 / 状态机 / 配置边界 ==================== */
+/* 这些是全局钩子/配置，必须在 finally 里无条件还原，否则会污染后续用例 */
+let cap29 = 3, shuffle29 = null, ctor29 = null, backup29 = null;
+try {
+  const A = w.SEL.audio;
+  const U = w.SEL.utils;
+  backup29 = w.SEL.state.exportSave();
+  const levels29 = w.SEL.state.allLevels();
+  const spoken = () => utterances.map(u => u.text);
+  const choiceLv = levels29.find(x => x.level.type === 'choice').level;
+  const storyLv = levels29.find(x => x.level.type === 'story').level;
+  const orderLv = levels29.find(x => x.level.type === 'order').level;
+  cap29 = w.SEL_DATA.expression.dailyStarCap;
+  shuffle29 = U.shuffle;
+  ctor29 = w.SpeechSynthesisUtterance;
+
+  w.SEL.state.update(p => {
+    p.stars = 999;
+    levels29.forEach(x => { p.levels[x.level.id] = { done: true, stars: 3, attempts: 1, lastAt: '2026-01-01' }; });
+  });
+  w.SEL.state.setSetting('voice', true);
+  w.SEL.state.setSetting('autoRead', true);
+  function freshRoute(hash) {
+    utterances.length = 0;
+    A.clearLog();
+    route(hash);
+    return spoken();
+  }
+
+  // 29a 读题被反馈打断后，播报条不能永远停在「正在读…」
+  {
+    syncEnd = false;
+    freshRoute('#/level/' + choiceLv.id);
+    const bar = q('[data-voice-bar]');
+    must(!!bar && bar.classList.contains('speaking'), '开始读题时播报条没有进入 speaking 状态');
+    click(q('.option-btn'));
+    must(!bar.classList.contains('speaking'), '反馈朗读打断读题后，播报条 speaking 状态残留');
+    must((q('[data-voice-label]').textContent || '').includes('团团'), '打断后播报条文案没有复位');
+    A.stopSpeak();
+    syncEnd = true;
+  }
+
+  // 29b 交互短提示排队：不切碎正在念的一句，且只保留最新一条
+  {
+    syncEnd = false;
+    A.speakSequence(['正在念的一整句']);
+    const cur = utterances[utterances.length - 1];
+    utterances.length = 0;
+    A.readAutoTail('提示一');
+    A.readAutoTail('提示二');
+    must(utterances.length === 0, '短提示把正在念的那一句切断了（会听到残句）');
+    if (cur && cur.onend) cur.onend();
+    must(spoken().length === 1 && spoken()[0] === '提示二', '排队中的旧提示没有被最新一条替换');
+    A.stopSpeak();
+    syncEnd = true;
+  }
+
+  // 29c 无中文语音环境：不排队、不抛错、界面状态正常
+  {
+    delete w.SpeechSynthesisUtterance;
+    let threw = null;
+    try {
+      A.readQuestion(['降级测试题目']);
+      A.speak('手动小喇叭');
+    } catch (e) { threw = e; }
+    must(!threw, '没有 SpeechSynthesisUtterance 时朗读抛错: ' + (threw && threw.message));
+    must(!A.isSpeaking(), '无语音环境仍留下未清理的朗读队列');
+    must(A.recent().includes('降级测试题目'), '无语音环境没有记录待朗读文本');
+    w.SpeechSynthesisUtterance = ctor29;
+  }
+
+  // 29d 「听选项」只念选项；「再听一遍」念整道题；Alt+R 在弹窗打开时不应打断结算语音
+  {
+    freshRoute('#/level/' + choiceLv.id);
+    utterances.length = 0;
+    click(q('[data-voice-options]'));
+    must(spoken().length === choiceLv.data.options.length, '「听选项」念的数量与选项数不一致');
+    utterances.length = 0;
+    click(q('[data-voice-replay]'));
+    must(spoken().some(t => t.includes(choiceLv.data.prompt)), '「再听一遍」没有念题干');
+    utterances.length = 0;
+    w.document.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'R', altKey: true, bubbles: true }));
+    must(spoken().length > 0, 'Alt+R 没有触发题目重听');
+    w.SEL.ui.modal({ title: '测试弹窗', body: '<p>结算语音测试中</p>',
+      actions: [{ label: '关闭', cls: 'ghost', close: true }] }, function () {});
+    utterances.length = 0;
+    w.document.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'R', altKey: true, bubbles: true }));
+    must(spoken().length === 0, '弹窗打开时 Alt+R 仍去点背后关卡的重听按钮');
+    w.SEL.ui.closeModal();
+  }
+
+  // 29e 故事走到第二个节点后，「再听一遍」指向当前节点
+  {
+    freshRoute('#/level/' + storyLv.id);
+    click(q('.option-btn'));
+    const go = q('[data-go]');
+    if (go) click(go);
+    const nodeText = (q('.story-text') && q('.story-text').textContent || '').trim();
+    must(nodeText.length > 8, '故事没能走到下一个节点');
+    utterances.length = 0;
+    click(q('[data-voice-replay]'));
+    must(spoken().some(t => t.includes(nodeText.slice(0, 12))), '故事重听仍指向首个节点，不是当前节点');
+  }
+
+  // 29f 排序题朗读：即使 shuffle 恰好还原成数据顺序，也不能照着答案念
+  {
+    U.shuffle = function (a) { return a.slice(); };
+    const script = w.SEL.games.readScript(orderLv);
+    U.shuffle = shuffle29;
+    const firstItemText = (orderLv.data.items[0] || {}).text || '';
+    must(!script.options[0].includes(firstItemText), '排序题朗读按正确顺序念出了第一步（泄答案）');
+    must(script.options.length === orderLv.data.items.length, '排序题朗读漏念了卡片');
+  }
+
+  // 29g 说一说卡片状态机：折叠 / 展开 / 指定情境卡 / 说话对象 / 统计与贴纸即时刷新
+  {
+    freshRoute('#/level/' + choiceLv.id);
+    click(q('[data-say-hide]'));
+    must(q('[data-say-card]').classList.contains('folded'), '「今天先不说」没有收起卡片');
+    click(q('[data-say-unhide]'));
+    must(!q('[data-say-card]').classList.contains('folded'), '收起后无法展开卡片');
+
+    route('#/express/ex-1');
+    must(q('[data-say-card]').getAttribute('data-topic') === 'ex-1', '#/express/<id> 没有锁定指定情境卡');
+    must(!q('[data-say-hide]') && !q('[data-say-unhide]'), '独立页渲染了永远用不到的折叠按钮');
+    const sel = q('[data-say-who]');
+    sel.value = '2';
+    sel.dispatchEvent(new w.Event('change', { bubbles: true }));
+    const audience = w.SEL_DATA.expression.audiences[2];
+    must((q('[data-say-target]').textContent || '').includes(audience), '选择说话对象后卡片上的对象没变');
+
+    const statsBefore = q('[data-say-stat-slot]').textContent;
+    must(!!q('[data-say-badge-slot]'), '独立页缺少勇气贴纸进度容器');
+    click(q('[data-say-done]'));
+    must(q('[data-say-stat-slot]').textContent !== statsBefore, '说完后统计条没有即时刷新');
+    click(q('[data-say-again]'));
+    must(!!q('[data-say-done]') && q('[data-say-done]').disabled === false, '「再说一次」没有恢复可点击状态');
+  }
+
+  // 29h 每日星星上限跟随配置（不能只在默认 3 时正确）
+  {
+    w.SEL_DATA.expression.dailyStarCap = 5;
+    w.SEL.state.update(p => { p.expression.todayStars = { date: '', count: 0 }; });
+    const stars0 = w.SEL.state.current().stars;
+    for (let i = 1; i <= 6; i++) w.SEL.state.recordExpression('ex-' + i, 'feel');
+    must(w.SEL.state.current().stars === stars0 + 5, 'dailyStarCap=5 时发星数量不对（清洗把计数夹回 3 会无限发星）');
+    must(w.SEL.state.expressionStats().todayStars === 5, 'dailyStarCap=5 时今日星星计数不对');
+    must(route('#/express/ex-1').includes('/5'), 'dailyStarCap=5 时统计条的分母没有跟着变');
+    w.SEL_DATA.expression.dailyStarCap = cap29;
+    w.SEL.state.update(p => { p.expression.todayStars = { date: '', count: 0 }; });
+  }
+
+  // 29i 清空进度不能把「今天已玩多久」归零（家长护栏）
+  {
+    w.SEL.state.update(p => { p.usage = { date: U.today(), seconds: 600 }; });
+    w.SEL.state.resetProfile(w.SEL.state.current().id);
+    must(w.SEL.state.current().usage.seconds === 600, '清空进度把当天已用时长归零，可绕过每日上限');
+  }
+
+  w.SEL.state.importSave(backup29);
+} catch (e) {
+  fails.push('回归组29异常: ' + (e && e.stack || e));
+} finally {
+  syncEnd = true;
+  try { if (shuffle29) w.SEL.utils.shuffle = shuffle29; } catch (e) {}
+  try { w.SEL_DATA.expression.dailyStarCap = cap29; } catch (e) {}
+  try { if (ctor29) w.SpeechSynthesisUtterance = ctor29; } catch (e) {}
+  try { w.SEL.audio.stopSpeak(); } catch (e) {}
+  try { if (backup29) w.SEL.state.importSave(backup29); } catch (e) {}
+}
+
 const levelCount = (w.SEL_DATA.islands || []).reduce((a, i) => a + i.levels.length, 0);
 console.log('=== 心晴岛 运行时冒烟测试 ===');
 console.log(`页面/关卡覆盖: 12 页 + ${(w.SEL_DATA.islands || []).length} 岛 + ${levelCount} 关`);
@@ -795,6 +1236,6 @@ if (fails.length) {
   console.log(`\n--- 失败 (${fails.length}) ---`);
   [...new Set(fails)].forEach(f => console.log('  x ' + f));
 } else if (!runtimeErrors.length) {
-  console.log(`\n✅ 全部页面、${levelCount} 个关卡、签到闭环、7 种题型、解锁链路、存档导入、家长面板与 1.1.x 新功能均通过`);
+  console.log(`\n✅ 全部页面、${levelCount} 个关卡、签到闭环、7 种题型、解锁链路、存档导入、家长面板、1.1.x 功能与 1.2.0 全关卡朗读 / 说一说均通过`);
 }
 process.exit(fails.length || runtimeErrors.length ? 1 : 0);

@@ -6,14 +6,144 @@
   var S = window.SEL.state, UI = window.SEL.ui;
 
   var cleanups = [];
+  var replayHandler = null;
+  var activeHooks = null;   /* 当前关朗读状态回调，互动故事也用它更新播报条 */
   function onCleanup(fn) { cleanups.push(fn); }
   function cleanup() {
     cleanups.forEach(function (f) { try { f(); } catch (e) {} });
     cleanups = [];
+    replayHandler = null;
+    activeHooks = null;
     Audio.stopSpeak();
   }
+  /* 互动故事用它把「再听一遍」指向当前故事节点，而不是关卡标题 */
+  function setReplay(fn) { replayHandler = fn; }
 
   function strip(s) { return String(s || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim(); }
+  /* 故事的说明在「读题稿」与「首节点连读」里共用同一句，避免两处文案各念一遍 */
+  var STORY_READ_HINT = '这是互动故事。团团会把故事和每个做法都念给你听，念完请你选一个。';
+
+  /* ---------------- 全关卡朗读稿 ----------------
+     每关的静态文字（标题、引导、题干、玩法说明、全部选项/卡片、按钮做什么）
+     统一在这里抽出来，进入关卡时自动连读；点「听选项」可以只听选项。
+     排序题的卡片特意打乱后念：数据里 items 往往就是正确顺序，照着念会直接把答案说出来。 */
+  function readScript(level) {
+    var d = level.data || {}, head = [], opts = [];
+    head.push(level.title);
+    head.push(level.intro);
+    switch (level.type) {
+      case 'choice':
+        head.push(d.prompt || '');
+        head.push('选一个你想试试的做法，看看接下来会发生什么');
+        (d.options || []).forEach(function (o, i) { opts.push('做法 ' + (i + 1) + '：' + (o.text || '')); });
+        break;
+      case 'match': {
+        head.push(d.instruction || '把一样的连起来');
+        head.push('先点左边一张卡，再点右边和它做朋友的那张卡');
+        head.push('左边是线索，右边是答案');
+        /* 左侧线索（如「小宇把卷子折成小小一块」）与右侧答案都要念到；
+           两组各自独立打乱，绝不按 pairs 顺序成对念，否则等于把配对关系报出来。 */
+        var lefts = [], rights = [];
+        (d.pairs || []).forEach(function (p) {
+          var lt = p.left && p.left.label;
+          var rt = p.right && p.right.label;
+          if (lt) lefts.push('线索：' + lt);
+          if (rt) rights.push('答案：' + rt);
+        });
+        opts = U.shuffle(lefts).concat(U.shuffle(rights));
+        break;
+      }
+      case 'order': {
+        head.push(d.instruction || '把步骤排好顺序');
+        head.push('用上下箭头调整顺序，也可以拖着卡片移动。排好点「我排好了」');
+        var shuffled = U.shuffle(d.items || []);
+        /* 与显示端同一口径：万一打乱后恰好等于 correct answer，旋转一位，
+           否则约 1/24 的概率会把四步顺序照着念一遍。 */
+        if (shuffled.length > 1 && Array.isArray(d.answer) &&
+            shuffled.every(function (it, i) { return it.id === d.answer[i]; })) {
+          shuffled = shuffled.slice(1).concat(shuffled.slice(0, 1));
+        }
+        shuffled.forEach(function (it) { opts.push('卡片：' + (it.text || '')); });
+        break;
+      }
+      case 'slider':
+        head.push(d.prompt || '现在这个感觉有多强');
+        head.push('拖动小圆点，从' + (d.minLabel || '一点点') + '到' + (d.maxLabel || '非常多') + '，选好点「就选这个」');
+        break;
+      case 'breathe':
+        head.push(d.title || level.intro);
+        head.push('跟着大泡泡一起，慢慢吸气、慢慢呼气，不用做得完美');
+        (d.cues || []).forEach(function (c) { head.push(c); });
+        head.push('点「开始练习」我们一起做，想休息随时点「先停一下」');
+        break;
+      case 'classify':
+        head.push(d.instruction || '把卡片放到合适的篮子里');
+        head.push('先点一张卡片，再点它该去的篮子，也可以直接拖过去');
+        (d.buckets || []).forEach(function (b) { head.push('篮子：' + (b.label || '')); });
+        U.shuffle(d.items || []).forEach(function (it) { opts.push('卡片：' + (it.text || '')); });
+        break;
+      case 'story':
+        head.push(STORY_READ_HINT);
+        break;
+    }
+    return { head: head, options: opts, story: level.type === 'story' };
+  }
+
+  function voiceBarHtml(script) {
+    return '<div class="voice-bar" data-voice-bar role="group" aria-label="题目朗读">' +
+      '<span class="vb-icon" aria-hidden="true">🔊</span>' +
+      '<span class="vb-text" data-voice-label aria-live="polite">团团把题目和选项都念给你听</span>' +
+      '<button class="btn tiny blue" data-voice-replay aria-label="再听一遍整道题">🔁 再听一遍</button>' +
+      (script.options && script.options.length
+        ? '<button class="btn tiny ghost" data-voice-options aria-label="只听选项">📖 听选项</button>' : '') +
+      '<button class="btn tiny ghost" data-voice-stop aria-label="停止朗读">⏸ 停一停</button>' +
+      '</div>';
+  }
+
+  function startReading(root, script) {
+    var bar = U.$('[data-voice-bar]', root);
+    if (!bar) return;
+    var label = U.$('[data-voice-label]', bar);
+    var head = (script.head || []).map(strip).filter(Boolean);
+    var opts = (script.options || []).map(strip).filter(Boolean);
+    var all = head.concat(opts);
+    function resetBar() {
+      bar.classList.remove('speaking');
+      if (label) label.textContent = '团团把题目和选项都念给你听';
+    }
+    function hooks() {
+      return {
+        onItem: function (t) {
+          bar.classList.add('speaking');
+          if (label) label.textContent = '正在读：' + U.cut(strip(t), 20);
+        },
+        onDone: function () {
+          bar.classList.remove('speaking');
+          if (label) label.textContent = '读完啦，想再听就点「再听一遍」';
+        },
+        /* 被反馈朗读 / 换页 / 停一停打断时，audio.js 会调用它复位状态 */
+        onStop: resetBar
+      };
+    }
+    activeHooks = hooks;
+    function play(parts) { if (parts.length) Audio.speakSequence(parts, hooks()); }
+    U.delegate(bar, 'click', '[data-voice-replay]', function () {
+      Audio.unlock();
+      if (replayHandler) { replayHandler(); return; }
+      play(all);
+    });
+    U.delegate(bar, 'click', '[data-voice-options]', function () {
+      Audio.unlock();
+      play(opts.length ? opts : all);
+    });
+    U.delegate(bar, 'click', '[data-voice-stop]', function () {
+      Audio.stopSpeak();
+      bar.classList.remove('speaking');
+      if (label) label.textContent = '先停一下，想听随时点「再听一遍」';
+    });
+    /* 故事由节点自己朗读（正文 + 选项 + 道理），这里不重复念一遍题目 */
+    if (!script.story) Audio.readQuestion(all, hooks());
+  }
 
   function setExtra(root, html) {
     var ex = U.$('.game-extra', root);
@@ -67,7 +197,8 @@
           var ex = setExtra(root, tipBox(title, body, good) +
             '<div class="row" style="margin-top:10px"><button class="btn tiny blue" data-again>再看看别的做法</button></div>' +
             finishBtn(good ? 3 : 2, '你做出选择了', strip(o.feedback || o.outcome || level.teach)));
-          Audio.speak(title + '。' + strip(o.outcome || '') + '。' + strip(o.feedback || ''));
+          Audio.readAuto(['你选了：' + strip(o.text || '') + '。', title + '。',
+            strip(o.outcome || ''), strip(o.feedback || '')]);
           U.$('[data-again]', ex).addEventListener('click', function () { Audio.sfx('tap'); reset(); });
         });
       }
@@ -111,12 +242,16 @@
           Audio.sfx('tap');
           if (side === 'L') {
             U.$$('.pair-item.active', card).forEach(function (b) { b.classList.remove('active'); });
-            t.classList.add('active'); active = t; return;
+            t.classList.add('active'); active = t;
+            Audio.readAutoTail('左边：' + strip(t.textContent));
+            return;
           }
           if (!active) {
             setExtra(root, tipBox('先点左边的一张卡吧', '每张左边的卡，都藏着一个小线索 🔍', false));
+            Audio.readAutoTail('先点左边的一张卡吧，每张左边的卡都藏着一个小线索。');
             return;
           }
+          Audio.readAutoTail('右边：' + strip(t.textContent));
           if (active.getAttribute('data-key') === key) {
             Audio.sfx('pop');
             active.classList.remove('active'); active.classList.add('matched');
@@ -127,9 +262,13 @@
               var ex = setExtra(root, tipBox('全部找到朋友啦 🎉',
                 '<p>你一共配出了 ' + total + ' 对。认出情绪的线索，是认识自己的第一步。</p>' +
                 finishBtn(stars, '配对完成', level.teach || '你认出了这些情绪'), true));
-              Audio.sfx('win'); Audio.speak('全部找到朋友啦！' + strip(level.teach || ''));
+              Audio.sfx('win');
+              Audio.readAuto(['全部找到朋友啦！你一共配出了 ' + total + ' 对。认出情绪的线索，是认识自己的第一步。',
+                strip(level.teach || '')]);
               UI.confetti(10);
               void ex;
+            } else {
+              Audio.readAutoTail('配成一对啦，还剩 ' + (total - matched) + ' 对。');
             }
           } else {
             miss++;
@@ -139,6 +278,7 @@
             var a = active;
             setTimeout(function () { a.classList.remove('shake'); }, 400);
             setExtra(root, tipBox('这两张还不太一样', '再看看表情和线索，慢慢来就好 🙂', false));
+            Audio.readAutoTail('这两张还不太一样，再看看表情和线索，慢慢来就好。');
           }
         });
       }
@@ -216,6 +356,7 @@
               '<p>' + U.esc(level.teach || '一步步来，事情会顺很多。') + '</p>' +
               finishBtn(stars, '步骤排好了', strip(level.teach || '')), true));
             Audio.sfx('win'); UI.confetti(10);
+            Audio.readAuto(['顺序排对啦！', strip(level.teach || '一步步来，事情会顺很多。')]);
           } else {
             var firstBad = 0;
             for (var i = 0; i < answer.length; i++) { if (cur[i] !== answer[i]) { firstBad = i; break; } }
@@ -223,7 +364,7 @@
             if (el) { el.style.borderColor = 'var(--purple)'; setTimeout(function () { el.style.borderColor = ''; }, 1200); }
             setExtra(root, tipBox('再看看第 ' + (firstBad + 1) + ' 步',
               '<p>想想：做这件事之前，先要发生什么？把最该先做的一步挪到前面试试 🙌</p>', false));
-            Audio.speak('再看看第 ' + (firstBad + 1) + ' 步，想想哪件事应该先发生。');
+            Audio.readAutoTail('再看看第 ' + (firstBad + 1) + ' 步，想想哪件事应该先发生。');
           }
         });
       }
@@ -266,7 +407,7 @@
             (inRange ? '这个强度的感觉很明显，值得认真对待。' : '你感受到的强度比较小，也完全没问题。') +
             '</p><p>' + U.esc(d.hint || '同一种情绪，也会有一点点和满满的区别。能说出「有多强」，别人才更容易帮到你。') + '</p>';
           setExtra(root, tipBox('你的感受，你最清楚 💛', body + finishBtn(3, '感觉被看见了', strip(d.hint || level.teach || '')), true));
-          Audio.speak('你的感受，你最清楚。' + strip(body));
+          Audio.readAuto(['你的感受，你最清楚。', strip(body)]);
         });
       }
     };
@@ -388,8 +529,14 @@
           setExtra(root, tipBox('练完啦，真棒 🎉',
             '<p>生气、紧张、害怕的时候，都可以先做 3 轮这样的呼吸。' +
             U.esc(level.teach || '') + '</p>' + finishBtn(3, '呼吸练习完成', strip(level.teach || '')), true));
+          Audio.readAuto(['练完啦，真棒！', '生气、紧张、害怕的时候，都可以先做 3 轮这样的呼吸。' +
+            strip(level.teach || '')]);
         }
-        U.delegate(card, 'click', '[data-start]', function () { Audio.unlock(); Audio.sfx('pop'); run(); });
+        U.delegate(card, 'click', '[data-start]', function () {
+          Audio.unlock(); Audio.sfx('pop');
+          Audio.readAutoTail('开始啦，跟着大泡泡慢慢吸气、慢慢呼气。');
+          run();
+        });
         U.delegate(card, 'click', '[data-stop]', function () {
           if (completed) return;
           if (!started) { UI.toast('先点「开始练习」，我们一起试试 🌿'); return; }
@@ -401,6 +548,7 @@
           cue.textContent = '练过一点点也算数，想练的时候再来 🌿';
           setExtra(root, tipBox('先休息一下', '<p>呼吸练习不用一次做完，任何时候都能重新开始。</p>' +
             finishBtn(1, '今天练了一点点', '呼吸练习可以分次完成。'), true));
+          Audio.readAutoTail('先休息一下，练过一点点也算数，想练的时候再来。');
         });
       }
     };
@@ -435,9 +583,29 @@
           for (var i = 0; i < max; i++) s += '<span class="' + (i < steps ? 'on' : '') + '"></span>';
           return s + '</div>';
         }
+        var firstDraw = true;
+        /* 每个节点的完整朗读稿：说话人 + 正文 + 所有做法 / 结局的道理与探索度 */
+        function nodeParts(n, ending, prog) {
+          var parts = [(n.speaker || '团团') + '说：' + strip(n.text || '')];
+          if (ending) {
+            parts.push('这个小故事的道理：' + strip(n.moral || level.teach || ''));
+            parts.push('故事走到这里啦。你一共做了 ' + steps + ' 次选择，每个做法都会带来不一样的结果。');
+            parts.push('已发现 ' + prog.endingsSeen + ' 个结局，一共 ' + prog.endingsTotal + ' 个。' +
+              (prog.endingsRemaining > 0
+                ? '还有 ' + prog.endingsRemaining + ' 条路没走过，下次可以试试另一个做法。'
+                : '每个结局你都看过了，真好奇宝宝。'));
+          } else {
+            parts.push('如果是你，会怎么做？');
+            (n.choices || []).forEach(function (c, i) {
+              parts.push('做法 ' + (i + 1) + '：' + strip(c.text || ''));
+            });
+          }
+          return parts.filter(Boolean);
+        }
         function draw(nodeId) {
           var n = nodes[nodeId] || {};
           var ending = n.ending === true || !n.choices || !n.choices.length;
+          var prog = { endingsSeen: 0, endingsTotal: 0, endingsRemaining: 0 };
           /* 记下走过的节点/结局，用来提示"还有几条路没走过"；重玩也继续累积 */
           try { S.markStoryNode(story.id, nodeId, ending); } catch (e) {}
           var face = A.buddy('cloud', n.emotion || 'calm', 90);
@@ -468,8 +636,17 @@
               }).join('') + '</div>';
           }
           panel.innerHTML = body;
-          /* 结局要连"故事正文 + 这句话的道理"一起念；此前正文会把刚念到的道理顶掉 */
-          Audio.speak(ending ? strip((n.text || '') + '。' + (n.moral || level.teach || '')) : (n.text || ''));
+          /* 正文、做法、结局的道理与探索度一次连读完，不再被下一句顶掉；
+             「再听一遍」指向当前节点，手动点不受「自动读题」开关影响。 */
+          var parts = nodeParts(n, ending, prog);
+          if (firstDraw) {
+            firstDraw = false;
+            parts = [strip(level.title), strip(level.intro), STORY_READ_HINT].concat(parts);
+          }
+          var playParts = parts;
+          /* 故事节点也走同一套播报条状态回调，label 不再永远停在初始文案 */
+          setReplay(function () { Audio.speakSequence(playParts, activeHooks ? activeHooks() : null); });
+          Audio.readAuto(playParts, activeHooks ? activeHooks() : null);
         }
         var currentId = story.start || Object.keys(nodes)[0];
         U.delegate(panel, 'click', '.option-btn', function (e, t) {
@@ -484,7 +661,8 @@
             '<p>' + U.esc(c.feedback || '') + '</p>' +
             '<div style="margin-top:12px"><button class="btn tiny blue" data-go>继续故事 →</button></div>';
           panel.appendChild(box);
-          Audio.speak(strip(c.feedback || ''));
+          Audio.readAuto(['你选了：' + strip(c.text || '') + '。',
+            (c.good ? '这样处理，感觉更稳。' : '看看接下来会发生什么。'), strip(c.feedback || '')]);
           U.$('[data-go]', box).addEventListener('click', function () {
             steps++;
             /* 点「继续故事」才算真的选定了这条路：只点开看看又离开，不写库 */
@@ -543,6 +721,9 @@
                 '<p>' + U.esc(level.teach || '') + '</p>' +
                 finishBtn(stars, '分类完成', strip(level.teach || '')), true));
               Audio.sfx('win'); UI.confetti(10);
+              Audio.readAuto(['全部放好啦！'].concat((d.explain || []).map(strip), [strip(level.teach || '')]));
+            } else {
+              Audio.readAutoTail('放好啦，还剩 ' + (total - placed) + ' 张卡片。');
             }
           } else {
             miss++;
@@ -550,6 +731,7 @@
             item.classList.add('shake');
             setTimeout(function () { item.classList.remove('shake'); }, 400);
             setExtra(root, tipBox('再想一想', '<p>这张卡放这里，会发生什么？看看它更适合哪个篮子 🙂</p>', false));
+            Audio.readAutoTail('再想一想，这张卡放这里会发生什么？看看它更适合哪个篮子。');
           }
           active = null;
         }
@@ -558,12 +740,17 @@
           Audio.sfx('tap');
           U.$$('.drag-item.active', card).forEach(function (b) { b.classList.remove('active'); });
           t.classList.add('active'); active = t;
+          Audio.readAutoTail('卡片：' + strip(t.textContent));
         });
         U.delegate(card, 'click', '.bucket', function (e, t) {
           /* 点已经放进篮子的卡片时，不要弹“先选一张卡片”的提示 */
           if (e.target && e.target.closest && e.target.closest('.drag-item')) return;
           if (finished) return;
-          if (!active) { setExtra(root, tipBox('先选一张卡片', '点上面的一张卡片，再选篮子 🙂', false)); return; }
+          if (!active) {
+            setExtra(root, tipBox('先选一张卡片', '点上面的一张卡片，再选篮子 🙂', false));
+            Audio.readAutoTail('先选一张卡片，再点它该去的篮子。');
+            return;
+          }
           place(active, t);
         });
         var dragging = null;
@@ -588,8 +775,10 @@
   function render(level, ctx) {
     var def = registry[level.type] || choiceGame;
     var inner = def(level, ctx);
+    var script = readScript(level);
     return {
-      html: '<div class="game-card">' + inner.html + '<div class="game-extra"></div></div>',
+      html: '<div class="game-card">' + voiceBarHtml(script) + inner.html + '<div class="game-extra"></div></div>',
+      read: script,
       mount: function (root) {
         inner.mount(root);
         U.delegate(root, 'click', '[data-finish]', function (e, t) {
@@ -601,7 +790,7 @@
           Audio.sfx('star');
           var title = t.getAttribute('data-title') || '完成啦';
           var text = t.getAttribute('data-text') || '';
-          Audio.speak(title + '。' + text);
+          /* 结算文案由完成弹窗一次连读完（含「今天学到」与给大人的话），这里不再抢读 */
           ctx.complete({
             stars: U.clamp(Number(t.getAttribute('data-stars')) || 3, 1, 3),
             title: title, feedback: text
@@ -611,5 +800,7 @@
     };
   }
 
-  window.SEL.games = { render: render, cleanup: cleanup };
+  window.SEL.games = {
+    render: render, cleanup: cleanup, startReading: startReading, readScript: readScript
+  };
 })();

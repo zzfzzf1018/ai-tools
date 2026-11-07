@@ -65,22 +65,29 @@ function prepareReleasePlan(root, env) {
   const plan = planRelease(current, previous, event, root);
   if (plan.publish) {
     if (runGit(root, ['tag', '--list', plan.tag])) {
-      throw new Error(`Release tag ${plan.tag} already exists; use a new version.`);
+      /* 封板时人工已打好并推送了同名 tag：只要它指向的就是本次发布提交，
+         就复用（幂等），不要重复创建，更不要让整条发布流水线失败。
+         指向别的提交则说明版本号复用，必须换版本。 */
+      const taggedSha = runGit(root, ['rev-list', '-n', '1', plan.tag]);
+      if (taggedSha !== event.sha) {
+        throw new Error(`Release tag ${plan.tag} exists but points to another commit; use a new version.`);
+      }
+    } else {
+      runGit(root, [
+        '-c',
+        'user.name=github-actions[bot]',
+        '-c',
+        'user.email=41898282+github-actions[bot]@users.noreply.github.com',
+        '-c',
+        'tag.gpgsign=false',
+        'tag',
+        '-a',
+        plan.tag,
+        '-m',
+        `心晴岛 ${current}`,
+        event.sha,
+      ]);
     }
-    runGit(root, [
-      '-c',
-      'user.name=github-actions[bot]',
-      '-c',
-      'user.email=41898282+github-actions[bot]@users.noreply.github.com',
-      '-c',
-      'tag.gpgsign=false',
-      'tag',
-      '-a',
-      plan.tag,
-      '-m',
-      `心晴岛 ${current}`,
-      event.sha,
-    ]);
     validateRelease(resolveVersion(root, { env }), plan.tag, event.sha);
   }
   return plan;

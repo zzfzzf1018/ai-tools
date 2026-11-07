@@ -3,7 +3,7 @@
    发版时请同步修改 CACHE 里的版本号——文件内容一变，浏览器才会安装新的 SW 并重新取资源。 */
 'use strict';
 
-var CACHE = 'sunny-isles-1.1.2';
+var CACHE = 'sunny-isles-1.2.0';
 var ASSETS = [
   './',
   './index.html',
@@ -18,6 +18,7 @@ var ASSETS = [
   './src/ui/components.js',
   './src/ui/calm.js',
   './src/ui/games.js',
+  './src/ui/expression.js',
   './src/ui/screens.js',
   './src/main.js',
   './icons/icon-192.png',

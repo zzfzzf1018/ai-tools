@@ -174,11 +174,54 @@ let minStars = 0;
   (island.levels || []).forEach(lv => { minStars += MIN_STARS[lv.type] || 2; });
 });
 
-/* ---------- 贴纸可获得性：每张贴纸都必须至少作为一次关卡奖励出现 ---------- */
+/* ---------- 贴纸可获得性：关卡奖励 或 「说一说」开口里程碑 ---------- */
 const rewarded = new Set(allLevels.map(x => x.lv.reward && x.lv.reward.sticker).filter(Boolean));
+const badgeIds = new Set(((d.expression || {}).badges || []).map(b => b.id));
 (d.stickers || []).forEach(s => {
-  if (!rewarded.has(s.id)) E(`贴纸 ${s.id} 没有出现在任何关卡奖励里，孩子永远拿不到`);
+  if (!rewarded.has(s.id) && !badgeIds.has(s.id)) {
+    E(`贴纸 ${s.id} 既不是关卡奖励、也不是「说一说」里程碑，孩子永远拿不到`);
+  }
 });
+
+/* ---------- 说一说 · 勇气小话筒：数据契约 ---------- */
+const ex = d.expression;
+if (!ex || typeof ex !== 'object') E('expression 缺失');
+else {
+  if (!isArr(ex.frames) || ex.frames.length < 3) E('expression.frames 需要 3 个句式');
+  if (!isArr(ex.prompts) || ex.prompts.length < 8) E('expression.prompts 至少 8 张情境卡');
+  if (!isArr(ex.cheers) || ex.cheers.length < 4) E('expression.cheers 至少 4 句鼓励语');
+  if (!isArr(ex.audiences) || ex.audiences.length < 2) E('expression.audiences 缺失');
+  if (!isArr(ex.badges) || !ex.badges.length) E('expression.badges 缺失');
+  const cap = Number(ex.dailyStarCap);
+  if (!(Number.isInteger(cap) && cap >= 1 && cap <= 10)) E('expression.dailyStarCap 需为 1–10 的整数');
+  dupes(ex.frames, 'id', 'expression.frames');
+  dupes(ex.prompts, 'id', 'expression.prompts');
+  dupes(ex.badges, 'id', 'expression.badges');
+  const frameIds = new Set((ex.frames || []).map(f => f.id));
+  (ex.frames || []).forEach(f => {
+    ['id', 'label', 'hint', 'example', 'emoji'].forEach(k => { if (!has(f, k)) E(`expression.frames ${f.id} 缺 ${k}`); });
+  });
+  (ex.prompts || []).forEach(p => {
+    ['id', 'scene', 'who', 'demo', 'feeling', 'emoji'].forEach(k => { if (!has(p, k)) E(`expression.prompts ${p.id} 缺 ${k}`); });
+    if (p.frame && !frameIds.has(p.frame)) E(`expression.prompts ${p.id} 指向未知句式 ${p.frame}`);
+    if (!/我觉得/.test(p.demo) || !/因为/.test(p.demo) || !/我希望/.test(p.demo)) {
+      W(`expression.prompts ${p.id} 的示范句没有完整覆盖「我觉得…因为…我希望…」`);
+    }
+  });
+  const levelIds = new Set(allLevels.map(x => x.lv.id));
+  const lp = ex.levelPrompts || {};
+  allLevels.forEach(({ lv }) => {
+    const t = lp[lv.id];
+    if (!t || !has(t, 'scene') || !has(t, 'demo') || !has(t, 'who')) {
+      E(`expression.levelPrompts 缺少关卡 ${lv.id} 的说一说话题`);
+    } else if (!/我觉得/.test(t.demo)) W(`levelPrompts.${lv.id} 示范句没有以「我觉得」开头`);
+  });
+  Object.keys(lp).forEach(k => { if (!levelIds.has(k)) E(`expression.levelPrompts 存在未知关卡 ${k}`); });
+  (ex.badges || []).forEach(b => {
+    if (!stickerIds.has(b.id)) E(`expression.badges ${b.id} 没有对应的贴纸`);
+    if (!(Number.isInteger(b.at) && b.at >= 1 && b.at <= 100)) E(`expression.badges ${b.id} 的 at 非法`);
+  });
+}
 
 /* ---------- 签到原因表必须与情绪一一对应 ---------- */
 Object.keys(d.checkinReasons || {}).forEach(id => {
@@ -284,6 +327,37 @@ if (!/rel="manifest"/.test(html)) E('index.html 没有声明 manifest，浏览�
 const cspForPwa = (html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/i) || [])[1] || '';
 if (!/manifest-src\s+'self'/.test(cspForPwa)) E('CSP 缺少 manifest-src，PWA 清单会被拦截');
 if (!/worker-src\s+'self'/.test(cspForPwa)) E('CSP 缺少 worker-src，Service Worker 无法注册');
+
+/* ---------- 朗读链路：入口、脚本清单、离线安全 ---------- */
+const audioSrc = fs.readFileSync(path.join(root, 'src/core/audio.js'), 'utf8');
+['speakSequence', 'readQuestion', 'readAuto', 'stopSpeak', 'voiceRate'].forEach(k => {
+  if (!audioSrc.includes(k)) E('audio.js 缺少朗读队列能力: ' + k);
+});
+const gamesSrc = fs.readFileSync(path.join(root, 'src/ui/games.js'), 'utf8');
+['readScript', 'voiceBarHtml', 'startReading'].forEach(k => {
+  if (!gamesSrc.includes(k)) E('games.js 缺少全关卡朗读能力: ' + k);
+});
+const htmlScripts = [...html.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
+const swForScripts = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+htmlScripts.forEach(s => {
+  if (!fs.existsSync(path.join(root, s))) E('index.html 引用的脚本不存在: ' + s);
+  if (!swForScripts.includes("'./" + s + "'")) E('sw.js 没有预缓存页面脚本 ' + s + '，装到桌面后离线会缺文件');
+});
+if (!/media-src\s+'none'/.test(cspForPwa)) E('CSP 应继续禁止媒体源：说一说不录音、不申请麦克风');
+if (!/connect-src\s+'none'/.test(cspForPwa)) E('CSP 应继续禁止外部连接（完全离线承诺）');
+['choice', 'match', 'order', 'slider', 'breathe', 'story', 'classify'].forEach(t => {
+  if (!new RegExp("case '" + t + "'").test(gamesSrc)) E('readScript 漏了题型: ' + t);
+});
+if (!/shuffled\.every/.test(gamesSrc)) E('排序题朗读缺少「打乱后恰好等于答案」的保护，会泄露答案');
+const stateSrc = fs.readFileSync(path.join(root, 'src/core/state.js'), 'utf8');
+const exprSrc = fs.readFileSync(path.join(root, 'src/ui/expression.js'), 'utf8');
+if (!/function dailyCap\(\)/.test(stateSrc)) E('state.js 缺少统一的每日勇气星上限函数');
+if (/intIn\(ts\.count,\s*0,\s*3,/.test(stateSrc)) E('导入清洗把每日星星计数写死夹到 3，与可配置上限不一致');
+if (/todayStars\s*\+\s*'\/3'/.test(exprSrc)) E('统计条把每日星星上限写死成 3');
+if (!/function fixedTopic\(/.test(exprSrc)) E('说一说独立页缺少可指定情境卡的能力（视觉基线需要确定性）');
+const visualSrc = fs.readFileSync(path.join(root, 'tools/visual.cjs'), 'utf8');
+if (!/#\/express\/ex-1/.test(visualSrc)) E('视觉基线没有覆盖说一说独立页');
+if (!/p\.settings\.autoRead\s*=\s*false/.test(visualSrc)) E('视觉基线未关闭自动读题，播报条文案会随语音状态漂移');
 const swPath = path.join(root, 'sw.js');
 if (!fs.existsSync(swPath)) E('缺少 sw.js，Web 版无法离线启动');
 else {
@@ -310,6 +384,10 @@ const releaseSrc = fs.readFileSync(path.join(root, 'scripts/release.cjs'), 'utf8
 ['manifest.webmanifest', 'sw.js', "'icons'"].forEach(k => {
   if (!releaseSrc.includes(k)) E('release.cjs 的 Web 打包清单缺少 ' + k.replace(/'/g, '') + '，发布出的 web.zip 会没有 PWA 能力');
 });
+/* 封板时人工打 tag 并推送是常见操作；prepare 必须能复用指向同一提交的 tag */
+if (!/taggedSha/.test(releaseSrc)) {
+  W('release.cjs 的 prepare 缺少「同名 tag 已存在且指向本次提交」的幂等处理，人工打 tag 会让 CI 发布失败');
+}
 // 预览服务必须给 .webmanifest 正确的 MIME，否则 Chrome 不认安装清单
 const serveMimeSrc = fs.readFileSync(path.join(root, 'desktop/serve.mjs'), 'utf8');
 if (!/\.webmanifest'\s*:\s*'application\/manifest\+json/.test(serveMimeSrc)) {

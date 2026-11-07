@@ -47,8 +47,12 @@
       strategyCount: {},   // strategyId -> 次数
       usage: { date: U.today(), seconds: 0 },   // 当天累计使用秒数（家长端时长限制用）
       stories: {},         // storyId -> { nodes: [], endings: [] } 走过的分支
+      /* 只记「说过的次数 / 日期 / 用过的句式」，绝不保存孩子说的内容 */
+      expression: { total: 0, days: [], frames: {}, prompts: {}, todayStars: { date: '', count: 0 }, lastAt: '' },
       settings: {
         voice: true, sfx: true, reduceMotion: false,
+        autoRead: true,          // 进入关卡自动读题、反馈与鼓励
+        voiceRate: 0.9,          // 朗读语速 0.7–1.2
         screenLimit: 0,          // 每日分钟上限，0 = 不限制
         bedtimeOn: false,        // 睡前锁定
         bedtimeStart: '20:30',
@@ -182,6 +186,56 @@
     });
   }
 
+  /* 表达练习记录：只保留次数与日期。导入的备份可能带任意键，
+     一律走白名单 + 无原型对象，避免 __proto__ 之类的键污染存档。 */
+  function knownExpressionKeys() {
+    var out = { frames: Object.create(null), prompts: Object.create(null) };
+    try {
+      var ex = (data().expression || {});
+      (ex.frames || []).forEach(function (f) { if (safeId(f.id)) out.frames[f.id] = true; });
+      (ex.prompts || []).forEach(function (p) { if (safeId(p.id)) out.prompts[p.id] = true; });
+      Object.keys(ex.levelPrompts || {}).forEach(function (k) { if (safeId(k)) out.prompts[k] = true; });
+    } catch (e) {}
+    return out;
+  }
+  /* 每日勇气星上限：课程数据可配 1–10，读取侧与写入侧必须用同一个值，
+     否则把 cap 调大后，每次清洗都会把计数夹回 3，等于可以无限刷星。 */
+  function dailyCap() {
+    try { return U.clamp(Number((data().expression || {}).dailyStarCap) || 3, 1, 10); }
+    catch (e) { return 3; }
+  }
+  function cleanCountMap(obj, known) {
+    var out = Object.create(null);
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return out;
+    Object.keys(obj).slice(0, 100).forEach(function (k) {
+      if (!safeId(k) || (known && !known[k])) return;
+      out[k] = Math.max(0, intIn(obj[k], 0, 1e6, 0));
+    });
+    return out;
+  }
+  function cleanExpression(x) {
+    var known = knownExpressionKeys();
+    var out = {
+      total: 0, days: [], frames: cleanCountMap(x && x.frames, known.frames),
+      prompts: cleanCountMap(x && x.prompts, known.prompts),
+      todayStars: { date: '', count: 0 }, lastAt: ''
+    };
+    if (!x || typeof x !== 'object' || Array.isArray(x)) return out;
+    out.total = Math.max(0, intIn(x.total, 0, 1e6, 0));
+    var seen = Object.create(null);
+    out.days = (Array.isArray(x.days) ? x.days : []).slice(-60).filter(function (d) {
+      if (!d || typeof d !== 'object' || !validDay(d.date) || seen[d.date]) return false;
+      seen[d.date] = true;
+      return true;
+    }).map(function (d) { return { date: d.date, count: Math.max(1, intIn(d.count, 1, 999, 1)) }; }).slice(-60);
+    var ts = x.todayStars;
+    if (ts && typeof ts === 'object' && validDay(ts.date)) {
+      out.todayStars = { date: ts.date, count: intIn(ts.count, 0, dailyCap(), 0) };
+    }
+    out.lastAt = validDay(x.lastAt) ? x.lastAt : '';
+    return out;
+  }
+
   /* 把任意来源（旧版本存档 / 用户导入文件）修成可用结构；无法修复时返回 null。
      这一步必须足够宽容：宁可丢弃坏字段，也不能让整份存档读不出来。 */
   function normalize(s) {
@@ -209,9 +263,11 @@
       SKILLS.forEach(function (k) { p.skills[k] = Math.max(0, intIn(p.skills[k], 0, 1e9, 0)); });
 
       if (!p.settings || typeof p.settings !== 'object' || Array.isArray(p.settings)) p.settings = {};
-      ['voice', 'sfx', 'reduceMotion', 'bedtimeOn'].forEach(function (k) {
+      ['voice', 'sfx', 'reduceMotion', 'bedtimeOn', 'autoRead'].forEach(function (k) {
         if (typeof p.settings[k] !== 'boolean') p.settings[k] = base.settings[k];
       });
+      var vr = Number(p.settings.voiceRate);
+      p.settings.voiceRate = isFinite(vr) ? Math.round(U.clamp(vr, 0.7, 1.2) * 10) / 10 : base.settings.voiceRate;
       /* 0 = 不限制；允许 5–240 分钟，避免导入一份 999999 分钟把限制变成隐形关闭 */
       p.settings.screenLimit = intIn(p.settings.screenLimit, 0, 240, 0);
       ['bedtimeStart', 'bedtimeEnd'].forEach(function (k) {
@@ -249,6 +305,7 @@
 
       p.checkins = cleanCheckins(p.checkins);
       p.flowers = cleanFlowers(p.flowers);
+      p.expression = cleanExpression(p.expression);
 
       var counts = Object.create(null);
       if (p.strategyCount && typeof p.strategyCount === 'object' && !Array.isArray(p.strategyCount)) {
@@ -500,6 +557,70 @@
     update(function (p) { p.strategyCount[id] = (p.strategyCount[id] || 0) + 1; });
   }
 
+  /* ---------- 说一说 · 勇气小话筒 ----------
+     孩子自己点「我说出来啦」才记一次：不录音、不识别、不保存说过的话。
+     同一天最多发 3 颗勇气星，之后照常累计次数（避免孩子刷星）。 */
+  function recordExpression(topicId, frameId) {
+    var known = knownExpressionKeys();
+    var id = typeof topicId === 'string' ? topicId.slice(0, 60) : '';
+    if (!id || !known.prompts[id]) return null;   /* 未知话题不写库，防伪造 */
+    var frame = typeof frameId === 'string' ? frameId.slice(0, 40) : '';
+    if (frame && !known.frames[frame]) frame = '';
+    var today = U.today();
+    var out = { star: 0, total: 0, streak: 0, capped: false, badges: [] };
+    update(function (p) {
+      var e = cleanExpression(p.expression);
+      e.total += 1;
+      var rec = null;
+      e.days.forEach(function (d) { if (d.date === today) rec = d; });
+      if (!rec) { rec = { date: today, count: 0 }; e.days.push(rec); }
+      if (e.days.length > 60) e.days = e.days.slice(-60);
+      rec.count = Math.min(999, rec.count + 1);
+      if (frame) e.frames[frame] = (e.frames[frame] || 0) + 1;
+      e.prompts[id] = (e.prompts[id] || 0) + 1;
+      e.lastAt = today;
+      if (e.todayStars.date !== today) e.todayStars = { date: today, count: 0 };
+      var cap = dailyCap();
+      if (e.todayStars.count < cap) { e.todayStars.count += 1; p.stars += 1; out.star = 1; }
+      else out.capped = true;
+      p.expression = e;
+      out.total = e.total;
+      var badges = [];
+      try { badges = (data().expression || {}).badges || []; } catch (err2) {}
+      badges.forEach(function (b) {
+        if (e.total >= b.at && b.id && p.stickers.indexOf(b.id) < 0) {
+          p.stickers.push(b.id);
+          out.badges.push(b);
+        }
+      });
+    });
+    out.streak = expressionStats().streak;
+    return out;
+  }
+
+  function expressionStats() {
+    var e = cleanExpression(current().expression);
+    var byDate = Object.create(null);
+    e.days.forEach(function (d) { byDate[d.date] = d.count; });
+    var streak = 0;
+    for (var i = 0; i < 60; i++) {
+      if (byDate[U.daysAgo(i)]) streak++;
+      else if (i > 0) break;
+    }
+    var week = 0, monday = U.weekStart();
+    e.days.forEach(function (d) { if (U.dayDiff(monday, d.date) >= 0) week += d.count; });
+    var topFrame = '', topCount = 0;
+    Object.keys(e.frames).forEach(function (k) {
+      if (e.frames[k] > topCount) { topCount = e.frames[k]; topFrame = k; }
+    });
+    return {
+      total: e.total, streak: streak, week: week, days: e.days.length,
+      lastAt: e.lastAt, topFrame: topFrame, frames: e.frames,
+      today: byDate[U.today()] || 0,
+      todayStars: e.todayStars.date === U.today() ? e.todayStars.count : 0
+    };
+  }
+
   /* ---------- 使用时长 ---------- */
   function usageToday() {
     var p = current();
@@ -685,8 +806,15 @@
         /* 清空的是「进度」，不是调好的偏好，更不是家长设的护栏：
            每日时长上限与睡前锁必须跨「清空进度」存活，否则家长一清空，
            孩子的使用限制就静默失效了。 */
+        /* 「今天已经玩了多久」也是家长护栏：清空进度不能把它归零，
+           否则时长上限一到，清空一次进度就能再玩满一天。 */
+        f.usage = {
+          date: U.today(),
+          seconds: (p.usage && p.usage.date === U.today()) ? Math.max(0, Number(p.usage.seconds) || 0) : 0
+        };
         f.settings = {
           voice: p.settings.voice, sfx: p.settings.sfx, reduceMotion: p.settings.reduceMotion,
+          autoRead: p.settings.autoRead, voiceRate: p.settings.voiceRate,
           screenLimit: p.settings.screenLimit, bedtimeOn: p.settings.bedtimeOn,
           bedtimeStart: p.settings.bedtimeStart, bedtimeEnd: p.settings.bedtimeEnd
         };
@@ -750,6 +878,7 @@
     isIslandUnlocked: isIslandUnlocked, isLevelUnlocked: isLevelUnlocked,
     addStars: addStars, unlockSticker: unlockSticker, completeLevel: completeLevel,
     addSkill: addSkill, addCheckin: addCheckin, practiceStrategy: practiceStrategy,
+    recordExpression: recordExpression, expressionStats: expressionStats,
     addUsage: addUsage, usageToday: usageToday,
     markStoryNode: markStoryNode, storyProgress: storyProgress,
     checkinTrend: checkinTrend, strategyEffect: strategyEffect, recommendLevels: recommendLevels,

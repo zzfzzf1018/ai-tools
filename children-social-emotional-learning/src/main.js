@@ -38,6 +38,7 @@
         case 'island': view = SC.island(p[1]); break;
         case 'level': view = SC.level(p[1]); break;
         case 'emotions': view = SC.emotions(); break;
+        case 'express': view = SC.express(p[1]); break;
         case 'help': view = SC.help(); break;
         case 'checkin': view = SC.checkin(); break;
         case 'strategies': view = SC.strategies(); break;
@@ -168,8 +169,8 @@
       var cur = S.current().settings[key];
       if (typeof cur !== 'boolean') return;
       S.setSetting(key, !cur);
-      /* 关掉朗读时顺手停掉正在念的那一句，不然关完还在念 */
-      if (key === 'voice' && cur) Audio.stopSpeak();
+      /* 关掉朗读 / 自动读题时顺手停掉正在念的那一句，不然关完还在念 */
+      if ((key === 'voice' || key === 'autoRead') && cur) Audio.stopSpeak();
       Audio.sfx('tap');
       render();
       return;
@@ -178,6 +179,15 @@
 
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') { UI.closeModal(); Audio.stopSpeak(); }
+    /* Alt + R：关卡里随时重听题目，键盘用户不用去找播报条 */
+    if (e.altKey && (e.key === 'r' || e.key === 'R')) {
+      var tag = e.target && e.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      /* 结算弹窗打开时不要去点背后关卡的重听按钮，否则会掐掉正在念的结算语音 */
+      if (document.getElementById('overlay') && document.getElementById('overlay').querySelector('.modal')) return;
+      var btn = document.querySelector('[data-voice-replay]');
+      if (btn) { e.preventDefault(); btn.click(); }
+    }
   });
 
   window.addEventListener('hashchange', render);

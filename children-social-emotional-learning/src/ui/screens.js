@@ -4,6 +4,8 @@
   window.SEL = window.SEL || {};
   var U = window.SEL.utils, A = window.SEL.art, Audio = window.SEL.audio;
   var S = window.SEL.state, UI = window.SEL.ui, G = window.SEL.games;
+  /* 运行时再取，避免脚本加载顺序一变就把 undefined 固死 */
+  function E() { return window.SEL.expression; }
 
   var TYPE_NAME = {
     choice: '情境选择', match: '连一连', order: '排顺序', slider: '心情温度计',
@@ -16,6 +18,7 @@
 
   function D() { return S.data(); }
   function esc(s) { return U.esc(s); }
+  function stripText(s) { return String(s == null ? '' : s).replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim(); }
   function totalLevels() { return S.allLevels().length; }
   function gameTypeCount() {
     var seen = {};
@@ -152,11 +155,13 @@
         '<a class="quick-card" href="#/emotions" data-nav="#/emotions"><span class="qc-icon">🎭</span><b>情绪图鉴</b><span>认出心里的小天气</span></a>' +
         '<a class="quick-card" href="#/strategies" data-nav="#/strategies"><span class="qc-icon">🧰</span><b>冷静工具箱</b><span>' + S.data().strategies.length + ' 个随时能用的小方法</span></a>' +
         '<a class="quick-card" href="#/garden" data-nav="#/garden"><span class="qc-icon">🌷</span><b>心情花园</b><span>看看记下的每一天</span></a>' +
+        '<a class="quick-card" href="#/express" data-nav="#/express"><span class="qc-icon">🗣️</span><b>说一说</b><span>把心里的话大声说出来</span></a>' +
       '</div>' +
 
       '<div class="grid grid-2" style="margin-top:22px">' +
         '<div class="card"><h3>🌈 在这里，没有「答错」</h3>' +
-          '<p class="muted">每个选择都会告诉你「接下来可能发生什么」。所有情绪都可以存在，我们只一起看看怎么表达更舒服。</p>' +
+          '<p class="muted">每个选择都会告诉你「接下来可能发生什么」。所有情绪都可以存在，我们只一起看看怎么表达更舒服。' +
+          '每一关的题目、选项和反馈都会念给你听，点小喇叭或「再听一遍」随时重听；最后还有「说一说」，把心里的话大声讲出来。</p>' +
           '<div class="row tight"><span class="chip">自我认知</span><span class="chip blue">自我管理</span><span class="chip green">社会认知</span><span class="chip purple">人际关系</span><span class="chip">负责任决策</span></div></div>' +
         '<div class="card"><h3>🔒 只属于这台电脑</h3>' +
           '<p class="muted">不需要账号、不联网、没有广告，也不会把孩子的记录发给任何人。所有内容都保存在本机，家长可以随时导出备份或清空。</p>' +
@@ -186,13 +191,21 @@
           '<p class="muted">' + S.data().strategies.length + ' 个随时能用的小方法：觉察、呼吸、应对、拉开距离、表达。生气或紧张时，跟着做一遍就好。</p></div>' +
         '<div class="card"><h3>🌷 心情花园</h3>' +
           '<p class="muted">记下的每一天都会开出一朵花。翻翻看，就能看见自己情绪的小天气是怎么变化的。</p></div>' +
+        '<div class="card"><h3>🔊 题目会说话</h3>' +
+          '<p class="muted">进入关卡，团团会把题目、玩法说明和每一个选项都念一遍；点过的卡片、出现的提示、过关时的话也会读出来。' +
+          '想再听就点「再听一遍」，只听选项点「听选项」，不想听点「停一停」。家长可以在设置里关掉自动读题或调整语速。</p></div>' +
+        '<div class="card"><h3>🗣️ 说一说 · 勇气小话筒</h3>' +
+          '<p class="muted">先听团团念一句示范，再大声把「我觉得…因为…我希望…」说给自己或身边的人听，说完点「我说出来啦」。' +
+          '不录音、不识别、不保存说过的话，只记次数；每天最多 3 颗勇气星，累计还能解锁贴纸。</p>' +
+          '<button class="btn tiny ghost" data-nav="#/express">去说一说 →</button></div>' +
       '</div>' +
 
       '<div class="card" style="margin-top:18px"><h3>🔒 爸爸妈妈放心的小设计</h3>' +
         '<ul class="muted" style="margin:6px 0 0 18px;line-height:1.8">' +
           '<li>不需要账号、不联网、没有广告，所有内容都保存在这台电脑上。</li>' +
           '<li>「家长 / 老师专区」用一道算术题挡住小朋友，里面可以看进度、导出备份或清空数据。</li>' +
-          '<li>如果愿意，可以对着屏幕点「读给我听」，软件会用中文把文字念出来（需要电脑已安装中文语音）。</li>' +
+          '<li>每关的题目会用中文念出来，也可以点小喇叭重听（需要电脑已安装中文语音）；自动读题与语速可在设置里调整。</li>' +
+          '<li>「说一说」不申请麦克风、不录音、不联网，也不保存孩子说过的任何一句话，只记次数与日期。</li>' +
         '</ul>' +
         '<button class="btn tiny ghost" data-nav="#/parent">去家长 / 老师专区 →</button></div>';
     return wrap(html);
@@ -326,17 +339,30 @@
           if (act === 'replay') { UI.closeModal(); window.SEL.render(); }
         });
         Audio.sfx('win');
+        /* 结算弹窗里的文字也一次连读完：奖励、今天学到、给大人的话都念出来 */
+        Audio.readAuto(['这一关走完啦！' + (res.title || '完成啦'), res.feedback || '',
+          '今天学到：' + stripText(lv.teach || ''),
+          sticker ? '还解锁了新贴纸：' + (sticker.name || '') : '',
+          '给大人：' + stripText(lv.tip || '')].filter(Boolean));
       }
     };
     var game = G.render(lv, ctx);
+    var topic = E().levelTopic(lv);
     var html = '<div class="level-shell">' + backRow('#/island/' + is.id, '回' + is.name) +
       '<div class="level-head"><h2>' + esc(lv.title) + '</h2>' +
       '<span class="chip">' + esc(is.skill) + '</span>' + '<span class="chip blue">' + (TYPE_NAME[lv.type] || lv.type) + '</span>' +
       '<div style="margin-left:auto">' + UI.starRow(rec ? rec.stars : 0, 3) + '</div></div>' +
       UI.guideRow(lv.intro || '我们一起来试试看！', 'cloud', 'happy') +
       game.html +
+      (topic ? E().card(topic, { hideable: true }) : '') +
       '<div class="center small muted" style="margin-top:20px">慢慢来，没有时间限制，也没有「答错」这回事 🌿</div></div>';
-    return wrap(html, function (root) { game.mount(root); });
+    return wrap(html, function (root) {
+      /* 先挂播报条与状态回调，再挂载玩法：互动故事在首次 draw() 时就要用上
+         同一套 onItem/onDone，否则故事关的播报条永远停在初始文案。 */
+      G.startReading(root, game.read);
+      game.mount(root);
+      if (topic) E().mount(root, topic);
+    });
   }
 
   /* ==================== 情绪图鉴 ==================== */
@@ -458,7 +484,8 @@
           /* 换了情绪，上一种情绪选过的原因就不该继续挂着 */
           if (state.emotion !== picked.id) state.reason = '';
           state.emotion = picked.id;
-          Audio.sfx('select'); Audio.speak('你现在觉得' + picked.name);
+          /* 属于自动引导：家长关掉「自动读题」后，签到也不该突然出声 */
+          Audio.sfx('select'); Audio.readAutoOne('你现在觉得' + picked.name);
           draw();
         });
         U.delegate(body, 'click', '[data-reason]', function (e, t) {
@@ -790,6 +817,7 @@
             (tips[w.id] || []).map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ul></div>';
         }).join('') +
         '<p class="small muted">优先推荐练习次数较少的两项。日常对话里用一次，比在软件里做十关更有用。</p></div>' +
+      E().parentCard() +
       '<div class="card" style="margin-top:20px"><h3>每一关的情况</h3>' +
         '<table class="data-table"><thead><tr><th>能力</th><th>关卡</th><th>状态</th><th>星星</th></tr></thead><tbody>' + levelRows + '</tbody></table></div>' +
       '<div class="parent-grid" style="margin-top:20px">' +
@@ -1009,6 +1037,7 @@
             return '<span class="chip purple">' + esc(stNames[id].emoji || '🌿') + ' ' + esc(stNames[id].name) + ' × ' + strategyUsed[id] + '</span>';
           }).join('') + '</div>'
           : '') +
+        (S.expressionStats().week > 0 ? '<p class="rc-line small">🗣️ ' + E().reportLine() + '</p>' : '') +
         '<p class="rc-foot">' + (recorded.length
           ? '给大人：这一周孩子记录了 ' + weekCheckins.length + ' 次心情。可以挑其中一天，问问「那天后来发生了什么」，比追问「你为什么这样」更容易聊下去。'
           : '这一周还没有签到记录。可以从今天开始，每天花一分钟，种一朵心情花。') + '</p>' +
@@ -1098,7 +1127,17 @@
     var html = backRow('#/home', '回首页') +
       UI.sectionHead('设置', '让软件用起来更舒服', 'SETTINGS') +
       '<div class="card">' +
-        row('朗读文字 🔊', '点小喇叭或进入关卡时，读出文字给小朋友听', 'voice') +
+        row('朗读文字 🔊', '总开关：点小喇叭、自动读题、反馈与鼓励都用中文念出来', 'voice') +
+        row('自动读题 📖', '进入关卡自动念题目、玩法、选项与反馈；关掉后仍可点小喇叭重听', 'autoRead') +
+        '<div class="setting-row"><div><b>朗读语速 🐢</b><div class="small muted">念得快一点还是慢一点，选完马上试听一句</div></div>' +
+          '<select class="time-select" data-rate aria-label="朗读语速">' +
+          [0.7, 0.8, 0.9, 1, 1.1, 1.2].map(function (v) {
+            return '<option value="' + v + '"' + (Number(p.settings.voiceRate) === v ? ' selected' : '') + '>' +
+              (v < 0.9 ? '慢一点 ' : (v > 1 ? '快一点 ' : '')) + v.toFixed(1) + '×</option>';
+          }).join('') + '</select></div>' +
+        '<div class="setting-row"><div><b>说一说 · 勇气小话筒 🗣️</b>' +
+          '<div class="small muted">不录音、不语音识别、不保存孩子说过的话，只记次数与日期</div></div>' +
+          navBtn('#/express', '去说一说 →', 'tiny ghost') + '</div>' +
         row('游戏音效 🎵', '点击、配对、收星星时的小声音', 'sfx') +
         row('减少动画 🍃', '关掉漂浮和弹跳，画面更安静', 'reduceMotion') +
         '<div class="setting-row"><div><b>小玩家档案</b><div class="small muted">切换、新建或删除档案</div></div>' +
@@ -1126,14 +1165,22 @@
         '<p class="small muted">版本 ' + esc(appVersion() || '未知') + ' · Web 版与 Windows 桌面版共用同一份内容</p></div>';
     return wrap(html, function (root) {
       U.delegate(root, 'click', '[data-export]', function () { exportFile(); });
+      U.delegate(root, 'change', '[data-rate]', function (e, t) {
+        S.setSetting('voiceRate', Number(t.value));
+        Audio.readAutoOne('这样念，速度可以吗？');
+        UI.toast('朗读语速已经调好啦');
+      });
     });
   }
+
+  /* ==================== 说一说（勇气小话筒） ==================== */
+  function express(topicId) { return E().page(topicId); }
 
   window.SEL.screens = {
     home: home, map: map, island: island, level: level, emotions: emotions,
     checkin: checkin, strategies: strategies, runStrategy: runStrategy,
     garden: garden, stickers: stickers, parent: parent, profile: profile,
-    settings: settings, help: help, report: report, exportFile: exportFile,
+    settings: settings, help: help, report: report, express: express, exportFile: exportFile,
     gateModal: gateModal,
     TYPE_NAME: TYPE_NAME, ISLAND_LABEL: ISLAND_LABEL
   };
