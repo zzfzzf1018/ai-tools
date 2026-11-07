@@ -56,6 +56,7 @@ const Game = {
         document.querySelector('.game-selector').style.display = 'block';
         document.getElementById('gameArea').style.display = 'none';
         SpeechHelper.stop();
+        if (typeof Combo !== 'undefined') Combo.reset();
     },
 
     bindGameSelector: function() {
@@ -107,6 +108,7 @@ const Game = {
         this.gameScore = 0;
         if (!keepLevel) this.gameLevel = 1;
         this.currentGrade = App.currentGrade || 1;
+        if (typeof Combo !== 'undefined') Combo.startRun();
 
         SpeechHelper.stop();
         this.closeCertificate();
@@ -149,8 +151,14 @@ const Game = {
     },
 
     updateScore: function(points = 1) {
-        this.gameScore += points;
-        document.getElementById('gameScore').textContent = this.gameScore;
+        let gained = points;
+        if (typeof Combo !== 'undefined') {
+            Combo.hit();
+            gained = Math.round(points * Combo.multiplier());
+        }
+        this.gameScore += gained;
+        const el = document.getElementById('gameScore');
+        if (el) el.textContent = this.gameScore;
     },
 
     // 通关奖励：固定 3 颗星 + 颁发当前游戏专属样式的小奖状
@@ -166,6 +174,7 @@ const Game = {
         App.saveUserData();
         App.updateStats();
         App.updateMissionsUI();
+        if (typeof Stickers !== 'undefined') Stickers.refresh();
         App.createConfetti();
         this.showCertificate(stars);
 
@@ -183,8 +192,10 @@ const Game = {
         document.getElementById('certRibbon').textContent = conf.ribbon;
         document.getElementById('certTitleEn').textContent = conf.en;
         document.getElementById('certAwardName').textContent = conf.award;
+        const comboBest = (typeof Combo !== 'undefined') ? Combo.best : 0;
         document.getElementById('certReason').textContent =
-            `恭喜通关「${this.currentGameTitle}」Level ${this.gameLevel}，得分 ${this.gameScore} 分`;
+            `恭喜通关「${this.currentGameTitle}」Level ${this.gameLevel}，得分 ${this.gameScore} 分` +
+            (comboBest >= 2 ? `，最高连击 x${comboBest} 🔥` : '');
         document.getElementById('certDate').textContent =
             new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
 
@@ -289,6 +300,7 @@ const Game = {
                     setTimeout(() => this.completeGame(), 500);
                 }
             } else {
+                if (typeof Combo !== 'undefined') Combo.miss();
                 setTimeout(() => {
                     enItem.classList.remove('selected');
                     picItem.classList.remove('selected');
@@ -360,6 +372,7 @@ const Game = {
                         }, 1000);
                     } else {
                         triedWrong = true;
+                        if (typeof Combo !== 'undefined') Combo.miss();
                         btn.classList.add('wrong');
                         SpeechHelper.speak('Try again!');
                         setTimeout(() => btn.classList.remove('wrong'), 500);
@@ -437,6 +450,7 @@ const Game = {
                     }, 1200);
                 } else {
                     triedWrong = true;
+                    if (typeof Combo !== 'undefined') Combo.miss();
                     input.style.borderColor = '#EF4444';
                     input.style.color = '#EF4444';
                     SpeechHelper.speak('Almost! Listen again.');
@@ -518,6 +532,7 @@ const Game = {
                             }
                         }, 600);
                     } else {
+                        if (typeof Combo !== 'undefined') Combo.miss();
                         setTimeout(() => {
                             first.el.textContent = '?';
                             second.el.textContent = '?';
@@ -631,6 +646,7 @@ const Game = {
                         }, 1200);
                     } else {
                         triedWrong = true;
+                        if (typeof Combo !== 'undefined') Combo.miss();
                         document.querySelectorAll('.fill-slot').forEach(s => s.classList.add('shake'));
                         SpeechHelper.speak('Almost!');
                         setTimeout(() => {

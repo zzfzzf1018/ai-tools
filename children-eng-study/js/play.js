@@ -28,6 +28,10 @@ const Play = {
         pattern: '🧩 Pattern Play · 句型换词',
         chant: '🎵 Chant Time · 韵律儿歌',
         dub: '🎬 Little Voice · 小配音员',
+        listen: '🎧 Ear Training · 磨耳朵听力',
+        quest: '🎭 Story Quest · 剧情冒险',
+        weakbook: '📕 Weak Word Book · 弱项专练',
+        stickers: '🏅 Sticker Album · 贴纸册',
         review: "🔁 Today's Review · 今日复习"
     },
 
@@ -53,6 +57,8 @@ const Play = {
         this.timers = [];
         this.stopRecordingQuiet();
         SpeechHelper.stop();
+        // 盲听用独立可取消定时器推进（需单独重置才能支持「再听一次」）
+        if (typeof Listening !== 'undefined' && Listening.clearBlindTimer) Listening.clearBlindTimer();
     },
 
     later: function(fn, ms) {
@@ -98,6 +104,10 @@ const Play = {
             case 'pattern': this.renderPattern(); break;
             case 'chant': this.renderChant(); break;
             case 'dub': this.renderDub(); break;
+            case 'listen': if (typeof Listening !== 'undefined') Listening.renderMenu(); break;
+            case 'quest': if (typeof Quest !== 'undefined') Quest.renderList(); break;
+            case 'weakbook': if (typeof WeakBook !== 'undefined') WeakBook.render(); break;
+            case 'stickers': if (typeof Stickers !== 'undefined') Stickers.renderAlbum(); break;
             case 'review': this.renderReview(); break;
         }
     },
@@ -125,6 +135,7 @@ const Play = {
             App.updateStats();
         }
         this.addXp(xp || 2);
+        if (typeof Stickers !== 'undefined') Stickers.refresh();
     },
 
     // ============== 1. 单词宠物 ==============

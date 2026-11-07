@@ -23,7 +23,7 @@ const App = {
 
     // 用户进度数据
     userData: {
-        schemaVersion: 5,
+        schemaVersion: 6,
         stars: 0,
         streak: 0,
         lastVisitDate: null,
@@ -50,7 +50,10 @@ const App = {
         petXp: 0,               // 单词宠物经验值
         reviewSchedule: {},     // 错词间隔复习排期: key -> { step, due }
         dubs: [],               // 我的配音集
-        playDone: []            // 趣味乐园玩法完成记录，避免重复发星
+        playDone: [],           // 趣味乐园玩法完成记录，避免重复发星
+        stickers: [],           // 已解锁贴纸
+        listenDate: null,       // 最近一次完成「每日盲听」的日期
+        weakPracticed: 0        // 弱项专练完成次数
     },
 
     // 发音代次，用于丢弃上一张卡片迟到的回调
@@ -89,6 +92,8 @@ const App = {
         this.initWordListNav();
         this.bindCardControls();
         Play.init();
+        // 旧存档升级：静默补齐已达成但尚未授予的贴纸，避免启动时弹一堆
+        if (typeof Stickers !== 'undefined') Stickers.refresh({ silent: true });
 
         console.log('🎪 趣味英语乐园已启动！');
         console.log('🔊 语音支持:', SpeechHelper.isSupported() ? '是' : '否');
@@ -119,7 +124,7 @@ const App = {
     normalizeUserData: function() {
         const data = this.userData;
         ['learnedWords', 'completedGames', 'completedUnits', 'completedLevels',
-         'completedSentences', 'badges', 'favorites', 'weakWords'].forEach(key => {
+         'completedSentences', 'badges', 'favorites', 'weakWords', 'stickers'].forEach(key => {
             if (!Array.isArray(data[key])) data[key] = [];
         });
         if (!data.recordings || typeof data.recordings !== 'object' || Array.isArray(data.recordings)) {
@@ -130,7 +135,7 @@ const App = {
         }
         if (!Array.isArray(data.dubs)) data.dubs = [];
         if (!Array.isArray(data.playDone)) data.playDone = [];
-        ['stars', 'streak', 'totalWords', 'totalSpeak', 'totalGames', 'totalDays', 'petXp'].forEach(key => {
+        ['stars', 'streak', 'totalWords', 'totalSpeak', 'totalGames', 'totalDays', 'petXp', 'weakPracticed'].forEach(key => {
             if (!Number.isFinite(data[key])) data[key] = 0;
         });
         data.missions = Object.assign(
@@ -138,7 +143,8 @@ const App = {
             data.missions && typeof data.missions === 'object' ? data.missions : {}
         );
         if (!LEARNING_DATA[data.lastGrade]) data.lastGrade = null;
-        data.schemaVersion = 5;
+        if (data.listenDate && typeof data.listenDate !== 'string') data.listenDate = null;
+        data.schemaVersion = 6;
         this.migrateLearnedWords();
     },
 
@@ -279,6 +285,7 @@ const App = {
     // 统一切换页面：停止发音、作废旧语音回调、恢复/隐藏学习控制条
     showPage: function(tab) {
         SpeechHelper.stop();
+        if (typeof Combo !== 'undefined') Combo.reset();
         if (tab !== 'learn') {
             this.followReadToken = (this.followReadToken || 0) + 1;
             if (typeof Play !== 'undefined') Play.stopAll();
@@ -553,6 +560,8 @@ const App = {
         this.currentLevel = null;
         this.currentLevelIndex = -1;
         this.currentCards = [];
+        // 玩法里可能还挂着定时朗读（盲听 / 选图），一并清掉，避免离开后仍有声音
+        if (typeof Play !== 'undefined') Play.stopAll();
         SpeechHelper.stop();
         this.stopRecordingQuiet();
         this.clearSentenceSpeakTimer();
@@ -582,6 +591,7 @@ const App = {
     startLevel: function(index) {
         if (index < 0 || index >= this.levelPlan.length) return;
         const level = this.levelPlan[index];
+        if (typeof Play !== 'undefined') Play.stopAll();
         SpeechHelper.stop();
         this.stopRecordingQuiet();
         this.speechToken++;
@@ -683,6 +693,8 @@ const App = {
         }
         const unitJustDone = this.checkUnitCompletion(level);
         this.checkBadges();
+        // 剧情冒险进行中时，让宠物说一句鼓励的话
+        if (typeof Quest !== 'undefined') Quest.encourage(level);
         this.createConfetti(36);
 
         const hasNext = this.currentLevelIndex + 1 < this.levelPlan.length;
@@ -1105,6 +1117,8 @@ const App = {
             const names = newBadges.map(badge => `「${badge.name}」`).join('、');
             this.showModal('🎖️', '获得新徽章！', `你解锁了 ${names}`);
         }
+        // 贴纸与徽章共用同一批里程碑，顺手刷新（只发新解锁的）
+        if (typeof Stickers !== 'undefined') Stickers.refresh();
     },
 
     updateBadges: function() {

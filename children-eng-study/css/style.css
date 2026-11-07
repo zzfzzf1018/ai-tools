@@ -2856,3 +2856,429 @@ html, body {
     .pattern-option { width: 100px; }
     .story-ending { width: 100%; }
 }
+
+/* ==========================================================
+   v1.5.0 扩展玩法：Combo / 贴纸 / 磨耳朵 / 剧情 / 弱项专练
+   ========================================================== */
+
+/* ---------- Combo 连击徽标 ---------- */
+.combo-badge {
+    position: fixed;
+    top: 82px;
+    left: 50%;
+    transform: translateX(-50%) scale(0.8);
+    z-index: 1750;
+    padding: 10px 24px;
+    border-radius: 100px;
+    background: linear-gradient(135deg, #F97316, #EF4444);
+    color: #fff;
+    font-family: 'Baloo 2', sans-serif;
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    box-shadow: 0 8px 24px rgba(239, 68, 68, 0.38);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+}
+
+.combo-badge.show { opacity: 1; transform: translateX(-50%) scale(1); }
+.combo-badge.lost { background: linear-gradient(135deg, #9CA3AF, #6B7280); box-shadow: 0 8px 24px rgba(107, 114, 128, 0.35); }
+.combo-badge.pop { animation: combo-pop 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+
+@keyframes combo-pop {
+    0%   { transform: translateX(-50%) scale(0.6) rotate(-6deg); }
+    60%  { transform: translateX(-50%) scale(1.18) rotate(3deg); }
+    100% { transform: translateX(-50%) scale(1) rotate(0); }
+}
+
+/* ---------- 贴纸解锁轻提示 ---------- */
+.sticker-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 100px;
+    transform: translateX(-50%);
+    z-index: 1800;
+    min-width: 260px;
+    max-width: 92vw;
+    padding: 14px 20px;
+    border-radius: 20px;
+    background: linear-gradient(135deg, #FFF7ED, #FDE68A);
+    border: 3px solid var(--color-orange);
+    box-shadow: 0 12px 36px rgba(255, 140, 66, 0.32);
+    text-align: center;
+    animation: pet-toast-in 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.st-title { font-size: 15px; font-weight: 800; color: var(--color-orange); margin-bottom: 8px; }
+.st-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+
+.st-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 12px;
+    border-radius: 100px;
+    background: rgba(255, 255, 255, 0.9);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--color-text);
+}
+
+.st-emoji { font-size: 20px; }
+
+/* ---------- 贴纸收集册 ---------- */
+.sticker-progress {
+    height: 10px;
+    background: #F3F4F6;
+    border-radius: 100px;
+    overflow: hidden;
+    margin: 4px 0 6px;
+}
+
+.sticker-progress span {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, var(--color-orange), var(--color-accent));
+    border-radius: 100px;
+    transition: width 0.4s;
+}
+
+.sticker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+    gap: 12px;
+    margin: 8px 0 20px;
+}
+
+.sticker-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 14px 8px;
+    border: 3px dashed #E5E7EB;
+    border-radius: var(--radius-md);
+    background: #F9FAFB;
+    transition: all 0.25s;
+}
+
+.sticker-cell.owned {
+    border-style: solid;
+    border-color: var(--color-orange);
+    background: linear-gradient(135deg, #FFFBEB, #FEF3C7);
+    box-shadow: 0 6px 16px rgba(255, 140, 66, 0.18);
+}
+
+.sticker-cell.owned:hover { transform: translateY(-4px) rotate(-2deg); }
+.sticker-emoji { font-size: 38px; line-height: 1.2; }
+.sticker-cell:not(.owned) .sticker-emoji { opacity: 0.35; filter: grayscale(1); }
+.sticker-name { font-size: 12px; font-weight: 800; color: var(--color-text); text-align: center; }
+.sticker-need { font-size: 11px; color: var(--color-text-light); text-align: center; line-height: 1.3; }
+
+/* ---------- 磨耳朵 ---------- */
+.listen-hero {
+    max-width: 680px;
+    margin: 0 auto 18px;
+    padding: 22px 24px;
+    text-align: center;
+    background: rgba(255, 255, 255, 0.94);
+    border-radius: var(--radius-lg);
+    border-bottom: 8px solid var(--color-secondary);
+    box-shadow: var(--shadow-card);
+}
+
+.listen-pet { font-size: 60px; line-height: 1.1; animation: emoji-bounce 2.4s ease-in-out infinite; }
+.listen-hero-title { font-family: 'Baloo 2', sans-serif; font-size: 24px; font-weight: 800; color: var(--color-secondary); margin-top: 4px; }
+.listen-hero-sub { font-size: 13px; color: var(--color-text-light); margin-top: 4px; }
+
+.listen-daily {
+    display: inline-block;
+    margin-top: 12px;
+    padding: 8px 18px;
+    border-radius: 100px;
+    background: #EFF6FF;
+    color: var(--color-blue);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.listen-daily.done { background: #ECFDF5; color: #047857; }
+
+.listen-menu {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.listen-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 20px 14px;
+    border: 3px solid #E5E7EB;
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.95);
+    cursor: pointer;
+    transition: all 0.3s;
+    box-shadow: var(--shadow-card);
+}
+
+.listen-card:hover { transform: translateY(-5px); border-color: var(--color-secondary); box-shadow: var(--shadow-hover); }
+.lc-emoji { font-size: 42px; line-height: 1.2; }
+.lc-title { font-size: 15px; font-weight: 800; color: var(--color-text); }
+.lc-sub { font-size: 12px; color: var(--color-text-light); }
+
+.listen-player .lp-wave {
+    font-size: 92px;
+    line-height: 1.1;
+    animation: listen-wave 1.2s ease-in-out infinite;
+}
+
+@keyframes listen-wave {
+    0%, 100% { transform: scale(1) rotate(-4deg); }
+    50%      { transform: scale(1.14) rotate(4deg); }
+}
+
+.lp-dots { display: flex; gap: 8px; justify-content: center; margin: 14px 0 4px; }
+
+.lp-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #E5E7EB;
+    transition: all 0.3s;
+}
+
+.lp-dot.on { background: var(--color-secondary); transform: scale(1.25); box-shadow: 0 0 0 4px rgba(78, 205, 196, 0.2); }
+.lp-dot.done { background: var(--color-green); }
+
+.listen-reveal {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 10px;
+    margin: 6px 0 18px;
+}
+
+.lr-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    background: #F8FAFC;
+    text-align: left;
+}
+
+.lr-emoji { font-size: 26px; }
+.lr-text { font-size: 14px; font-weight: 700; color: var(--color-text); }
+
+.listen-options { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; margin: 6px 0; }
+
+.listen-opt {
+    width: 106px;
+    height: 106px;
+    border: 3px solid #E5E7EB;
+    border-radius: var(--radius-md);
+    background: white;
+    font-size: 50px;
+    line-height: 1;
+    cursor: pointer;
+    transition: all 0.25s;
+}
+
+.listen-opt:hover:not(:disabled) { transform: translateY(-4px) scale(1.04); border-color: var(--color-secondary); }
+.listen-opt.correct { border-color: var(--color-green); background: #ECFDF5; }
+.listen-opt.wrong { border-color: #EF4444; background: #FEE2E2; animation: tile-shake 0.4s; }
+.listen-opt:disabled { cursor: default; }
+
+.dict-blanks { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 10px 0 14px; }
+
+.dict-blank {
+    width: 30px;
+    height: 40px;
+    border-bottom: 4px solid var(--color-blue);
+    border-radius: 3px;
+}
+
+.dict-input-row { display: flex; gap: 10px; justify-content: center; align-items: center; flex-wrap: wrap; }
+
+.dict-input {
+    width: 220px;
+    max-width: 70vw;
+    padding: 12px 16px;
+    border: 3px solid var(--color-blue);
+    border-radius: var(--radius-md);
+    font-family: 'Baloo 2', sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    text-align: center;
+    color: var(--color-text);
+    outline: none;
+}
+
+.dict-input:focus { box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.2); }
+.dict-input.ok { border-color: var(--color-green); color: #047857; background: #ECFDF5; }
+.dict-input.shake { animation: tile-shake 0.4s; }
+
+/* ---------- 剧情冒险 ---------- */
+.quest-hero {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    border-radius: var(--radius-md);
+    background: linear-gradient(135deg, #EEF2FF, #FCE7F3);
+}
+
+.quest-pet { font-size: 48px; line-height: 1; animation: emoji-bounce 2.6s ease-in-out infinite; }
+.quest-hero-text { text-align: left; }
+.quest-hero-name { font-size: 16px; font-weight: 800; color: var(--color-purple); }
+.quest-hero-sub { font-size: 12px; color: var(--color-text-light); margin-top: 2px; }
+
+.quest-list { display: flex; flex-direction: column; gap: 10px; }
+
+.quest-chapter {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border: 3px solid #E5E7EB;
+    border-radius: var(--radius-md);
+    background: white;
+    cursor: pointer;
+    transition: all 0.25s;
+    text-align: left;
+}
+
+.quest-chapter:hover { transform: translateX(4px); border-color: var(--color-purple); }
+.quest-chapter.done { border-color: var(--color-green); background: #F0FDF4; }
+.qc-icon { font-size: 30px; }
+.qc-body { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.qc-title { font-size: 14px; font-weight: 800; color: var(--color-text); }
+.qc-sub { font-size: 12px; color: var(--color-text-light); }
+.qc-badge { font-size: 18px; color: var(--color-purple); }
+.quest-chapter.done .qc-badge { color: var(--color-green); }
+
+.quest-scene { font-size: 64px; line-height: 1.2; margin: 6px 0 10px; letter-spacing: 4px; animation: emoji-bounce 2.6s ease-in-out infinite; }
+
+.quest-line {
+    font-family: 'Baloo 2', sans-serif;
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--color-purple);
+    line-height: 1.5;
+    margin-bottom: 16px;
+}
+
+.quest-missions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-bottom: 6px; }
+
+.quest-mission {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    min-width: 76px;
+    padding: 12px 10px;
+    border: 3px solid #E5E7EB;
+    border-radius: var(--radius-md);
+    background: white;
+    cursor: pointer;
+    transition: all 0.25s;
+}
+
+.quest-mission:hover { transform: translateY(-4px); border-color: var(--color-blue); }
+.quest-mission.done { border-color: var(--color-green); background: #F0FDF4; }
+.qm-num { font-size: 22px; font-weight: 800; color: var(--color-blue); }
+.qm-label { font-size: 12px; font-weight: 700; color: var(--color-text); }
+.qm-check { position: absolute; top: -8px; right: -6px; width: 20px; height: 20px; border-radius: 50%; background: var(--color-green); color: white; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+
+.quest-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 100px;
+    transform: translateX(-50%);
+    z-index: 1780;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 20px;
+    border-radius: 100px;
+    background: linear-gradient(135deg, #EEF2FF, #FCE7F3);
+    border: 3px solid var(--color-purple);
+    box-shadow: 0 10px 28px rgba(167, 139, 250, 0.28);
+    animation: pet-toast-in 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.qt-pet { font-size: 28px; }
+.qt-text { font-size: 13px; font-weight: 700; color: var(--color-purple); }
+
+/* ---------- 弱项专练本 ---------- */
+.weak-cover-emoji { font-size: 72px; line-height: 1.2; animation: emoji-bounce 2.6s ease-in-out infinite; }
+
+.weak-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 18px;
+    text-align: left;
+}
+
+.weak-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    background: #F8FAFC;
+    border: 2px solid #E5E7EB;
+    transition: all 0.2s;
+}
+
+.weak-item:hover { border-color: var(--color-orange); }
+.weak-emoji { font-size: 26px; }
+.weak-word { font-size: 16px; font-weight: 800; color: var(--color-text); min-width: 78px; }
+.weak-sentence { flex: 1; font-size: 12px; color: var(--color-text-light); }
+.weak-remove {
+    border: none;
+    background: transparent;
+    color: #9CA3AF;
+    font-size: 15px;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 50%;
+    transition: all 0.2s;
+}
+
+.weak-remove:hover { color: #EF4444; background: #FEE2E2; }
+
+@media (max-width: 768px) {
+    /* 玩法标签在窄屏改为横向滚动，避免换行占掉大半屏 */
+    .play-nav {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+    .play-nav::-webkit-scrollbar { display: none; }
+    .play-tab { flex: 0 0 auto; }
+    .combo-badge { top: 74px; font-size: 16px; padding: 8px 18px; }
+    .sticker-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+    .sticker-emoji { font-size: 32px; }
+    .listen-pet { font-size: 50px; }
+    .listen-opt { width: 84px; height: 84px; font-size: 40px; }
+    .quest-line { font-size: 16px; }
+    .weak-sentence { display: none; }
+}
+
+@media (max-width: 480px) {
+    .listen-opt { width: 72px; height: 72px; font-size: 34px; }
+    .sticker-grid { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+    .dict-input { width: 160px; font-size: 19px; }
+}
+
