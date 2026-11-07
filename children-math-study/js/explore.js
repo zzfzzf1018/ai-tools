@@ -15,6 +15,7 @@
     el.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       const ghost = el.cloneNode(true);
+      ghost.className += ' drag-ghost';   // 换页时统一清理残影
       ghost.style.position = 'fixed';
       ghost.style.pointerEvents = 'none';
       ghost.style.zIndex = 500;
@@ -416,6 +417,10 @@
     btn.appendChild(b);
     wu.appendChild(btn);
     ws.appendChild(wu);
+    // 探索结论也读出来，帮孩子把动手过程说清楚
+    if (window.Speech) {
+      Speech.autoSpeak(() => '发现，' + Speech.toSpeakText(text));
+    }
     wu.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
@@ -438,6 +443,15 @@
       const ws = document.createElement('div');
       panel.appendChild(t);
       panel.appendChild(ins);
+      // 探索要求支持朗读：低年级孩子不必自己读题
+      if (window.Speech && Speech.supported && Speech.enabled()) {
+        const bar = document.createElement('div');
+        bar.className = 'speech-bar';
+        bar.appendChild(Speech.button('🔊 听要求', () => Speech.toSpeakText(cfg.instruction || '')));
+        bar.appendChild(Speech.stopButton());
+        panel.appendChild(bar);
+        Speech.autoSpeak(() => Speech.toSpeakText(cfg.instruction || ''));
+      }
       panel.appendChild(ws);
       box.appendChild(panel);
 

@@ -93,3 +93,43 @@ children-math-study/
 - 三主题切换正确（按年级自动）
 - 拖拽/点击互动在桌面（Electron）与 Web（触屏/鼠标）均可操作
 - 进度保存与恢复（刷新/重启不丢失）
+
+## 8. v1.1 扩展设计（2026-11-07）
+
+### 8.1 语音播报
+- 新增 `js/speech.js`，基于系统本地 Web Speech API（离线、无素材、不联网）；不支持或缺少中文语音时自动降级
+- 覆盖：闯关题干 / 选项 / 拖放数字卡 / 提示 / 故事分镜 / 探索要求与结论 / 结算语 / 错题本题干 / 练习中心全部题型
+- 文本清洗层 `toSpeakText`：去 emoji 与 HTML、数学符号中文化、填空位读「几」、小数逐位读、分数按中文语序读
+- 设置项存于 `settings`：`speech` / `autoRead` / `readOptions` / `speechRate` / `speechPitch` / `speechVoiceURI`
+- 顶栏提供全局开关；每次切题、换页、切换学习阶段统一 `Speech.stop()`
+
+### 8.2 单元递进
+- `Data.pathOf(grade)` 将「学期 → 单元 → 课程」展平成连续路径，每个节点带 `unitKey = g{年级}s{学期序号}u{单元序号}`、`semesterIndex`、`unitIndex`、`order`
+- 解锁规则：第一课默认开放，其余课程要求路径中前一课已完成；**跨单元、跨学期不再重置**（修正 v1.0 每单元重置 `prevDone` 的缺陷）
+- 配套 API：`isUnlocked` / `unitProgress` / `unitMeta` / `gradeUnits` / `allUnitKeys` / `nextToLearn` / `unitQuestions` / `prevLesson`
+- UI：学习路线横幅、单元序号与状态徽章、单元进度条、锁定提示、单元通行证、单元小测入口
+- 存档新增 `unitPassed`（单元首次通关）与 `unitQuiz`（小测成绩），均带脏数据兜底
+
+### 8.3 练习中心
+- 新增 `js/practice.js`，统一复用 `Game.mount`，因此自动继承语音、提示阶梯与键盘作答
+- 每日口算：按年级动态生成，5 个年级各有题型池；干扰项与提示自动生成
+- 听算模式：题干只播报不显示，强制输入题；语音不可用时退回普通显示
+- 单元综合小测：单元全通关后开放，抽题组卷、按错题数评星、成绩存档
+- 错题一键组卷：跨课组卷按题目自身 `lessonId` 归属，答对两次仍自动移出
+- `Game.mount` 新增 `transient`（练习不写错题本）与逐题 `lessonId` 归属；`onQuestionDone` 回调正式启用
+
+### 8.4 成长数据与家长视图
+- 存档新增 `stats`（累计首次作答/正确）与 `daily`（按本地日期的答题、正确、练习次数、用时）
+- 家长视图：连续打卡、正确率、近 7 日柱状图、各年级当前进度、单元掌握度、语音设置、孩子姓名
+
+### 8.5 自检与端到端回归
+- `scripts/verify.js`（`npm run verify`）：纯 Node VM 沙箱加载全部前端脚本，校验语法、内容、解锁链、动态出题、朗读文本、存档兜底，无需浏览器与第三方依赖
+- `scripts/e2e.html` + `scripts/e2e.js`（`npm run e2e`）：Edge/Chrome headless 加载真实 DOM 页面，模拟点击完整通关一课、错题重做、单元小测、听算失败兜底与脏存档导入；结果以 `#e2e-out` JSON 回传，Node 侧解析并给出退出码
+
+### 8.6 封板前复审确立的约束
+- **任何隐藏题目文字的模式都必须有可见出口**：`Speech.canAural()` 检查系统语音，朗读失败（`speak()` 返回 false 或 `onerror`）立即 `reveal()`，工具条恒定保留「👀 显示题目」
+- **题目进入渲染器前统一过 `Game._normalizeQuestion`**：缺答案丢弃、结构不符降级、所有文本转义；存档导入时 `Save.normalize` 再逐字段收敛一次，形成两道防线
+- **所有弹层内嵌游戏实例必须可退出**：关闭按钮 + Esc，`UI.closeOverlay()` 统一调用 `box._gameDispose()` 释放键盘/拖拽监听
+- **正确率口径为每题首次作答**：`safeJudge` 用 `answered` 锁，先错后对只记一笔
+- **异步结算需检查节点仍在文档中**：`if (!body.isConnected) return;`
+- 换页前统一 `Speech.stop()` + 调用所有 `[data-game-mount]` 的 dispose + 清理 `.drag-ghost` 残影

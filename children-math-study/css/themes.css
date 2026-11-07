@@ -86,3 +86,15 @@ body[data-theme="space"] .weight-chip { color: #0f172a; }
 body[data-theme="space"] .answer-chip { color: #0f172a; }
 body[data-theme="space"] .choice-btn.correct,
 body[data-theme="space"] .seq-item.picked { color: #0f172a; }
+
+/* 复审补强：亮青/亮黄/浅红底上的白字对比度不足，统一改深色 */
+body[data-theme="space"] .keypad .key-ok,
+body[data-theme="space"] .keypad .key-del,
+body[data-theme="space"] .choice-btn.wrong,
+body[data-theme="space"] .opt-btn.active,
+body[data-theme="space"] .semester-tab.active,
+body[data-theme="space"] .stage-step.active,
+body[data-theme="space"] .speech-btn.playing,
+body[data-theme="space"] .unit-step,
+body[data-theme="space"] .answer-chip,
+body[data-theme="space"] .weight-chip { color: #0f172a; }

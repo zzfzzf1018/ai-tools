@@ -12,6 +12,8 @@
     current: null,
 
     play(lessonId, container, opts) {
+      // "再玩一次"等直接调用 play 的路径也要先停掉上一段朗读
+      if (window.Speech) Speech.stop();
       const hit = Data.findLesson(lessonId);
       if (!hit) return;
       const L = hit.lesson;
@@ -46,17 +48,23 @@
         });
       };
 
+      const halt = () => { if (window.Speech) Speech.stop(); };
+
       const startChallenge = () => {
+        halt();
         setStep(2);
         this.playGames(body, L, guide, finishFlow);
       };
 
       const startFull = () => {
+        halt();
         setStep(0);
         this.playStory(body, L, guide, () => {
+          halt();
           Save.recordExplored(lessonId);
           setStep(1);
           this.playExplore(body, L, guide, () => {
+            halt();
             setStep(2);
             this.playGames(body, L, guide, finishFlow);
           });
@@ -106,6 +114,15 @@
           dots.appendChild(d);
         });
         sc.appendChild(dots);
+        // 故事分镜逐幕朗读，识字不多的孩子也能独立听懂
+        const storyText = () => Speech.toSpeakText(s.text + '。' + (s.sparkle || ''));
+        if (window.Speech && Speech.supported && Speech.enabled()) {
+          const sbar = el('div', 'speech-bar');
+          sbar.appendChild(Speech.button('🔊 听故事', storyText));
+          sbar.appendChild(Speech.stopButton());
+          sc.appendChild(sbar);
+          Speech.autoSpeak(storyText);
+        }
         const nav = el('div', 'story-nav');
         const skip = el('button', 'btn-secondary', '⏭ 跳过故事');
         skip.style.opacity = '.75';
@@ -184,6 +201,9 @@
         return Rewards.checkBadges();
       };
       record().then(fresh => {
+        // 结算是异步的；若期间已切页，body 已脱离文档，不要再往游离节点上渲染
+        if (!body.isConnected) return;
+        if (window.Speech) Speech.stop();
         body.innerHTML = '';
         const nextL = Data.nextLesson(L.id);
         const starHtml = [1, 2, 3].map(n =>
@@ -219,6 +239,38 @@
           </div>
         `);
         body.appendChild(panel);
+
+        // 单元递进：本单元全部通关后颁发"单元通行证"，并开放单元综合小测
+        const hit = Data.findLesson(L.id);
+        const unitKey = hit && hit.unitKey;
+        const up = unitKey ? Data.unitProgress(unitKey) : null;
+        const meta = unitKey ? Data.unitMeta(unitKey) : null;
+        if (up && up.allDone && meta) {
+          const quizRec = (Save.data.unitQuiz || {})[unitKey];
+          const firstPass = !(Save.data.unitPassed || {})[unitKey];
+          if (firstPass) Save.markUnitPassed(unitKey);
+          const pass = el('div', 'unit-pass', `
+            <div class="up-icon">${firstPass ? '🎓' : '🏅'}</div>
+            <div class="up-text">
+              <b>${firstPass ? '单元通行证到手！' : '本单元已全部通关'} · ${UI.esc(meta.unit.title)}</b>
+              <p>${up.total} 课全部完成${quizRec
+                ? ` · 上次小测答对 ${quizRec.correct}/${quizRec.total} 题`
+                : ' · 来一场单元小测，看看掌握得怎么样'}</p>
+            </div>
+            <button class="btn-secondary" id="up-quiz">🎓 ${quizRec ? '再测一次' : '去单元小测'}</button>
+          `);
+          panel.insertBefore(pass, panel.querySelector('.result-actions'));
+          pass.querySelector('#up-quiz').onclick = () => {
+            if (window.Speech) Speech.stop();
+            App.navigate('quiz/' + unitKey);
+          };
+          if (firstPass && window.Speech) {
+            Speech.autoSpeak(() => `太厉害了！${Speech.toSpeakText(meta.unit.title)} 这个单元全部通关，获得单元通行证！`);
+          }
+        } else if (window.Speech) {
+          Speech.autoSpeak(() => `恭喜通关！${Speech.toSpeakText(msg)}，获得 ${stars} 颗星星。`);
+        }
+
         panel.querySelector('#rs-next').onclick = () => next();
         panel.querySelector('#rs-again').onclick = () => {
           this.play(L.id, document.getElementById('page'), { forceFull: true });

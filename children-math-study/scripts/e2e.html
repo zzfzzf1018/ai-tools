@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Math Wonder Island · E2E</title>
+  <link rel="stylesheet" href="../css/base.css">
+  <link rel="stylesheet" href="../css/themes.css">
+</head>
+<body data-theme="candy">
+  <div id="app">
+    <header id="topbar" class="hidden">
+      <button id="btn-back" class="btn-round">⬅️</button>
+      <div id="topbar-title" class="topbar-title"></div>
+      <div class="topbar-right">
+        <div id="star-chip" class="chip">⭐ <span id="star-count">0</span></div>
+        <button id="btn-voice" class="btn-round">🔊</button>
+        <button id="btn-wrong" class="btn-round">📕</button>
+        <button id="btn-parent" class="btn-round">👨‍👩‍👧</button>
+      </div>
+    </header>
+    <main id="page"></main>
+  </div>
+  <div id="overlay" class="overlay hidden"></div>
+
+  <script src="../content/grade1.js"></script>
+  <script src="../content/grade2.js"></script>
+  <script src="../content/grade3.js"></script>
+  <script src="../content/grade4.js"></script>
+  <script src="../content/grade5.js"></script>
+  <script src="../js/save.js"></script>
+  <script src="../js/speech.js"></script>
+  <script src="../js/data.js"></script>
+  <script src="../js/rewards.js"></script>
+  <script src="../js/explore.js"></script>
+  <script src="../js/game.js"></script>
+  <script src="../js/practice.js"></script>
+  <script src="../js/lesson.js"></script>
+  <script src="../js/parent.js"></script>
+  <script src="../js/app.js"></script>
+
+  <script>
+  /* ===== 端到端回归：真实 DOM + 真实点击 + 真实存档 =====
+     由 scripts/e2e.js 用 Edge/Chrome headless 加载并读取 #e2e-out 结果。
+  */
+  (async function () {
+    const O = { errors: [], checks: {}, fails: [], info: {} };
+    window.addEventListener('error', e => O.errors.push('ERROR: ' + e.message));
+    window.addEventListener('unhandledrejection', e => O.errors.push('REJECTION: ' + e.reason));
+    const w = ms => new Promise(r => setTimeout(r, ms));
+    const page = () => document.getElementById('page');
+    const txt = () => (page().textContent || '').replace(/\s+/g, ' ').trim();
+    const ck = (name, cond, detail) => {
+      O.checks[name] = !!cond;
+      if (!cond) O.fails.push(name + (detail ? ' :: ' + detail : ''));
+    };
+    const all = sel => [...document.querySelectorAll(sel)];
+    const byText = (sel, text) => all(sel).find(x => x.textContent.trim() === String(text));
+    const clickText = (sel, re) => {
+      const b = all(sel).find(x => re.test(x.textContent));
+      if (b) { b.click(); return true; }
+      return false;
+    };
+
+    await w(400);
+    if (document.getElementById('wl-start')) document.getElementById('wl-start').click();
+    await w(220);
+
+    /* ---------- A. 完整通关一年级第一课（故事→探索→11 题→结算） ---------- */
+    const L1 = CONTENT_GRADE_1.semesters[0].units[0].lessons[0];
+    const questions = (L1.games || []).reduce((a, g) => a.concat(g.questions || []), []);
+    O.info.questionCount = questions.length;
+
+    async function answer(q) {
+      if (q.type === 'choice') {
+        const b = byText('.choice-btn', q.answer);
+        if (b) { b.click(); return true; }
+        return false;
+      }
+      if (q.type === 'input') {
+        const keys = all('.keypad button');
+        for (const ch of String(q.answer)) {
+          const b = keys.find(k => k.textContent.trim() === ch);
+          if (b) b.click();
+        }
+        const ok = document.querySelector('.key-ok');
+        if (ok) ok.click();
+        return true;
+      }
+      if (q.type === 'sequence') {
+        for (const v of q.answer) {
+          const it = all('.seq-item:not(.picked)').find(x => x.textContent.trim() === String(v));
+          if (it) it.click();
+          await w(20);
+        }
+        return true;
+      }
+      if (q.type === 'dragdrop') {
+        const answers = Array.isArray(q.answer) ? q.answer : String(q.answer).split('|');
+        const slots = all('.drop-slot');
+        const orig = document.elementFromPoint;
+        for (let i = 0; i < slots.length; i++) {
+          const chip = all('.answer-chip:not(.used)')
+            .find(c => c.textContent.trim() === String(answers[i]));
+          if (!chip) { document.elementFromPoint = orig; return false; }
+          document.elementFromPoint = () => slots[i];
+          chip.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 10, clientY: 10 }));
+          window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: 10, clientY: 10 }));
+          await w(20);
+        }
+        document.elementFromPoint = orig;
+        return true;
+      }
+      return false;
+    }
+
+    App.navigate('lesson/g1l1'); await w(260);
+    clickText('button', /跳过故事/); await w(200);
+    if (document.querySelector('.explore-skip')) document.querySelector('.explore-skip').click();
+    await w(260);
+    ck('A1 进入第一题', !!document.querySelector('.question-prompt'));
+    ck('A2 题目语音工具条', !!document.querySelector('.speech-bar'));
+
+    const statsBefore = Save.data.stats.answers;
+    let done = 0;
+    for (const q of questions) {
+      const ok = await answer(q);
+      if (!ok) { O.fails.push('A 无法作答 ' + q.id + '/' + q.type); break; }
+      done++;
+      // sequence 判分 350ms + 跳题 900ms + 跨关 600ms = 1850ms，留足余量
+      await w(2400);
+    }
+    O.info.answered = done;
+    ck('A3 全部题目作答完成', done === questions.length, `${done}/${questions.length}`);
+    ck('A4 结算奖状出现', !!document.querySelector('.certificate'));
+    ck('A5 课程标记通关', !!Save.data.completed['g1l1']);
+    ck('A6 零失误三星', Save.data.stars['g1l1'] === 3, String(Save.data.stars['g1l1']));
+    ck('A7 下一课按顺序解锁', Data.isUnlocked('g1l2'));
+    ck('A8 答题统计每题只记一笔',
+      Save.data.stats.answers - statsBefore === questions.length,
+      `增加 ${Save.data.stats.answers - statsBefore} 笔 / 期望 ${questions.length}`);
+
+    /* ---------- B. 答错 → 错题本 → 先错后对口径 ---------- */
+    App.navigate('lesson/g1l2'); await w(260);
+    clickText('button', /跳过故事/); await w(200);
+    if (document.querySelector('.explore-skip')) document.querySelector('.explore-skip').click();
+    await w(260);
+    const q2 = CONTENT_GRADE_1.semesters[0].units[0].lessons[1].games[0].questions[0];
+    const before2 = Save.data.stats.answers;
+    const wrongBtn = all('.choice-btn').find(b => b.textContent.trim() !== String(q2.answer));
+    if (wrongBtn) wrongBtn.click();
+    await w(220);
+    ck('B1 答错写入错题本', Save.data.wrongBook.length > 0);
+    await w(820);   // 等错误选项解禁
+    const rightBtn = byText('.choice-btn', q2.answer);
+    if (rightBtn) rightBtn.click();
+    await w(220);
+    ck('B2 先错后对只记一笔统计', Save.data.stats.answers - before2 === 1,
+      `增加 ${Save.data.stats.answers - before2} 笔`);
+    ck('B3 进度点不残留红色', !document.querySelector('.game-progress span.ok.bad'));
+
+    /* ---------- C. 错题重做弹层可关闭 / 脏题不锁死 ---------- */
+    App.navigate('wrong'); await w(220);
+    ck('C1 错题本有条目', all('.wrong-item').length > 0);
+    ck('C2 一键组卷入口', !!document.querySelector('.continue-row .btn-big'));
+    const wq = Save.data.wrongBook[0];
+    if (document.querySelector('.wrong-item .btn-secondary')) {
+      document.querySelector('.wrong-item .btn-secondary').click();
+    }
+    await w(220);
+    ck('C3 重做弹层有关闭按钮', !!document.getElementById('wp-close'));
+    const fresh = wq ? Data.findQuestion(wq.lessonId, wq.qid) : null;
+    const ans = fresh ? fresh.answer : (wq && wq.answer);
+    const redoBtn = all('#overlay .choice-btn').find(x => x.textContent.trim() === String(ans));
+    if (redoBtn) redoBtn.click();
+    await w(1250);
+    ck('C4 重做完成弹层自动关闭', document.getElementById('overlay').classList.contains('hidden'));
+    // B 里改对一次 + C 里重做答对一次 = 连对两次，错题应当飞走
+    ck('C5 连对两次错题飞走',
+      !Save.data.wrongBook.some(x => x.lessonId === wq.lessonId && x.qid === wq.qid),
+      `剩余 ${Save.data.wrongBook.length} 道`);
+
+    /* ---------- D. 错题组卷 + 换页释放 ---------- */
+    // 上一节清空了错题本，这里造一道真实错题来验证组卷链路
+    await Save.addWrong({
+      lessonId: 'g1l1', qid: 'q1', type: 'choice',
+      prompt: '一共有几颗草莓？', options: ['5', '6', '7'], answer: '6',
+      hints: [], visual: '🍓🍓🍓🍓🍓🍓'
+    });
+    App.navigate('wrong-drill'); await w(220);
+    ck('D1 组卷页可开始', !!document.getElementById('wd-start'));
+    if (document.getElementById('wd-start')) document.getElementById('wd-start').click();
+    await w(260);
+    ck('D2 组卷题目渲染', !!document.querySelector('.question-prompt'));
+    App.navigate('home'); await w(220);
+    ck('D3 换页后无残留游戏实例', document.querySelectorAll('[data-game-mount]').length === 0);
+
+    /* ---------- E. 单元递进 → 单元小测 ---------- */
+    ['g1l1', 'g1l2', 'g1l3'].forEach(id => { Save.data.completed[id] = true; });
+    await Save.write();
+    ck('E1 单元进度判定完成', (Data.unitProgress('g1s0u0') || {}).allDone === true);
+    App.navigate('grade/1'); await w(240);
+    ck('E2 年级页显示已通关', /已通关/.test(txt()));
+    ck('E3 单元小测入口出现',
+      all('.unit-foot button').some(b => /单元小测/.test(b.textContent)));
+    App.navigate('quiz/g1s0u0'); await w(240);
+    ck('E4 单元小测已解锁', !!document.getElementById('qu-start'));
+    if (document.getElementById('qu-start')) document.getElementById('qu-start').click();
+    await w(300);
+    O.info.quizQuestions = document.querySelectorAll('.game-progress span').length;
+    ck('E5 单课单元也凑够一套卷', O.info.quizQuestions >= 6, String(O.info.quizQuestions));
+
+    /* ---------- F. 每日口算 ---------- */
+    App.navigate('daily'); await w(240);
+    ck('F1 口算设置页', !!document.getElementById('pd-start'));
+    if (document.getElementById('pd-start')) document.getElementById('pd-start').click();
+    await w(280);
+    ck('F2 口算题目渲染', !!document.querySelector('.question-prompt'));
+
+    /* ---------- G. 听算「播报失败」必须显示题目（S1 回归） ---------- */
+    const box = document.createElement('div');
+    document.body.appendChild(box);
+    const origCanAural = Speech.canAural, origSpeak = Speech.speak;
+    Speech.canAural = () => true;   // 强制进入隐藏题干的听算模式
+    Speech.speak = () => false;     // 模拟系统静音 / 播报被拦截
+    const disposeAural = Game.mount(box, {
+      title: '听算兜底', transient: true,
+      questions: [{ id: 'a1', type: 'input', prompt: '8 + 5 = ⬜', answer: '13', aural: true }]
+    }, { onFinish() {} });
+    ck('G1 播报失败自动显示题目',
+      !box.querySelector('.aural-prompt') && /8 \+ 5/.test(box.textContent),
+      box.textContent.slice(0, 60));
+    if (disposeAural) disposeAural();
+    Speech.canAural = origCanAural;
+    Speech.speak = origSpeak;
+    box.remove();
+
+    /* ---------- H. 脏存档：不白屏、不注入、脏题能退出 ---------- */
+    await Save.importSave({
+      unitQuiz: { g1s0u0: { stars: -5, correct: '<b>', total: 8 } },
+      stats: { answers: 1, correct: 99 },
+      // qid 故意指向题库里不存在的题，才会走到「旧存档快照」分支
+      wrongBook: [{ lessonId: 'g1l1', qid: '__missing__', prompt: '<img src=x onerror=alert(1)>' }],
+      completed: { fakeLesson: true },
+      daily: { 'not-a-date': { answers: 3 } }
+    });
+    App.navigate('grade/1'); await w(240);
+    ck('H1 脏存档不白屏', page().innerHTML.length > 500, String(page().innerHTML.length));
+    ck('H2 星级被夹到合法区间', Save.data.unitQuiz['g1s0u0'].stars === 0);
+    ck('H3 HTML 未注入页面', !document.querySelector('#page img') && !document.querySelector('#overlay img'));
+    ck('H4 正确率不超 100%', Save.data.stats.correct <= Save.data.stats.answers);
+    App.navigate('wrong'); await w(220);
+    if (document.querySelector('.wrong-item .btn-secondary')) {
+      document.querySelector('.wrong-item .btn-secondary').click();
+    }
+    await w(320);
+    ck('H5 缺答案脏题不锁死弹层',
+      document.getElementById('overlay').classList.contains('hidden'));
+
+    /* ---------- I. 语音开关 / 家长视图 / 重置 ---------- */
+    const speechBefore = Save.data.settings.speech;
+    document.getElementById('btn-voice').click(); await w(80);
+    ck('I1 语音开关可切换（或设备不支持时保持不变）',
+      Save.data.settings.speech !== speechBefore || !Speech.supported);
+    App.navigate('parent'); await w(260);
+    ck('I2 成长报告渲染', !!document.querySelector('.chart-7d'));
+    ck('I3 语音设置齐全', !!document.getElementById('opt-speech') && !!document.getElementById('opt-rate'));
+    await Save.setName('E2E小明');
+    await Save.reset();
+    ck('I4 重置保留孩子姓名', Save.data.player.name === 'E2E小明', Save.data.player.name);
+
+    O.info.totalChecks = Object.keys(O.checks).length;
+    const pre = document.createElement('pre');
+    pre.id = 'e2e-out';
+    pre.textContent = JSON.stringify(O);
+    document.body.appendChild(pre);
+  })();
+  </script>
+</body>
+</html>
