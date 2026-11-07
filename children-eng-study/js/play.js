@@ -81,6 +81,8 @@ const Play = {
     // ============== 模式切换 ==============
     showMode: function(mode) {
         this.stopAll();
+        // 切到玩法时收起学习页的题目播报条，避免旧关卡的指令留在新玩法上方
+        if (App.hideLearnGuide) App.hideLearnGuide();
         // 切换玩法等于结束上一轮练习，连击从头开始，徽标也不残留
         if (typeof Combo !== 'undefined') Combo.reset();
         App.playMode = mode;

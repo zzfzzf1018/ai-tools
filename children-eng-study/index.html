@@ -161,6 +161,9 @@
 
             <div class="level-map" id="levelMap" hidden></div>
 
+            <!-- 学习页题目播报条：独立容器，不能塞进 flex 的 cardContainer / sentenceStage -->
+            <div class="voice-guide-bar learn-guide-bar" id="learnGuideBar" hidden></div>
+
             <div class="card-container" id="cardContainer" hidden>
                 <!-- 学习卡片会动态插入 -->
             </div>
@@ -234,6 +237,8 @@
                         <span class="game-score">得分: <span id="gameScore">0</span></span>
                     </div>
                 </div>
+                <!-- 语音小助手：每道题的英文题目指令 + 一键重听 -->
+                <div class="voice-guide-bar" id="voiceGuideBar"></div>
                 <div class="game-content" id="gameContent">
                     <!-- 游戏内容动态插入 -->
                 </div>
@@ -316,6 +321,10 @@
             <label class="setting-row">
                 <span>自动朗读卡片</span>
                 <input type="checkbox" id="autoSpeakToggle">
+            </label>
+            <label class="setting-row">
+                <span>题目语音引导</span>
+                <input type="checkbox" id="guideToggle">
             </label>
             <label class="setting-row">
                 <span>语速 <b id="speechRateValue">0.8</b></span>

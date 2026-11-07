@@ -421,39 +421,73 @@ const LEARNING_DATA = {
 
 const WORDS_PER_LEVEL = 5;
 
+// [英文主题, 图标, 章节故事导语, 冒险地点] —— 全部英文，配合图片沉浸，不出现中文词义
 const UNIT_META = {
     1: {
-        0: ['Alphabet Adventure', '🔤'], 1: ['Greetings', '👋'],
-        2: ['My Family', '👨‍👩‍👧‍👦'], 3: ['My Body', '😊'],
-        4: ['Numbers', '🔢'], 5: ['Animals', '🐾']
+        0: ['Alphabet Adventure', '🔤', 'Meet 26 little letter friends!', '🌈 Letter Land'],
+        1: ['Greetings', '👋', 'Say hello and make new friends!', '🏰 Hello Castle'],
+        2: ['My Family', '👨‍👩‍👧‍👦', 'Meet the big happy family!', '🏡 Family House'],
+        3: ['My Body', '😊', 'Wiggle, clap and touch your nose!', '🎈 Body Playground'],
+        4: ['Numbers', '🔢', 'Count the stars, one by one!', '⭐ Number Hill'],
+        5: ['Animals', '🐾', 'Run with the little animals!', '🌳 Animal Forest']
     },
     2: {
-        1: ['Colours', '🎨'], 2: ['School Things', '🎒'],
-        3: ['Yummy Food', '🍎'], 4: ['Toys', '🧸'], 5: ['My Home', '🏠']
+        1: ['Colours', '🎨', 'Paint the world with bright colours!', '🌈 Rainbow Valley'],
+        2: ['School Things', '🎒', 'Pack your bag, off to school!', '🏫 School Bus'],
+        3: ['Yummy Food', '🍎', 'Yummy! Time for a picnic!', '🧺 Picnic Garden'],
+        4: ['Toys', '🧸', 'Pick a toy and let us play!', '🧸 Toy Town'],
+        5: ['My Home', '🏠', 'Knock knock! Come into my home!', '🏠 Cosy Home']
     },
     3: {
-        1: ['Hello & Names', '🤝'], 2: ['My School', '🏫'],
-        3: ['Daily Life', '⏰'], 4: ['Hobbies', '🎵'], 5: ['Describing Things', '📏']
+        1: ['Hello & Names', '🤝', 'What is your name? Nice to meet you!', '🤝 Friendship Square'],
+        2: ['My School', '🏫', 'Let us explore your big school!', '🏫 School Yard'],
+        3: ['Daily Life', '⏰', 'Tick tock! A busy happy day!', '⏰ Clock Tower'],
+        4: ['Hobbies', '🎵', 'Sing, draw and dance with me!', '🎪 Hobby Stage'],
+        5: ['Describing Things', '📏', 'Big or small? Tell me all about it!', '🔍 Wonder Lab']
     },
     4: {
-        1: ['My Room', '🛏️'], 2: ['Weather & Seasons', '🌤️'],
-        3: ['Sports', '⚽'], 4: ['Jobs', '👩‍⚕️'], 5: ['Travel', '🧳']
+        1: ['My Room', '🛏️', 'Tidy up your cosy little room!', '🛏️ Dream Room'],
+        2: ['Weather & Seasons', '🌤️', 'Sunny, rainy, snowy — four seasons!', '☀️ Weather Wheel'],
+        3: ['Sports', '⚽', 'Ready, set, go! Let us play!', '🏟️ Sports Field'],
+        4: ['Jobs', '👩‍⚕️', 'What do you want to be?', '🎩 Job Parade'],
+        5: ['Travel', '🧳', 'Pack your bag, adventure starts!', '✈️ Travel Map']
     },
     5: {
-        1: ['Festivals', '🎉'], 2: ['Our Earth', '🌍'],
-        3: ['Shopping', '🛒'], 4: ['Dreams', '🚀'], 5: ['Learning', '📚']
+        1: ['Festivals', '🎉', 'Party time! Lights, gifts and joy!', '🎆 Festival Street'],
+        2: ['Our Earth', '🌍', 'Be a little hero of our planet!', '🌍 Green Planet'],
+        3: ['Shopping', '🛒', 'Let us go on a shopping trip!', '🛒 Market Lane'],
+        4: ['Dreams', '🚀', 'Dream big and reach for the stars!', '🚀 Star Ship'],
+        5: ['Learning', '📚', 'You are a super learner now!', '🎓 Wisdom Castle']
     }
 };
 
-// 为每个单元生成英文主题、图标和句子小剧场（句子全部来自该单元单词的英文例句）
+// 每个年级的冒险主题（地图顶部显示），与 Home 页的年级描述呼应
+const GRADE_JOURNEY = {
+    1: { name: 'My First Word Adventure', buddy: '🐣', cheer: 'Let us learn our first words!' },
+    2: { name: 'The Colourful Word Trip', buddy: '🐰', cheer: 'Hop along the word path!' },
+    3: { name: 'The School & Sentence Quest', buddy: '🦊', cheer: 'Every step makes you smarter!' },
+    4: { name: 'The Story Forest Expedition', buddy: '🦁', cheer: 'Be brave, little explorer!' },
+    5: { name: 'The Magic Castle Challenge', buddy: '🐉', cheer: 'You are almost a word master!' }
+};
+
+// 为每个单元生成英文主题、图标、章节故事和句子小剧场（句子全部来自该单元单词的英文例句）
 Object.keys(LEARNING_DATA).forEach(grade => {
     const units = LEARNING_DATA[grade].units;
-    Object.keys(units).forEach(unitKey => {
+    Object.keys(units).forEach((unitKey, chapterIdx) => {
         const unit = units[unitKey];
         const meta = (UNIT_META[grade] && UNIT_META[grade][unitKey]) || ['English Words', '📗'];
         unit.topic = meta[0];
         unit.icon = meta[1];
         unit.title = 'Unit ' + unitKey + ' ' + meta[0];
+        unit.story = meta[2] || 'Let us learn new words!';
+        unit.land = meta[3] || '🌟 Word Land';
+        unit.chapter = chapterIdx + 1;   // 章节顺序即课程递进顺序
+        const journey = GRADE_JOURNEY[grade];
+        if (journey) {
+            unit.buddy = journey.buddy;
+            unit.cheer = journey.cheer;
+            unit.journeyName = journey.name;
+        }
 
         const seen = new Set();
         unit.sentences = [];

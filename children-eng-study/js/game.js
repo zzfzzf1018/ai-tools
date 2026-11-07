@@ -86,6 +86,8 @@ const Game = {
         this.stopAll();
         document.querySelector('.game-selector').style.display = 'block';
         document.getElementById('gameArea').style.display = 'none';
+        const bar = document.getElementById('voiceGuideBar');
+        if (bar) { bar.hidden = true; bar.innerHTML = ''; }
         if (typeof Combo !== 'undefined') Combo.reset();
     },
 
@@ -137,6 +139,23 @@ const Game = {
         return first.concat(rotated).slice(0, count);
     },
 
+    // 题目语音小助手：更新播报条 + 自动读题
+    // 自动播报仍走 later + isActivePage 守卫，避免孩子切到别的 Tab 时突然冒出声音
+    setQuestion: function(type, getTarget, auto) {
+        const bar = document.getElementById('voiceGuideBar');
+        if (!bar || typeof VoiceGuide === 'undefined') return;
+        const journey = (typeof GRADE_JOURNEY !== 'undefined') ? GRADE_JOURNEY[this.currentGrade] : null;
+        bar.innerHTML = VoiceGuide.barHtml(type, { buddy: journey ? journey.buddy : '🐣' });
+        bar.hidden = false;
+        VoiceGuide.bindBar(bar, type, getTarget);
+        if (!auto) return;
+        this.later(() => {
+            if (!this.isActivePage()) return;
+            const t = (typeof getTarget === 'function') ? getTarget() : getTarget;
+            VoiceGuide.readQuestion(type, t, true);
+        }, 280);
+    },
+
     startGame: function(gameType, keepLevel) {
         this.stopAll();          // 上一局遗留的朗读/推进定时器不能带进新一局
         this.gameCompleted = false;
@@ -151,6 +170,10 @@ const Game = {
 
         document.querySelector('.game-selector').style.display = 'none';
         document.getElementById('gameArea').style.display = 'block';
+        // 先收起并清空；由 setQuestion() 在题目渲染成功后显示，
+        // 避免「词汇不够」提前 return 时留下一个空的播报条容器
+        const guideBar = document.getElementById('voiceGuideBar');
+        if (guideBar) { guideBar.hidden = true; guideBar.innerHTML = ''; }
 
         const titles = {
             match: '🧩 单词连连看',
@@ -223,6 +246,7 @@ const Game = {
         if (typeof Stickers !== 'undefined') Stickers.refresh();
         App.createConfetti();
         this.showCertificate(stars);
+        if (typeof VoiceGuide !== 'undefined') VoiceGuide.cheer();
 
         return stars;
     },
@@ -283,6 +307,7 @@ const Game = {
                 左边选英文，右边选对应的图片，配对成功就消除！
             </div>
         `;
+        this.setQuestion('match', null, true);
 
         const col1 = document.getElementById('matchColumn1');
         const col2 = document.getElementById('matchColumn2');
@@ -307,6 +332,8 @@ const Game = {
                 col1.querySelectorAll('.match-item').forEach(el => el.classList.remove('selected'));
                 div.classList.add('selected');
                 selectedEn = div.dataset.id;
+                // 点一下就念出来，边玩边听
+                if (typeof VoiceGuide !== 'undefined') VoiceGuide.sayWord(word.word);
                 if (selectedEn !== null && selectedPic !== null) checkMatch();
             });
             col1.appendChild(div);
@@ -322,6 +349,8 @@ const Game = {
                 col2.querySelectorAll('.match-item').forEach(el => el.classList.remove('selected'));
                 div.classList.add('selected');
                 selectedPic = div.dataset.id;
+                // 看图也能听发音，帮孩子把图片和单词的声音连起来
+                if (typeof VoiceGuide !== 'undefined') VoiceGuide.sayWord(word.word);
                 if (selectedEn !== null && selectedPic !== null) checkMatch();
             });
             col2.appendChild(div);
@@ -340,13 +369,15 @@ const Game = {
                 matchedCount++;
 
                 const matchedWord = words[Number(selectedEn)];
-                if (matchedWord) SpeechHelper.speakWord(matchedWord.word);
+                if (typeof VoiceGuide !== 'undefined') VoiceGuide.praise(matchedWord);
+                else if (matchedWord) SpeechHelper.speakWord(matchedWord.word);
 
                 if (matchedCount === words.length) {
                     this.later(() => this.completeGame(), 500);
                 }
             } else {
                 if (typeof Combo !== 'undefined') Combo.miss();
+                if (typeof VoiceGuide !== 'undefined') VoiceGuide.retry(null);
                 this.later(() => {
                     enItem.classList.remove('selected');
                     picItem.classList.remove('selected');
@@ -391,12 +422,14 @@ const Game = {
                 </div>
             `;
 
-            if (SpeechHelper.settings.autoSpeak) {
-                this.later(() => { if (this.isActivePage()) SpeechHelper.speakWord(currentWord.word); }, 300);
-            }
+            this.setQuestion('guess', () => ({ word: currentWord.word }), true);
 
             document.getElementById('guessAudioBtn').addEventListener('click', () => {
-                SpeechHelper.speakWord(currentWord.word);
+                if (typeof VoiceGuide !== 'undefined') {
+                    VoiceGuide.readQuestion('guess', { word: currentWord.word }, false);
+                } else {
+                    SpeechHelper.speakWord(currentWord.word);
+                }
             });
 
             let answered = false;
@@ -411,7 +444,8 @@ const Game = {
                         answered = true;
                         btn.classList.add('correct');
                         this.updateScore(triedWrong ? 5 : 10);
-                        SpeechHelper.speak('Correct! Well done!');
+                        if (typeof VoiceGuide !== 'undefined') VoiceGuide.praise({ word: currentWord.word });
+                        else SpeechHelper.speak('Correct! Well done!');
                         this.later(() => {
                             currentIndex++;
                             renderQuestion();
@@ -420,7 +454,8 @@ const Game = {
                         triedWrong = true;
                         if (typeof Combo !== 'undefined') Combo.miss();
                         btn.classList.add('wrong');
-                        SpeechHelper.speak('Try again!');
+                        if (typeof VoiceGuide !== 'undefined') VoiceGuide.retry({ word: currentWord.word });
+                        else SpeechHelper.speak('Try again!');
                         this.later(() => btn.classList.remove('wrong'), 500);
                     }
                 });
@@ -458,15 +493,17 @@ const Game = {
                 </div>
             `;
 
-            if (SpeechHelper.settings.autoSpeak) {
-                this.later(() => { if (this.isActivePage()) SpeechHelper.speakWord(currentWord.word); }, 300);
-            }
+            this.setQuestion('spell', () => ({ word: currentWord.word }), true);
 
             const input = document.getElementById('spellInput');
             input.focus();
 
             document.getElementById('spellAudioBtn').addEventListener('click', () => {
-                SpeechHelper.speakWord(currentWord.word);
+                if (typeof VoiceGuide !== 'undefined') {
+                    VoiceGuide.readQuestion('spell', { word: currentWord.word }, false);
+                } else {
+                    SpeechHelper.speakWord(currentWord.word);
+                }
             });
 
             let solved = false;
@@ -489,7 +526,8 @@ const Game = {
                     input.style.borderColor = 'var(--color-green)';
                     input.style.color = 'var(--color-green)';
                     this.updateScore(triedWrong ? 8 : 15);
-                    SpeechHelper.speak('Excellent!');
+                    if (typeof VoiceGuide !== 'undefined') VoiceGuide.praise({ word: currentWord.word });
+                    else SpeechHelper.speak('Excellent!');
                     this.later(() => {
                         currentIndex++;
                         renderQuestion();
@@ -499,13 +537,12 @@ const Game = {
                     if (typeof Combo !== 'undefined') Combo.miss();
                     input.style.borderColor = '#EF4444';
                     input.style.color = '#EF4444';
-                    SpeechHelper.speak('Almost! Listen again.');
+                    // retry 会把「温柔鼓励 + 重读单词」排进朗读队列，孩子能立刻再听清一次
+                    if (typeof VoiceGuide !== 'undefined') VoiceGuide.retry({ word: currentWord.word });
+                    else SpeechHelper.speak('Almost! Listen again.');
                     this.later(() => {
                         input.style.borderColor = 'var(--color-blue)';
                         input.style.color = 'var(--color-text)';
-                        if (!solved && document.getElementById('spellInput') === input) {
-                            SpeechHelper.speakWord(currentWord.word);
-                        }
                     }, 800);
                 }
             };
@@ -545,6 +582,7 @@ const Game = {
                 `).join('')}
             </div>
         `;
+        this.setQuestion('memory', null, true);
 
         const cardElements = document.querySelectorAll('.memory-card');
         cardElements.forEach((cardEl, idx) => {
@@ -556,6 +594,9 @@ const Game = {
                 cardEl.textContent = cards[idx].content;
                 if (cards[idx].type === 'pic') cardEl.classList.add('picture');
                 cardEl.classList.add('flipped');
+                // 翻到单词卡或图片卡都会念出这个单词，边翻边记
+                const flipWord = words[cards[idx].pairId];
+                if (flipWord && typeof VoiceGuide !== 'undefined') VoiceGuide.sayWord(flipWord.word);
                 flippedCards.push({ el: cardEl, data: cards[idx] });
 
                 if (flippedCards.length === 2) {
@@ -569,6 +610,10 @@ const Game = {
                             first.el.classList.remove('flipped');
                             second.el.classList.remove('flipped');
                             this.updateScore(15);
+                            if (typeof VoiceGuide !== 'undefined') {
+                                const w = words[first.data.pairId];
+                                VoiceGuide.praise(w ? { word: w.word } : null);
+                            }
                             matchedPairs++;
                             flippedCards = [];
                             isProcessing = false;
@@ -579,6 +624,7 @@ const Game = {
                         }, 600);
                     } else {
                         if (typeof Combo !== 'undefined') Combo.miss();
+                        if (typeof VoiceGuide !== 'undefined') VoiceGuide.retry(null);
                         this.later(() => {
                             first.el.textContent = '?';
                             second.el.textContent = '?';
@@ -653,10 +699,14 @@ const Game = {
                 </div>
             `;
 
-            if (SpeechHelper.settings.autoSpeak) {
-                this.later(() => { if (this.isActivePage()) SpeechHelper.speakWord(currentWord.word); }, 300);
-            }
-            document.getElementById('fillAudioBtn').onclick = () => SpeechHelper.speakWord(currentWord.word);
+            this.setQuestion('fillword', () => ({ word: currentWord.word }), true);
+            document.getElementById('fillAudioBtn').onclick = () => {
+                if (typeof VoiceGuide !== 'undefined') {
+                    VoiceGuide.readQuestion('fillword', { word: currentWord.word }, false);
+                } else {
+                    SpeechHelper.speakWord(currentWord.word);
+                }
+            };
 
             const answerSlots = Array(targetLetters.length).fill(null);
             const usedPoolIdx = new Set();
@@ -685,7 +735,8 @@ const Game = {
                             if (!usedPoolIdx.has(Number(b.dataset.poolIdx))) b.disabled = true;
                         });
                         this.updateScore(triedWrong ? 8 : 15);
-                        SpeechHelper.speak('Excellent!');
+                        if (typeof VoiceGuide !== 'undefined') VoiceGuide.praise({ word: currentWord.word });
+                        else SpeechHelper.speak('Excellent!');
                         this.later(() => {
                             currentIndex++;
                             renderQuestion();
@@ -694,7 +745,8 @@ const Game = {
                         triedWrong = true;
                         if (typeof Combo !== 'undefined') Combo.miss();
                         document.querySelectorAll('.fill-slot').forEach(s => s.classList.add('shake'));
-                        SpeechHelper.speak('Almost!');
+                        if (typeof VoiceGuide !== 'undefined') VoiceGuide.retry({ word: currentWord.word });
+                        else SpeechHelper.speak('Almost!');
                         this.later(() => {
                             document.querySelectorAll('.fill-slot').forEach(s => s.classList.remove('shake'));
                             answerSlots.fill(null);
@@ -784,11 +836,15 @@ const Game = {
                     <div class="sentence-actions" id="sgActions"></div>
                 </div>`;
 
-            document.getElementById('sgAudioBtn').onclick = () => SpeechHelper.speakSentence(item.text);
+            this.setQuestion('sentence', () => ({ sentence: item.text }), true);
+            document.getElementById('sgAudioBtn').onclick = () => {
+                if (typeof VoiceGuide !== 'undefined') {
+                    VoiceGuide.readQuestion('sentence', { sentence: item.text }, false);
+                } else {
+                    SpeechHelper.speakSentence(item.text);
+                }
+            };
             document.getElementById('sgSlowBtn').onclick = () => SpeechHelper.speak(item.text, { rate: 0.6 });
-            if (SpeechHelper.settings.autoSpeak) {
-                this.later(() => { if (this.isActivePage()) SpeechHelper.speakSentence(item.text); }, 400);
-            }
 
             SentenceLab.renderPuzzle({
                 text: item.text,
@@ -807,7 +863,8 @@ const Game = {
                     const marked = item.text.split(item.word).join(`<mark>${item.word}</mark>`);
                     reveal.innerHTML = `<div class="sentence-full">${marked}</div>`;
                     reveal.hidden = false;
-                    SpeechHelper.speakSentence(item.text);
+                    if (typeof VoiceGuide !== 'undefined') VoiceGuide.praise({ sentence: item.text });
+                    else SpeechHelper.speakSentence(item.text);
                     this.updateScore(15);
                     App.createConfetti(16);
 

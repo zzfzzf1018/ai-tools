@@ -391,6 +391,7 @@ const App = {
         document.getElementById('levelMap').hidden = true;
         document.getElementById('sentenceStage').hidden = true;
         document.getElementById('cardControls').style.display = 'none';
+        this.hideLearnGuide();
         document.getElementById('learnBack').textContent = '🏠 首页';
         document.getElementById('learnTitle').textContent = '选择学习内容';
         document.getElementById('learnEmptyBtn').onclick = () => this.showPage('home');
@@ -494,6 +495,52 @@ const App = {
         return plan;
     },
 
+    // 章节递进状态：算出「当前挑战」、每关状态、每章解锁情况。
+    // 课程按 Chapter 1 → 2 → 3 层层递进：前一章全部通关才点亮下一章。
+    // 采用「软解锁」：未解锁的关卡仍可挑战（弹温柔提示 + 仍要挑战），不硬性拦住孩子。
+    journeyState: function() {
+        const plan = this.levelPlan;
+        const done = this.userData.completedLevels;
+        const isDone = l => done.includes(l.key);
+        const firstPending = plan.findIndex(l => !isDone(l));
+        const currentIdx = firstPending >= 0 ? firstPending : -1;  // -1 = 本年级全通关
+        const gradeData = LEARNING_DATA[this.currentGrade];
+        // 尚未选年级 / 存档年级被清空时给一个安全的空状态，不能抛异常
+        if (!gradeData) {
+            return { plan: plan, isDone: isDone, currentIdx: -1, chapters: [], allDone: true };
+        }
+        const unitKeys = Object.keys(gradeData.units);
+        const chapters = unitKeys.map((unitKey, ci) => {
+            const levels = plan.filter(l => l.unit === unitKey);
+            const unitDone = levels.length > 0 && levels.every(isDone);
+            const prevLevels = ci === 0 ? [] : plan.filter(l => l.unit === unitKeys[ci - 1]);
+            const unlocked = ci === 0 || (prevLevels.length > 0 && prevLevels.every(isDone));
+            return {
+                unitKey: unitKey,
+                index: ci,
+                chapter: ci + 1,
+                unit: gradeData.units[unitKey],
+                levels: levels,
+                unitDone: unitDone,
+                unlocked: unlocked
+            };
+        });
+        return { plan: plan, isDone: isDone, currentIdx: currentIdx, chapters: chapters,
+                 allDone: currentIdx === -1 };
+    },
+
+    // 地图上的宠物伙伴：随学习点数进化，孩子能看见自己的成长
+    journeyBuddy: function() {
+        const journey = (typeof GRADE_JOURNEY !== 'undefined') ? GRADE_JOURNEY[this.currentGrade] : null;
+        let emoji = journey ? journey.buddy : '🐣';
+        if (typeof Play !== 'undefined' && typeof Play.petStage === 'function' &&
+            typeof PET_STAGES !== 'undefined') {
+            const stage = PET_STAGES[Play.petStage(this.userData.petXp || 0)];
+            if (stage) emoji = stage.emoji;
+        }
+        return emoji;
+    },
+
     // 顶部单元快捷按钮：跳到该单元第一个未完成的关卡
     renderUnitSelector: function() {
         const selector = document.getElementById('unitSelector');
@@ -529,54 +576,106 @@ const App = {
         });
     },
 
-    // ============== 关卡地图 ==============
+    // ============== 关卡地图：章节层层递进的冒险路径 ==============
     renderLevelMap: function() {
         const map = document.getElementById('levelMap');
         const gradeData = LEARNING_DATA[this.currentGrade];
+        // 未选年级时交给 renderLearnEmptyState 处理，这里不要解引用 units
+        if (!gradeData) { map.innerHTML = ''; return; }
         const totalWords = Object.keys(gradeData.units)
             .reduce((sum, key) => sum + gradeData.units[key].words.length, 0);
         const learned = this.userData.learnedWords
             .filter(key => String(key).startsWith(`${this.currentGrade}-`)).length;
         const done = this.levelPlan
             .filter(l => this.userData.completedLevels.includes(l.key)).length;
-        const percent = Math.round(done / this.levelPlan.length * 100);
+        const percent = this.levelPlan.length
+            ? Math.round(done / this.levelPlan.length * 100) : 0;
         const esc = SentenceLab.escapeHtml;
+        const journey = (typeof GRADE_JOURNEY !== 'undefined')
+            ? (GRADE_JOURNEY[this.currentGrade] ||
+               { name: 'Word Adventure', cheer: 'Let us go!' })
+            : { name: 'Word Adventure', cheer: 'Let us go!' };
+        const state = this.journeyState();
+        const buddy = this.journeyBuddy();
+        const nextLevel = state.currentIdx >= 0 ? this.levelPlan[state.currentIdx] : null;
+        const nextChapter = nextLevel
+            ? state.chapters.find(c => c.unitKey === nextLevel.unit) : null;
 
         map.innerHTML = `
-            <div class="map-head">
-                <div class="map-head-text">
-                    <div class="map-title">🗺️ ${gradeData.emoji} ${gradeData.name} Word Map</div>
-                    <div class="map-sub">${totalWords} words · ${this.levelPlan.length} levels · 全部词库分单元闯关</div>
+            <div class="map-head journey-head">
+                <div class="journey-hero">
+                    <span class="journey-buddy" aria-hidden="true">${buddy}</span>
+                    <div class="map-head-text">
+                        <div class="map-title">🗺️ ${gradeData.emoji} ${gradeData.name} · ${esc(journey.name)}</div>
+                        <div class="map-sub">${totalWords} words · ${this.levelPlan.length} levels · ${state.chapters.length} chapters</div>
+                    </div>
                 </div>
                 <div class="map-progress">
                     <div class="map-progress-track"><span style="width:${percent}%"></span></div>
                     <span class="map-progress-text">${done}/${this.levelPlan.length} 关 ⭐ · ${learned}/${totalWords} words</span>
                 </div>
-                <button class="map-continue" id="mapContinueBtn">▶ 继续闯关</button>
+                <button class="map-continue" id="mapContinueBtn">▶ 继续冒险</button>
             </div>
+
+            <div class="journey-flags" aria-label="章节进度">
+                ${state.chapters.map(ch => `
+                    <span class="journey-flag ${ch.unitDone ? 'done' : ''} ${ch.unlocked ? 'open' : 'locked'}"
+                          title="Chapter ${ch.chapter}: ${esc(ch.unit.title)}">
+                        <span class="jf-icon">${ch.unitDone ? '🏁' : (ch.unlocked ? '🚩' : '🔒')}</span>
+                        <span class="jf-text">Ch.${ch.chapter}</span>
+                    </span>`).join('<span class="jf-link"></span>')}
+            </div>
+
+            <div class="journey-next ${nextLevel ? '' : 'all-done'}">
+                <span class="jn-buddy">${buddy}</span>
+                <span class="jn-text">${nextLevel
+                    ? `👉 下一站 · ${esc(nextLevel.title)} <b>Step ${state.currentIdx + 1}/${this.levelPlan.length}</b>`
+                    : '🎉 全部章节通关！你是最棒的单词小勇士！'}</span>
+                <button class="jn-speak" id="journeySpeakBtn" type="button" aria-label="听小老师说">🔊</button>
+            </div>
+
             <div class="map-units">
-                ${Object.keys(gradeData.units).map(unitKey => {
-                    const unit = gradeData.units[unitKey];
-                    const levels = this.levelPlan.filter(l => l.unit === unitKey);
-                    const unitDone = levels.filter(l => this.userData.completedLevels.includes(l.key)).length;
+                ${state.chapters.map(ch => {
+                    const u = ch.unit;
+                    const unitDoneCount = ch.levels.filter(state.isDone).length;
+                    const isCurrentChapter = nextLevel && nextLevel.unit === ch.unitKey;
                     return `
-                        <div class="map-unit">
-                            <div class="map-unit-head">
-                                <span class="map-unit-icon">${unit.icon}</span>
-                                <span class="map-unit-name">${esc(unit.title)}</span>
-                                <span class="map-unit-count">${unit.words.length} words · ${unitDone}/${levels.length} 关</span>
+                        <div class="map-unit chapter ${ch.unlocked ? '' : 'locked'} ${isCurrentChapter ? 'current' : ''} ${ch.unitDone ? 'complete' : ''}"
+                             data-chapter="${ch.chapter}">
+                            <div class="chapter-ribbon">
+                                <span class="chapter-no">Chapter ${ch.chapter}</span>
+                                <span class="chapter-land">${esc(u.land || '')}</span>
+                                <span class="chapter-seal ${ch.unitDone ? 'cleared' : (ch.unlocked ? '' : 'lock')}">${ch.unitDone ? '✅ Cleared' : (ch.unlocked ? '🌟 Open' : '🔒 Locked')}</span>
                             </div>
+                            <div class="map-unit-head">
+                                <span class="map-unit-icon">${u.icon}</span>
+                                <span class="map-unit-name">${esc(u.title)}</span>
+                                <span class="map-unit-count">${u.words.length} words · ${unitDoneCount}/${ch.levels.length} 关</span>
+                            </div>
+                            <div class="chapter-story">${esc(u.story || '')}</div>
                             <div class="map-levels">
-                                ${levels.map(l => {
-                                    const isDone = this.userData.completedLevels.includes(l.key);
+                                ${ch.levels.map((l, li) => {
+                                    const idx = this.levelPlan.indexOf(l);
+                                    const isDone = state.isDone(l);
+                                    const isCurrent = idx === state.currentIdx;
+                                    const status = isDone ? 'done'
+                                        : (isCurrent ? 'current'
+                                        : (ch.unlocked ? 'upcoming' : 'locked'));
                                     return `
-                                        <button class="map-level ${l.type} ${isDone ? 'done' : ''}"
-                                                data-key="${l.key}" title="${esc(l.title)}">
+                                        <button class="map-level ${l.type} ${status}" data-key="${l.key}"
+                                                data-step="${li + 1}" title="${esc(l.title)}">
+                                            <span class="ml-step">${li + 1}</span>
                                             <span class="ml-icon">${l.type === 'sentence' ? '💬' : '🔤'}</span>
                                             <span class="ml-label">${l.type === 'sentence' ? 'Sentence' : l.label}</span>
                                             ${isDone ? '<span class="ml-check">✓</span>' : ''}
+                                            ${status === 'locked' ? '<span class="ml-lock">🔒</span>' : ''}
+                                            ${isCurrent ? `<span class="ml-pet">${buddy}</span>` : ''}
                                         </button>`;
                                 }).join('')}
+                            </div>
+                            <div class="chapter-foot ${ch.unitDone ? 'opened' : ''}">
+                                <span class="chest">${ch.unitDone ? '🎁' : '🧰'}</span>
+                                <span>${ch.unitDone ? 'Treasure opened! +5 ⭐' : `Clear ${ch.levels.length} levels to open the treasure!`}</span>
                             </div>
                         </div>`;
                 }).join('')}
@@ -585,14 +684,39 @@ const App = {
         map.querySelectorAll('.map-level').forEach(btn => {
             btn.addEventListener('click', () => {
                 const idx = this.levelPlan.findIndex(l => l.key === btn.dataset.key);
-                if (idx >= 0) this.startLevel(idx);
+                if (idx < 0) return;
+                const st = this.journeyState();
+                const alreadyDone = st.isDone(this.levelPlan[idx]);
+                // 层层递进：跳得太远时先温柔提醒，但保留「仍要挑战」，不硬性锁住孩子
+                if (!alreadyDone && st.currentIdx >= 0 && idx > st.currentIdx + 1) {
+                    // 连点同一个锁住关卡不能排出一长串提示，孩子要连关好几个弹窗
+                    if (this.modalActive || this.modalQueue.length) return;
+                    this.showModal('🐣', '一关一关走更厉害！',
+                        `前面还有 ${idx - st.currentIdx} 个小关卡等你，先从当前挑战开始吧！`,
+                        null,
+                        [
+                            { label: '▶ 去当前挑战', primary: true, onClick: () => this.startLevel(st.currentIdx) },
+                            { label: '🔓 仍要挑战', onClick: () => this.startLevel(idx) }
+                        ]);
+                    return;
+                }
+                this.startLevel(idx);
             });
         });
+
         const continueBtn = document.getElementById('mapContinueBtn');
         if (continueBtn) {
             continueBtn.addEventListener('click', () => {
                 const idx = this.levelPlan.findIndex(l => !this.userData.completedLevels.includes(l.key));
                 this.startLevel(idx >= 0 ? idx : 0);
+            });
+        }
+        const speakBtn = document.getElementById('journeySpeakBtn');
+        if (speakBtn && typeof VoiceGuide !== 'undefined') {
+            speakBtn.addEventListener('click', () => {
+                VoiceGuide.encourage(nextLevel
+                    ? `Chapter ${nextChapter ? nextChapter.chapter : 1} is waiting! Let us go, little explorer!`
+                    : journey.cheer);
             });
         }
     },
@@ -611,6 +735,7 @@ const App = {
         this.stopRecordingQuiet();
         this.clearSentenceSpeakTimer();
         this.syncPlayNav('map');
+        this.hideLearnGuide();
 
         this.renderLevelMap();
         document.getElementById('levelMap').hidden = false;
@@ -653,6 +778,7 @@ const App = {
         this.syncPlayNav('map');
 
         document.getElementById('levelMap').hidden = true;
+        this.hideLearnGuide();   // renderCard / renderSentenceCard 会按需重新显示
         const cardContainer = document.getElementById('cardContainer');
         cardContainer.hidden = level.type !== 'word';
         cardContainer.innerHTML = '';
@@ -740,6 +866,11 @@ const App = {
         this.checkBadges();
         // 剧情冒险进行中时，让宠物说一句鼓励的话
         if (typeof Quest !== 'undefined') Quest.encourage(level);
+        // 整个章节通关 = 打开宝箱，给一句特别的庆祝语音 + 更多纸屑
+        if (unitJustDone && typeof VoiceGuide !== 'undefined') {
+            VoiceGuide.cheer();
+            this.createConfetti(28);
+        }
         this.createConfetti(36);
 
         const hasNext = this.currentLevelIndex + 1 < this.levelPlan.length;
@@ -756,11 +887,11 @@ const App = {
         actions.push({ label: '🗺️ 关卡地图', onClick: () => this.showLevelMap() });
 
         this.showModal(
-            '🎉',
-            'Level Clear!',
+            unitJustDone ? '🎁' : '🎉',
+            unitJustDone ? 'Treasure Unlocked!' : 'Level Clear!',
             firstTime
                 ? `${level.title} 通关！奖励 ${level.type === 'sentence' ? 4 : 3} 颗星星 ⭐` +
-                  (unitJustDone ? '\n🎊 本单元全部通关，额外奖励 5 颗星星！' : '')
+                  (unitJustDone ? '\n🎊 本章宝箱打开！额外奖励 5 颗星星，下一章已经点亮啦！' : '')
                 : `${level.title} 又复习了一遍，真棒！`,
             null,
             actions
@@ -781,6 +912,22 @@ const App = {
             return true;
         }
         return false;
+    },
+
+    // ============== 学习页题目播报条 ==============
+    // 必须用 #learnGuideBar 这个独立容器：cardContainer / sentenceStage 都是横向 flex，
+    // 把播报条作为子元素插进去会和单词卡/句子卡并排挤压，卡片会变形。
+    hideLearnGuide: function() {
+        const bar = document.getElementById('learnGuideBar');
+        if (bar) { bar.hidden = true; bar.innerHTML = ''; }
+    },
+
+    renderLearnGuide: function(type, getTarget) {
+        const bar = document.getElementById('learnGuideBar');
+        if (!bar || typeof VoiceGuide === 'undefined') return;
+        bar.innerHTML = VoiceGuide.barHtml(type, { buddy: this.journeyBuddy() });
+        bar.hidden = false;
+        VoiceGuide.bindBar(bar, type, getTarget);
     },
 
     // ============== 单词学习卡片（全英文 + 图片） ==============
@@ -852,6 +999,9 @@ const App = {
             </div>
         `;
 
+        // 小助手气泡：点一下就能重听「题目指令 + 单词 + 例句」
+        this.renderLearnGuide('card', () => ({ word: card.word, sentence: card.sentence }));
+
         const cardEl = document.getElementById('learningCard');
         const speakBtn = document.getElementById('cardSpeakBtn');
         speakBtn.addEventListener('click', (e) => {
@@ -896,7 +1046,9 @@ const App = {
             this.autoSpeakTimer = setTimeout(() => {
                 this.autoSpeakTimer = null;
                 if (token !== this.speechToken) return;
-                this.speakCurrentCard(false);
+                const prompt = (typeof VoiceGuide !== 'undefined')
+                    ? VoiceGuide.autoPrompt('card') : null;
+                this.speakCurrentCard(false, prompt);
             }, 300);
         }
 
@@ -905,7 +1057,8 @@ const App = {
     },
 
     // 朗读当前卡片；isManual 为 true 时才算用户主动朗读
-    speakCurrentCard: function(isManual) {
+    // promptText 非空时先读题目指令，再把单词排进朗读队列（不额外引入定时器）
+    speakCurrentCard: function(isManual, promptText) {
         const card = this.currentCards[this.currentCardIndex];
         if (!card) return;
 
@@ -915,6 +1068,10 @@ const App = {
         const isStillCurrent = () =>
             this.speechToken === token && this.currentCards[this.currentCardIndex] === card;
 
+        if (promptText && typeof VoiceGuide !== 'undefined') {
+            const p = VoiceGuide.MOODS.prompt;
+            SpeechHelper.speak(promptText, { rate: p.rate, pitch: p.pitch, dedupe: false });
+        }
         SpeechHelper.speakWord(card.word,
             () => {
                 if (!isStillCurrent()) return;
@@ -929,7 +1086,8 @@ const App = {
                     if (!isStillCurrent()) return;
                     SpeechHelper.speakSentence(card.sentence);
                 }, 800);
-            }
+            },
+            { queue: !!promptText }
         );
 
         if (isManual) {
@@ -988,6 +1146,7 @@ const App = {
                 <div class="card-follow-hint" id="sentenceFollowHint" hidden></div>
             </div>`;
 
+        this.renderLearnGuide('sentenceShow', () => ({ sentence: item.text }));
         document.getElementById('sentenceAudioBtn').onclick = () => SpeechHelper.speakSentence(item.text);
         document.getElementById('sentenceSlowBtn').onclick = () => SpeechHelper.speak(item.text, { rate: 0.6 });
         if (SpeechHelper.settings.autoSpeak) {
@@ -1263,11 +1422,13 @@ const App = {
     initSettings: function() {
         const panel = document.getElementById('settingsPanel');
         const toggle = document.getElementById('autoSpeakToggle');
+        const guideToggle = document.getElementById('guideToggle');
         const rate = document.getElementById('speechRate');
         const rateValue = document.getElementById('speechRateValue');
         const voiceSelect = document.getElementById('voiceSelect');
 
         toggle.checked = SpeechHelper.settings.autoSpeak;
+        if (guideToggle) guideToggle.checked = SpeechHelper.settings.guide !== false;
         rate.value = SpeechHelper.settings.rate;
         rateValue.textContent = SpeechHelper.settings.rate;
 
@@ -1291,6 +1452,12 @@ const App = {
             SpeechHelper.settings.autoSpeak = toggle.checked;
             SpeechHelper.saveSettings();
         };
+        if (guideToggle) {
+            guideToggle.onchange = () => {
+                SpeechHelper.settings.guide = guideToggle.checked;
+                SpeechHelper.saveSettings();
+            };
+        }
         rate.oninput = () => {
             SpeechHelper.settings.rate = parseFloat(rate.value);
             rateValue.textContent = rate.value;
