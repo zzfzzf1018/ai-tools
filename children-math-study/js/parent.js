@@ -47,6 +47,7 @@
             </div>`).join('')}
         </div>
         <p class="parent-note">正确率按每题「第一次作答」统计，连点错误选项不会重复计入；每日口算、听算、单元小测与错题复习都会记入。</p>
+        <p class="parent-note">🔁 同类题变式训练 ${d.stats.variantSessions || 0} 次 · 变式题答对 ${d.stats.variantCorrect || 0}/${d.stats.variantTotal || 0} 题；变式全对会给对应错题记一次巩固。</p>
       `;
       wrap.appendChild(report);
 
@@ -133,6 +134,14 @@
       profile.className = 'card parent-section';
       profile.innerHTML = `
         <h3>👶 小档案</h3>
+        <div class="profile-row">
+          ${window.Shop ? Shop.avatarHtml() : '🦊'}
+          <div class="profile-info">
+            <b>${UI.esc(d.player.name)}</b>
+            <p>可用 ⭐ ${Save.availableStars()} 颗 · 已解锁 ${Save.ownedItems().length} 件装扮</p>
+          </div>
+          <button class="btn-secondary" id="btn-shop">🛍️ 去星星商店</button>
+        </div>
         <div class="setting-row">
           <label for="opt-name">奖状上的名字</label>
           <input type="text" id="opt-name" maxlength="12" value="${UI.esc(d.player.name)}">
@@ -140,6 +149,7 @@
         </div>
       `;
       wrap.appendChild(profile);
+      profile.querySelector('#btn-shop').onclick = () => App.navigate('shop');
       profile.querySelector('#btn-save-name').onclick = async () => {
         await Save.setName(profile.querySelector('#opt-name').value);
         UI.toast('名字已保存，下次奖状就会用新名字啦', 'var(--secondary)');

@@ -6,7 +6,13 @@
     { id: 'star-50', icon: '🌟', name: '星星收藏家', desc: '累计获得 50 颗星星' },
     { id: 'grade-done', icon: '👑', name: '年级冠军', desc: '完成一个年级的全部内容' },
     { id: 'explore-10', icon: '🔬', name: '小小科学家', desc: '完成 10 次互动探索' },
-    { id: 'streak-brave', icon: '🦁', name: '勇气徽章', desc: '错题本清零一次' }
+    { id: 'streak-brave', icon: '🦁', name: '勇气徽章', desc: '错题本清零一次' },
+    { id: 'aural-fan', icon: '🎧', name: '听算小耳朵', desc: '完成 3 次听算挑战' },
+    { id: 'daily-7', icon: '📅', name: '七日坚持', desc: '连续打卡 7 天' },
+    { id: 'quiz-master', icon: '🎓', name: '单元小测王', desc: '3 次单元小测拿满星' },
+    { id: 'variant-hero', icon: '🔁', name: '变式小能手', desc: '完成 5 次同类题变式训练' },
+    { id: 'collector', icon: '🛍️', name: '装扮收藏家', desc: '在星星商店解锁 3 件装扮' },
+    { id: 'star-100', icon: '💫', name: '星星大王', desc: '累计获得 100 颗星星' }
   ];
 
   const PRAISE = ['太棒了！', '真厉害！', '答对啦！', '你真聪明！', '完美！', '好样的！'];
@@ -72,11 +78,25 @@
 
       if (doneCount >= 1) earned.push('first-lesson');
       if (totalStars >= 50) earned.push('star-50');
+      if (totalStars >= 100) earned.push('star-100');
       if (exploreCount >= 10) earned.push('explore-10');
       for (const g of Data.grades) {
         if (Data.gradeProgress(g) >= 1) { earned.push('grade-done'); break; }
       }
       if (d.badges.includes('perfect-candidate')) earned.push('perfect');
+
+      // v1.2 扩展勋章：听算 / 打卡 / 单元小测 / 变式训练 / 星星商店
+      const dailyRecs = Object.values(d.daily || {});
+      const auralCount = dailyRecs.reduce((n, r) => n + (Number(r.aural) || 0), 0);
+      const quizFull = Object.values(d.unitQuiz || {}).filter(r => Number(r.stars) === 3).length;
+      const variantSessions = Number((d.stats || {}).variantSessions) || 0;
+      const ownedCount = ((d.wallet || {}).owned || []).length - 2; // 排除两件免费基础款
+      if (auralCount >= 3) earned.push('aural-fan');
+      const streakDays = typeof Save.streak === 'function' ? Save.streak() : 0;
+      if (streakDays >= 7) earned.push('daily-7');
+      if (quizFull >= 3) earned.push('quiz-master');
+      if (variantSessions >= 5) earned.push('variant-hero');
+      if (ownedCount >= 3) earned.push('collector');
 
       const fresh = [];
       for (const id of [...new Set(earned)]) {

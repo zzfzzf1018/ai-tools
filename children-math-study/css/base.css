@@ -686,10 +686,57 @@ body {
 }
 .seq-item { max-width: 320px; }
 
+/* ===== v1.2 星星商店 / 头像装扮 ===== */
+.btn-avatar { font-size: 17px; letter-spacing: -2px; }
+.shop-avatar { position: relative; display: inline-block; font-size: 1em; line-height: 1; }
+.shop-avatar .shop-acc { position: absolute; right: -.55em; top: -.45em; font-size: .62em; }
+.shop-wrap { max-width: 900px; margin: 0 auto; }
+.shop-head { text-align: center; }
+.shop-head h2 { font-size: 26px; color: var(--title); margin-bottom: 12px; }
+.shop-hero { font-size: 84px; line-height: 1.2; }
+.shop-player { font-size: 17px; font-weight: bold; color: var(--text); margin: 6px 0 16px; }
+.shop-balance { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+.sb-box {
+  background: var(--chip-bg); border-radius: 14px; padding: 10px 6px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.sb-box b { font-size: 20px; color: var(--title); }
+.sb-box span { font-size: 12px; color: var(--text-soft); }
+.shop-section { margin-top: 20px; }
+.shop-section h3 { font-size: 19px; color: var(--title); margin-bottom: 14px; }
+.shop-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px; }
+.shop-item {
+  text-align: center; border: 2px solid var(--node-border); border-radius: 16px;
+  padding: 14px 8px; background: var(--card-bg);
+}
+.shop-item.equipped { border-color: var(--secondary); box-shadow: 0 0 0 3px var(--hint-bg); }
+.shop-item.locked { opacity: .6; }
+.si-emoji { font-size: 42px; line-height: 1.2; }
+.si-name { font-size: 16px; font-weight: bold; color: var(--title); margin-top: 4px; }
+.si-desc { font-size: 12px; color: var(--text-soft); min-height: 30px; margin: 4px 0 10px; }
+.si-btn { font-size: 13px; padding: 7px 12px; width: 100%; }
+.shop-foot { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin: 22px 0; }
+.shop-confirm-emoji { font-size: 64px; }
+.profile-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+.profile-row .shop-avatar { font-size: 56px; }
+.profile-info { flex: 1; min-width: 160px; }
+.profile-info b { font-size: 18px; color: var(--title); }
+.profile-info p { font-size: 13px; color: var(--text-soft); margin-top: 4px; }
+.cert-avatar { font-size: 52px; line-height: 1.2; margin-top: 6px; }
+
+/* ===== v1.2 同类题变式 ===== */
+.variant-intro { font-size: 15px; color: var(--text-soft); margin-bottom: 12px; }
+.wrong-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.wrong-item { flex-wrap: wrap; }
+.hub-actions { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.home-hub .hub-head h2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 20px; }
+.home-hub .shop-avatar { font-size: 30px; }
+
 /* ===== 响应式补强 ===== */
 @media (max-width: 720px) {
   .hub-actions { grid-template-columns: repeat(2, 1fr); }
-  .metric-grid { grid-template-columns: repeat(2, 1fr); }
+  .metric-grid, .shop-balance, .shop-grid { grid-template-columns: repeat(2, 1fr); }
+  .shop-hero { font-size: 64px; }
   .path-banner { gap: 12px; }
   .path-banner .btn-big { width: 100%; }
   .unit-step { position: static; margin-right: 4px; }

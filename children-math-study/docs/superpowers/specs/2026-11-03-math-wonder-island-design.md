@@ -133,3 +133,24 @@ children-math-study/
 - **正确率口径为每题首次作答**：`safeJudge` 用 `answered` 锁，先错后对只记一笔
 - **异步结算需检查节点仍在文档中**：`if (!body.isConnected) return;`
 - 换页前统一 `Speech.stop()` + 调用所有 `[data-game-mount]` 的 dispose + 清理 `.drag-ghost` 残影
+
+## 9. v1.2 扩展设计（2026-11-07）
+
+### 9.1 错题同类题自动变形
+- 新增 `js/variants.js`，两条生成路径，均输出标准题目对象并复用 `Game.mount`（自动继承语音、提示、键盘）
+- **结构变形**：题干含 `A op B = ⬜` / `A op ⬜ = C` / `⬜ op B = C` 时，保留中文措辞、替换数字、按运算关系重算答案
+- **语义反推**（情景题）：提取题干全部数字（1~3 个），枚举 12 个候选算术关系（`n±1 / n×2 / n÷2 / a±b / a×b / a÷b / a+b+1 / b-a+1` 等），仅当**唯一**关系能复现原题答案时才变形；新数字代入同一公式得到新答案，保证不出错题
+- **知识点兜底**：`conceptsToKinds()` 把课程 `concept`/标题映射到 15 类同结构生成器（加减乘除、凑十、小数、分数、因数、方程、平均分、比大小、数数）；按年级给默认池
+- 变式全对调用 `Save.consolidateWrong()` 给原错题记一次连对；`Save.recordVariant()` 累计训练次数与正确率
+- 入口：错题本单条弹层、独立页 `#/variants`、首页「变式再练」
+
+### 9.2 星星商店与装扮
+- 新增 `js/shop.js`，16 件商品（8 头像 + 8 挂件），价格 0~30 星
+- `Save.data.wallet = { spent, owned }`；`availableStars() = totalStars() - spent`，重玩刷新更高星级自动补余额
+- 免费基础款恒定拥有；`buy()` 校验余额与重复购买，`equip()` 切换 `player.avatar` / `player.accessory`
+- 形象展示点：顶栏按钮、首页问候、通关奖状、家长档案、商店主视觉
+- 勋章由 6 枚扩到 12 枚，`Rewards.checkBadges()` 读取 `daily.aural`、`unitQuiz.stars`、`stats.variantSessions`、`wallet.owned`、`Save.streak()`；`grantBadgesSoon()` 在练习/变式结算后即时补发
+
+### 9.3 存档兼容
+- 新增字段全部经 `normalize()` 收敛；旧存档导入后自动补齐默认值（免费装扮、空钱包、零变式统计）
+- `reset()` 保留孩子姓名，头像/挂件与钱包一起恢复默认，避免「戴着未解锁装扮」的状态不一致

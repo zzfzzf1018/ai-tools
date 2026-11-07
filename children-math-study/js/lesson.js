@@ -219,6 +219,7 @@
         const panel = el('div', 'card result-panel', `
           <div class="certificate ${theme.cls}">
             <div class="cert-ribbon">${theme.ribbon}</div>
+            <div class="cert-avatar">${UI.esc((Save.data.player || {}).avatar || '🦊')}${UI.esc((Save.data.player || {}).accessory || '')}</div>
             <div class="cert-title">${title}</div>
             <div class="cert-body">
               兹授予 <b class="cert-name">${UI.esc(playerName)}</b><br>

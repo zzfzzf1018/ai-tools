@@ -140,10 +140,22 @@
       acts.appendChild(b);
     });
     if (window.Speech) Speech.autoSpeak(() => cfg.speech || cfg.title);
+    grantBadgesSoon();
   }
 
   function finishGame(startedAt) {
     return { seconds: Math.max(1, Math.round((Date.now() - startedAt) / 1000)) };
+  }
+
+  // 练习完成的勋章（听算/打卡/小测/变式/收藏）即时发放，不必等下一次通关结算
+  function grantBadgesSoon() {
+    setTimeout(async () => {
+      if (!window.Rewards || !document.getElementById('page')) return;
+      const fresh = await Rewards.checkBadges();
+      if (fresh.length && document.getElementById('page').isConnected) {
+        Rewards.showBadgeOverlay(fresh);
+      }
+    }, 900);
   }
 
   /* ---------- 每日口算 ---------- */
@@ -425,9 +437,11 @@
       };
     },
 
-    // 供离线自检脚本使用
+    // 供变式训练与离线自检复用
     _buildQuestion: buildQuestion,
-    _makeChoices: makeChoices
+    _makeChoices: makeChoices,
+    _renderResult: renderResult,
+    _grantBadgesSoon: grantBadgesSoon
   };
 
   window.Practice = Practice;

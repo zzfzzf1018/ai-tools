@@ -41,6 +41,13 @@
     updateStars() {
       document.getElementById('star-count').textContent = Save.totalStars();
     },
+    updateAvatar() {
+      const b = document.getElementById('btn-avatar');
+      if (!b || !window.Shop) return;
+      b.textContent = Shop.avatarText();
+      const name = (Save.data.player || {}).name || '小朋友';
+      b.title = `${name} · 点击进入星星商店`;
+    },
     updateVoice() {
       const btn = document.getElementById('btn-voice');
       if (!btn) return;
@@ -60,6 +67,7 @@
       Data.init();
       UI.updateStars();
       UI.updateVoice();
+      UI.updateAvatar();
 
       // 首次用户手势时预热系统语音列表（部分平台首次 getVoices 为空）
       document.addEventListener('pointerdown', () => {
@@ -80,6 +88,7 @@
       });
       document.getElementById('btn-parent').addEventListener('click', () => this.navigate('parent'));
       document.getElementById('btn-wrong').addEventListener('click', () => this.navigate('wrong'));
+      document.getElementById('btn-avatar').addEventListener('click', () => this.navigate('shop'));
       document.getElementById('btn-voice').addEventListener('click', () => {
         if (!window.Speech) return;
         if (!Speech.supported) {
@@ -156,13 +165,14 @@
         const meta = Data.unitMeta(quizMatch[1]);
         theme = (meta && meta.grade || {}).theme || 'candy';
       }
-      if (h === 'daily' || h === 'wrong-drill') {
+      if (h === 'daily' || h === 'wrong-drill' || h === 'variants' || h === 'shop') {
         const lg = (Save.data.settings || {}).lastGrade;
         theme = (Data.grade(lg) || {}).theme || 'candy';
       }
       UI.setTheme(theme);
       UI.updateStars();
       UI.updateVoice();
+      UI.updateAvatar();
 
       topbar.classList.add('hidden');
       this.page.innerHTML = '';
@@ -193,6 +203,16 @@
         topbar.classList.remove('hidden');
         document.getElementById('topbar-title').textContent = '📝 错题组卷';
         Practice.renderWrongDrill(this.page);
+      }
+      else if (h === 'variants') {
+        topbar.classList.remove('hidden');
+        document.getElementById('topbar-title').textContent = '🔁 同类题变式';
+        Variants.render(this.page);
+      }
+      else if (h === 'shop') {
+        topbar.classList.remove('hidden');
+        document.getElementById('topbar-title').textContent = '🛍️ 星星商店';
+        Shop.render(this.page);
       }
       else if (h === 'parent') { topbar.classList.remove('hidden'); Parent.render(this.page); }
       else if (h === 'wrong') { topbar.classList.remove('hidden'); this.renderWrong(); }
@@ -242,23 +262,27 @@
       hub.className = 'card home-hub';
       hub.innerHTML = `
         <div class="hub-head">
-          <h2>⚡ 今日冒险</h2>
+          <h2>${window.Shop ? Shop.avatarHtml() : '🦊'} ⚡ 今日冒险 · ${UI.esc((Save.data.player || {}).name || '小朋友')}</h2>
           <span class="hub-streak">🔥 连续打卡 ${streak} 天</span>
         </div>
-        <p class="hub-note">今天已答 ${today.answers || 0} 题${today.answers ? ` · 答对 ${today.correct || 0} 题` : '，先来热热身吧'}</p>
+        <p class="hub-note">今天已答 ${today.answers || 0} 题${today.answers ? ` · 答对 ${today.correct || 0} 题` : '，先来热热身吧'} · 可用 ⭐ ${Save.availableStars()} 颗</p>
         <div class="hub-actions">
           <button class="hub-btn" id="hub-daily"><span>🎯</span><b>每日口算</b><small>按年级自动出题</small></button>
           <button class="hub-btn" id="hub-wrong"><span>📕</span><b>错题组卷</b><small>${wrongs.length ? `${wrongs.length} 道待巩固` : '暂时空空的'}</small></button>
+          <button class="hub-btn" id="hub-variants"><span>🔁</span><b>变式再练</b><small>${wrongs.length ? '同类题换数字再练' : '有错题后开放'}</small></button>
           <button class="hub-btn" id="hub-quiz"><span>🎓</span><b>单元小测</b><small>${quizReady.length ? `${quizReady.length} 个单元可测` : (doneUnits.length ? `${doneUnits.length} 个单元可复测` : '通关单元后开放')}</small></button>
+          <button class="hub-btn" id="hub-shop"><span>🛍️</span><b>星星商店</b><small>换头像与挂件</small></button>
           <button class="hub-btn" id="hub-parent"><span>📊</span><b>成长报告</b><small>看看最近的努力</small></button>
         </div>`;
       p.appendChild(hub);
       hub.querySelector('#hub-daily').onclick = () => this.navigate('daily');
       hub.querySelector('#hub-wrong').onclick = () => this.navigate(wrongs.length ? 'wrong-drill' : 'wrong');
+      hub.querySelector('#hub-variants').onclick = () => this.navigate(wrongs.length ? 'variants' : 'wrong');
       hub.querySelector('#hub-quiz').onclick = () => {
         if (!quizTarget) { UI.toast('先通关一个单元，就能来挑战小测啦～'); return; }
         this.navigate('quiz/' + quizTarget);
       };
+      hub.querySelector('#hub-shop').onclick = () => this.navigate('shop');
       hub.querySelector('#hub-parent').onclick = () => this.navigate('parent');
 
       const grid = document.createElement('div');
@@ -450,12 +474,17 @@
         return;
       }
       const drill = document.createElement('div');
-      drill.className = 'continue-row';
+      drill.className = 'continue-row wrong-actions';
       const drillBtn = document.createElement('button');
       drillBtn.className = 'btn-big';
       drillBtn.textContent = `📝 一键组卷复习（${wrongs.length} 题）`;
       drillBtn.onclick = () => this.navigate('wrong-drill');
       drill.appendChild(drillBtn);
+      const variantBtn = document.createElement('button');
+      variantBtn.className = 'btn-secondary';
+      variantBtn.textContent = '🔁 全部错题 · 同类题变式训练';
+      variantBtn.onclick = () => this.navigate('variants');
+      drill.appendChild(variantBtn);
       p.appendChild(drill);
 
       const list = document.createElement('div');
@@ -480,6 +509,12 @@
           this.practiceWrong(w, item);
         });
         item.appendChild(btn);
+        const vBtn = document.createElement('button');
+        vBtn.className = 'btn-secondary';
+        vBtn.textContent = '🔁 变式';
+        vBtn.title = '自动生成同结构不同数字的同类题';
+        vBtn.addEventListener('click', () => Variants.openForWrong(w));
+        item.appendChild(vBtn);
         list.appendChild(item);
       });
       p.appendChild(list);

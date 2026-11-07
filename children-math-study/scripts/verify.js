@@ -64,7 +64,8 @@ ctx.window = ctx;
 const loadOrder = [
   'content/grade1.js', 'content/grade2.js', 'content/grade3.js', 'content/grade4.js', 'content/grade5.js',
   'js/save.js', 'js/speech.js', 'js/data.js', 'js/rewards.js', 'js/explore.js',
-  'js/game.js', 'js/practice.js', 'js/lesson.js', 'js/parent.js', 'js/app.js'
+  'js/game.js', 'js/practice.js', 'js/variants.js', 'js/shop.js',
+  'js/lesson.js', 'js/parent.js', 'js/app.js'
 ];
 for (const rel of loadOrder) {
   let err = null;
@@ -73,8 +74,8 @@ for (const rel of loadOrder) {
   ok(!err, `加载 ${rel}`, err);
   if (err) { console.error(err); process.exit(1); }
 }
-const { Data, Save, Speech, Practice, Game, Lesson, Parent, App, UI, Rewards, Explore } = ctx;
-ok(!!(Data && Save && Speech && Practice && Game && Lesson && Parent && App && UI && Rewards && Explore),
+const { Data, Save, Speech, Practice, Variants, Shop, Game, Lesson, Parent, App, UI, Rewards, Explore } = ctx;
+ok(!!(Data && Save && Speech && Practice && Variants && Shop && Game && Lesson && Parent && App && UI && Rewards && Explore),
   '全部模块挂载到 window');
 
 // Data 的解锁判断只读 Save.data.completed，这里先放一个同步桩；
@@ -251,7 +252,73 @@ ok(Speech.supported === false, 'Node 环境无 TTS 时安全降级（supported=f
 ok(Speech._toSpeakText('').length === 0, '空文本不报错');
 
 /* ---------- 7. 存档兜底与统计 ---------- */
-section('7. 存档兜底与统计');
+/* ---------- 7. 错题同类题变式 + 星星商店 ---------- */
+section('7. 错题同类题变式与星星商店');
+const DV = Variants._deriveFromQuestion;
+const vd1 = DV({ prompt: '算一算：3 + 5 = ⬜', answer: '8' });
+ok(vd1 && /算一算/.test(vd1.prompt) && Number.isFinite(parseFloat(vd1.answer)),
+  '算式题保留原措辞、替换数字并重算答案', vd1 && vd1.prompt);
+ok(vd1 && vd1.prompt !== '算一算：3 + 5 = ⬜', '变形确实换了一组数字');
+const vd2 = DV({ prompt: '凑十：8 + ⬜ = 10', answer: '2' });
+ok(vd2 && vd2.prompt.includes('⬜') && Number.isFinite(parseFloat(vd2.answer)), '缺数算式保留填空位');
+ok(DV({ prompt: '一共有几颗草莓？', answer: '6' }) === null, '情景题不做硬替换，交给知识点池');
+ok(Variants._conceptsToKinds('小数的意义与加减法', 4).includes('decimalAdd'), '知识点映射到同结构生成器');
+const vWrong = {
+  lessonId: 'g1l1', qid: 'q1', type: 'choice', prompt: '一共有几颗草莓？',
+  answer: '6', options: ['5', '6', '7'], hints: []
+};
+const vSet = Variants._forWrong(vWrong);
+ok(vSet.questions.length >= 3, '单题变式生成足量题目', String(vSet.questions.length));
+ok(vSet.questions.every(q => q.type === 'choice'
+  ? (Array.isArray(q.options) && q.options.map(String).includes(String(q.answer)))
+  : Number.isFinite(parseFloat(q.answer))), '变式题答案可作答且选项含答案');
+ok(vSet.questions.every(q => Array.isArray(q.hints) && q.hints.length >= 2), '变式题带提示阶梯');
+const allV = Variants._forAll([
+  vWrong,
+  { lessonId: 'g2l1', qid: 'q1', type: 'input', prompt: '算一算：4 × 5 = ⬜', answer: '20', hints: [] }
+]);
+ok(allV.questions.length >= 4 &&
+  new Set(allV.questions.map(q => q.id)).size === allV.questions.length,
+  '多知识点组卷题 id 不重复', String(allV.questions.length));
+ok(Shop.items.length >= 12 &&
+  Shop.items.every(it => it.id && it.type && Number.isFinite(it.price) && it.price >= 0),
+  '商店商品结构合法');
+ok(Shop.items.filter(it => it.price === 0).length === 2, '两件免费基础款恒定拥有');
+ok(new Set(Shop.items.map(it => it.id)).size === Shop.items.length, '商品 id 唯一');
+ok(Rewards.badges.length >= 12, '勋章体系已扩展', String(Rewards.badges.length));
+
+// 全库抽样：真实题目里「保留措辞换数字」的覆盖率与公式正确性
+let vHit = 0, vFormula = 0;
+const formulaIssues = [];
+const fOne = Variants._formulas.one, fTwo = Variants._formulas.two;
+for (const g of Data.grades) {
+  for (const sem of g.semesters) for (const unit of sem.units) for (const L of unit.lessons) {
+    for (const game of (L.games || [])) for (const q of (game.questions || [])) {
+      const d = Variants._deriveFromQuestion(q);
+      if (!d) continue;
+      vHit++;
+      if (!d.prompt || d.prompt === q.prompt || !Number.isFinite(parseFloat(d.answer))) {
+        formulaIssues.push(`${L.id}/${q.id} 变形结果异常`);
+      }
+      if (d._formula && d._nums) {
+        vFormula++;
+        const f = d._nums.length === 1
+          ? fOne.find(x => x.k === d._formula)
+          : fTwo.find(x => x.k === d._formula);
+        const computed = f ? (d._nums.length === 1 ? f.f(d._nums[0]) : f.f(d._nums[0], d._nums[1])) : NaN;
+        if (!f || computed !== Number(d.answer)) {
+          formulaIssues.push(`${L.id}/${q.id} 公式 ${d._formula} 与答案不符`);
+        }
+      }
+    }
+  }
+}
+ok(vHit >= 78, '同结构变形覆盖足够多的真实题目（>=25%）', `${vHit}/312`);
+ok(vFormula >= 30, '情景题通过唯一算术关系反推变形', `${vFormula} 道`);
+ok(formulaIssues.length === 0, '所有变形题答案与公式一致', formulaIssues.slice(0, 3).join(' | '));
+console.log(`   ${vHit}/312 道原题可直接变形（其中 ${vFormula} 道为情景题语义反推）`);
+
+section('8. 存档兜底与统计');
 (async () => {
   await Save.init();
   const s = Save.data.settings;
@@ -307,6 +374,33 @@ section('7. 存档兜底与统计');
     '错题计次被收敛为数字');
   ok(Save.data.wrongBook[0].answer === undefined, '缺答案的脏题不伪造答案（由题目守卫丢弃）');
   ok(Save.data.badges.every(x => typeof x === 'string'), '勋章列表过滤非字符串');
+  // 星星商店：余额 / 购买 / 重复购买 / 佩戴 / 扩展勋章
+  Save.data.stars = { g1l1: 3, g1l2: 3, g1l3: 3 };
+  ok(Save.availableStars() === 9, '可用星星 = 累计 - 已消费', String(Save.availableStars()));
+  ok((await Save.buy('avatar-cat', 5)) === true && Save.owns('avatar-cat'), '余额足够时购买成功');
+  ok(Save.availableStars() === 4, '购买后余额正确扣减', String(Save.availableStars()));
+  ok((await Save.buy('avatar-cat', 5)) === false, '已拥有商品不能重复购买');
+  ok((await Save.buy('avatar-crown', 30)) === false, '余额不足时购买被拒绝');
+  await Save.equip('avatar', '🐱');
+  await Save.equip('accessory', '✨');
+  ok(Save.data.player.avatar === '🐱' && Save.data.player.accessory === '✨', '头像与挂件佩戴生效');
+  ok(Shop.avatarText() === '🐱✨', '顶栏头像文本组合正确', Shop.avatarText());
+  const vDay = Save.todayKey();
+  Save.data.daily[vDay] = {
+    answers: 6, correct: 6, sessions: 2, seconds: 30,
+    daily: 0, aural: 3, quiz: 0, wrong: 0, variant: 0
+  };
+  Save.data.stats.variantSessions = 5;
+  Save.data.unitQuiz = {
+    a: { stars: 3, correct: 5, total: 5, seconds: 10, at: vDay },
+    b: { stars: 3, correct: 5, total: 5, seconds: 10, at: vDay },
+    c: { stars: 3, correct: 5, total: 5, seconds: 10, at: vDay }
+  };
+  const freshBadges = await Rewards.checkBadges();
+  ok(freshBadges.includes('aural-fan'), '听算勋章条件生效');
+  ok(freshBadges.includes('quiz-master'), '单元小测王条件生效');
+  ok(freshBadges.includes('variant-hero'), '变式小能手条件生效');
+
   await Save.setName('小小明');   // 导入会按默认存档重置资料，这里重新设置后再验证 reset
   await Save.reset();
   ok(Save.data.player.name === '小小明', '重置进度保留孩子姓名', Save.data.player.name);

@@ -12,6 +12,7 @@
       <button id="btn-back" class="btn-round">⬅️</button>
       <div id="topbar-title" class="topbar-title"></div>
       <div class="topbar-right">
+        <button id="btn-avatar" class="btn-round btn-avatar">🦊</button>
         <div id="star-chip" class="chip">⭐ <span id="star-count">0</span></div>
         <button id="btn-voice" class="btn-round">🔊</button>
         <button id="btn-wrong" class="btn-round">📕</button>
@@ -34,6 +35,8 @@
   <script src="../js/explore.js"></script>
   <script src="../js/game.js"></script>
   <script src="../js/practice.js"></script>
+  <script src="../js/variants.js"></script>
+  <script src="../js/shop.js"></script>
   <script src="../js/lesson.js"></script>
   <script src="../js/parent.js"></script>
   <script src="../js/app.js"></script>
@@ -255,6 +258,43 @@
     await w(320);
     ck('H5 缺答案脏题不锁死弹层',
       document.getElementById('overlay').classList.contains('hidden'));
+
+    /* ---------- J. v1.2：同类题变式 + 星星商店 ---------- */
+    App.navigate('variants'); await w(240);
+    ck('J1 变式训练页可开始', !!document.getElementById('vr-start'));
+    if (document.getElementById('vr-start')) document.getElementById('vr-start').click();
+    await w(280);
+    ck('J2 变式题渲染', !!document.querySelector('.question-prompt'));
+    ck('J3 变式题带语音工具条', !!document.querySelector('.speech-bar'));
+
+    App.navigate('wrong'); await w(220);
+    const itemBtns = all('.wrong-item .btn-secondary');
+    ck('J4 错题条目有变式按钮', itemBtns.length >= 2 && /变式/.test(itemBtns[1].textContent));
+    if (itemBtns[1]) itemBtns[1].click();
+    await w(240);
+    ck('J5 单题变式弹层可关闭', !!document.getElementById('vr-close'));
+    ck('J6 单题变式题渲染', !!document.querySelector('#vr-game .question-prompt'));
+    if (document.getElementById('vr-close')) document.getElementById('vr-close').click();
+    await w(140);
+    ck('J7 弹层关闭后回到错题本', document.getElementById('overlay').classList.contains('hidden'));
+
+    Save.data.stars = { g1l1: 3, g1l2: 3, g1l3: 3 };
+    await Save.write();
+    App.navigate('shop'); await w(260);
+    ck('J8 商店余额显示', /可用星星/.test(txt()));
+    ck('J9 商店商品渲染', all('.shop-item').length >= 12);
+    ck('J10 顶栏头像按钮', !!document.getElementById('btn-avatar'));
+    const catBtn = all('.shop-item').find(x => /橘小猫/.test(x.textContent) && x.querySelector('.si-btn'));
+    if (catBtn) catBtn.querySelector('.si-btn').click();
+    await w(220);
+    ck('J11 兑换确认弹层', !!document.getElementById('sp-ok'));
+    if (document.getElementById('sp-ok')) document.getElementById('sp-ok').click();
+    await w(320);
+    ck('J12 购买成功并解锁', Save.owns('avatar-cat'));
+    ck('J13 购买后自动佩戴', Save.data.player.avatar === '🐱');
+    ck('J14 余额正确扣减', Save.availableStars() === 4, String(Save.availableStars()));
+    ck('J15 顶栏头像同步更新', /🐱/.test(document.getElementById('btn-avatar').textContent));
+    ck('J16 勋章体系已扩展', Rewards.badges.length >= 12);
 
     /* ---------- I. 语音开关 / 家长视图 / 重置 ---------- */
     const speechBefore = Save.data.settings.speech;

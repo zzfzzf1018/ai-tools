@@ -3,7 +3,7 @@
   const KEY = 'mathwonder-save-v1';
 
   const DEFAULT_SAVE = {
-    player: { name: '小小数学家', avatar: '🦊', createdAt: null },
+    player: { name: '小小数学家', avatar: '🦊', accessory: '', createdAt: null },
     stars: {},        // lessonId -> 0~3（历史最高）
     completed: {},    // lessonId -> true
     wrongBook: [],    // [{lessonId, qid, visual, prompt, count, lastAt}]
@@ -12,7 +12,11 @@
     unitPassed: {},   // unitKey -> true（首次完成整个单元，颁发通行证）
     unitQuiz: {},     // unitKey -> { stars, correct, total, at }
     daily: {},        // YYYY-MM-DD -> { answers, correct, sessions, seconds, daily, aural, quiz, wrong }
-    stats: { answers: 0, correct: 0 },  // 累计首次作答数与正确数
+    stats: {
+      answers: 0, correct: 0,
+      variantSessions: 0, variantCorrect: 0, variantTotal: 0
+    },                // 累计首次作答 / 同类题变式训练
+    wallet: { spent: 0, owned: ['avatar-fox', 'accessory-none'] }, // 星星商店：已消费与已解锁装扮
     settings: {
       lastGrade: null, lastLesson: null, sound: true,
       speech: true,          // 语音播报总开关
@@ -65,7 +69,17 @@
     if (!d.player || typeof d.player !== 'object') d.player = Object.assign({}, DEFAULT_SAVE.player);
     if (typeof d.player.name !== 'string' || !d.player.name) d.player.name = DEFAULT_SAVE.player.name;
     d.player.name = safeStr(d.player.name, 12);
-    if (typeof d.player.avatar !== 'string') d.player.avatar = DEFAULT_SAVE.player.avatar;
+    if (typeof d.player.avatar !== 'string' || !d.player.avatar) d.player.avatar = DEFAULT_SAVE.player.avatar;
+    d.player.avatar = safeStr(d.player.avatar, 12);
+    if (typeof d.player.accessory !== 'string') d.player.accessory = '';
+    d.player.accessory = safeStr(d.player.accessory, 12);
+    // 商店钱包：余额 = 累计星星 - 已消费，脏值一律收敛
+    if (!d.wallet || typeof d.wallet !== 'object' || Array.isArray(d.wallet)) d.wallet = {};
+    d.wallet.spent = clampInt(d.wallet.spent, 0, 99999);
+    const owned = new Set((Array.isArray(d.wallet.owned) ? d.wallet.owned : [])
+      .filter(x => typeof x === 'string').slice(0, 80));
+    DEFAULT_SAVE.wallet.owned.forEach(id => owned.add(id));   // 免费基础款恒定拥有
+    d.wallet.owned = [...owned];
     for (const key of ['stars', 'completed', 'exploreDone']) {
       if (!d[key] || typeof d[key] !== 'object' || Array.isArray(d[key])) d[key] = {};
     }
@@ -155,7 +169,8 @@
           daily: clampInt(v.daily, 0, 9999),
           aural: clampInt(v.aural, 0, 9999),
           quiz: clampInt(v.quiz, 0, 9999),
-          wrong: clampInt(v.wrong, 0, 9999)
+          wrong: clampInt(v.wrong, 0, 9999),
+          variant: clampInt(v.variant, 0, 9999)
         };
       }
     }
@@ -163,6 +178,9 @@
     if (!d.stats || typeof d.stats !== 'object') d.stats = { answers: 0, correct: 0 };
     d.stats.answers = clampInt(d.stats.answers, 0, 99999999);
     d.stats.correct = Math.min(d.stats.answers, clampInt(d.stats.correct, 0, 99999999));
+    d.stats.variantSessions = clampInt(d.stats.variantSessions, 0, 999999);
+    d.stats.variantTotal = clampInt(d.stats.variantTotal, 0, 99999999);
+    d.stats.variantCorrect = Math.min(d.stats.variantTotal, clampInt(d.stats.variantCorrect, 0, 99999999));
     return d;
   }
 
@@ -287,6 +305,47 @@
       return this.write();
     },
 
+    /* ---------- 星星商店 ---------- */
+    // 可用余额 = 累计获得的星星 - 已消费；重玩拿到更高星级会自动增加余额
+    availableStars() {
+      return Math.max(0, this.totalStars() - (this.data.wallet.spent || 0));
+    },
+    ownedItems() { return this.data.wallet.owned || []; },
+    owns(id) { return this.ownedItems().indexOf(id) >= 0; },
+    buy(id, price) {
+      if (!id || this.owns(id)) return Promise.resolve(false);
+      const cost = Math.max(0, Number(price) || 0);
+      if (this.availableStars() < cost) return Promise.resolve(false);
+      this.data.wallet.owned.push(id);
+      this.data.wallet.spent += cost;
+      return this.write().then(() => true);
+    },
+    equip(type, emoji) {
+      if (type === 'avatar') this.data.player.avatar = String(emoji || '🦊');
+      else this.data.player.accessory = String(emoji || '');
+      return this.write();
+    },
+
+    /* ---------- 同类题变式训练 ---------- */
+    recordVariant(stats) {
+      const s = stats || {};
+      this.data.stats.variantSessions++;
+      this.data.stats.variantTotal += Math.max(0, Number(s.total) || 0);
+      this.data.stats.variantCorrect += Math.max(0, Number(s.correct) || 0);
+      return this.recordPractice('variant');
+    },
+    // 变式全对相当于给原错题一次巩固，连对两次仍会自动飞走
+    consolidateWrong(lessonId, qid) {
+      const found = this.data.wrongBook.find(w => w.lessonId === lessonId && w.qid === qid);
+      if (!found) return Promise.resolve(false);
+      found.rightStreak = (found.rightStreak || 0) + 1;
+      found.wrongStreak = 0;
+      if (found.rightStreak >= 2) {
+        this.data.wrongBook = this.data.wrongBook.filter(w => w !== found);
+      }
+      return this.write().then(() => true);
+    },
+
     todayKey() { return dateKey(new Date()); },
 
     _dayRec() {
@@ -294,7 +353,7 @@
       if (!this.data.daily[k]) {
         this.data.daily[k] = {
           answers: 0, correct: 0, sessions: 0, seconds: 0,
-          daily: 0, aural: 0, quiz: 0, wrong: 0
+          daily: 0, aural: 0, quiz: 0, wrong: 0, variant: 0
         };
       }
       return this.data.daily[k];
@@ -370,15 +429,12 @@
       return this.write();
     },
 
-    // 重置全部进度，但保留家长设置过的孩子名字与头像（属于"资料"而非"进度"）
+    // 重置全部进度，但保留家长设置过的孩子名字（属于"资料"而非"进度"）
     reset() {
-      const keep = {
-        name: this.data && this.data.player ? this.data.player.name : DEFAULT_SAVE.player.name,
-        avatar: this.data && this.data.player ? this.data.player.avatar : DEFAULT_SAVE.player.avatar
-      };
+      // 名字属于「资料」保留；头像与挂件是星星商店的进度，随钱包一起恢复默认
+      const keepName = (this.data && this.data.player ? this.data.player.name : DEFAULT_SAVE.player.name);
       this.data = normalize(defaultSave());
-      this.data.player.name = keep.name;
-      this.data.player.avatar = keep.avatar;
+      this.data.player.name = keepName;
       this.data.player.createdAt = new Date().toISOString();
       this.isFresh = false;
       return this.write();
