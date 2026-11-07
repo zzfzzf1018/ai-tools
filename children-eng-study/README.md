@@ -3,7 +3,7 @@
 > 面向上海小学一至五年级的趣味英语学习应用
 > 全英文图文沉浸 · 分单元闯关 · 标准发音 · 句子小剧场 · 趣味乐园十一玩法 · 六个小游戏 · 连续闯关 · 单文件 Windows 便携版
 
-**当前稳定版：v1.5.0** ・ 仓库：https://github.com/zzfzzf1018/ai-tools/tree/main/children-eng-study ・ 发布：https://github.com/zzfzzf1018/ai-tools/releases
+**当前稳定版：v1.5.1** ・ 仓库：https://github.com/zzfzzf1018/ai-tools/tree/main/children-eng-study ・ 发布：https://github.com/zzfzzf1018/ai-tools/releases
 
 ---
 
@@ -46,16 +46,16 @@
 
 ## 📦 下载安装（推荐普通用户使用）
 
-前往 [Releases](https://github.com/zzfzzf1018/ai-tools/releases/tag/children-eng-study-v1.5.0) 选择你需要的形态：
+前往 [Releases](https://github.com/zzfzzf1018/ai-tools/releases/tag/children-eng-study-v1.5.1) 选择你需要的形态：
 
 | 形态 | 文件 | 大小 | 使用方式 |
 |------|------|------|----------|
-| 🖥️ **Windows 便携版** | `Kids-English-Wonderland-1.5.0-x64-portable.exe` | ~110 MB | 双击即用，无需安装、无需浏览器 |
-| 🌐 **Web 版** | `Kids-English-Wonderland-1.5.0-web.zip` | ~40 KB | 解压后用浏览器打开 `index.html` |
+| 🖥️ **Windows 便携版** | `Kids-English-Wonderland-1.5.1-x64-portable.exe` | ~110 MB | 双击即用，无需安装、无需浏览器 |
+| 🌐 **Web 版** | `Kids-English-Wonderland-1.5.1-web.zip` | ~40 KB | 解压后用浏览器打开 `index.html` |
 
 ### 桌面版使用说明
 
-1. 双击 `Kids-English-Wonderland-1.5.0-x64-portable.exe`
+1. 双击 `Kids-English-Wonderland-1.5.1-x64-portable.exe`
 2. 首次启动会解压到临时目录（约 30 秒），后续启动几乎瞬时
 3. 未签名：Windows 可能提示"未知发布者"，核对 `SHA256SUMS.txt` 中的校验值后可继续运行
 4. 学习数据保存在本机，不会上传任何服务器
@@ -199,8 +199,8 @@ git commit -m "feat(children-eng-study): <变更说明>"
 git push origin main
 
 # 4. 打 tag 推送，触发自动发布
-git tag -a children-eng-study-v1.5.0 -m "children-eng-study v1.5.0"
-git push origin children-eng-study-v1.5.0
+git tag -a children-eng-study-v1.5.1 -m "children-eng-study v1.5.1"
+git push origin children-eng-study-v1.5.1
 ```
 
 发版门禁（CI 会自动校验，任一缺失即构建失败）：

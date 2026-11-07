@@ -13,6 +13,36 @@ const Game = {
     gameLevel: 1,
     gameData: [],
 
+    // 游戏内的延时任务统一登记，切离游戏页时一次性清理；
+    // gameCompleted 保证一局游戏只结算一次（避免连点/多个定时器重复发奖）
+    timers: [],
+    gameCompleted: false,
+    pendingComplete: false,
+
+    // 游戏 DOM 不会因为切 Tab 而重建，题目推进定时器必须继续跑完
+    // （否则 renderQuestion 闭包丢失，孩子切回来会卡在已答对的那一题）。
+    // 跨页副作用（奖状 / 自动朗读）则靠这个判断抑制。
+    isActivePage: function() {
+        const page = document.getElementById('page-game');
+        return !!page && page.classList.contains('active');
+    },
+
+    later: function(fn, ms) {
+        // 这里必须用原生 setTimeout（later 自身不能再递归调用 later）
+        const t = setTimeout(() => {
+            this.timers = this.timers.filter(x => x !== t);
+            fn();
+        }, ms);
+        this.timers.push(t);
+        return t;
+    },
+
+    stopAll: function() {
+        this.timers.forEach(t => clearTimeout(t));
+        this.timers = [];
+        SpeechHelper.stop();
+    },
+
     // 闯关顺序：通关后「下一关」按此序列推进，循环进入更高 Level
     GAME_ORDER: ['match', 'guess', 'spell', 'memory', 'fillword', 'sentence'],
 
@@ -53,9 +83,9 @@ const Game = {
     },
 
     backToSelector: function() {
+        this.stopAll();
         document.querySelector('.game-selector').style.display = 'block';
         document.getElementById('gameArea').style.display = 'none';
-        SpeechHelper.stop();
         if (typeof Combo !== 'undefined') Combo.reset();
     },
 
@@ -82,10 +112,14 @@ const Game = {
         const grade = LEARNING_DATA[this.currentGrade] || LEARNING_DATA[1];
         const all = [];
         const seen = new Set();
+        const seenEmoji = new Set();
         Object.keys(grade.units).forEach(unitKey => {
             grade.units[unitKey].words.forEach(w => {
-                if (seen.has(w.word)) return;
+                // 词库里 hello/goodbye 同为 👋、bye/hand 同为 ✋ 等 28 组重复 Emoji。
+                // 连连看 / 记忆翻牌按图片配对，两个相同图会让孩子无法区分，取词时按图去重。
+                if (seen.has(w.word) || seenEmoji.has(w.emoji)) return;
                 seen.add(w.word);
+                seenEmoji.add(w.emoji);
                 all.push({ ...w, unitKey });
             });
         });
@@ -104,6 +138,8 @@ const Game = {
     },
 
     startGame: function(gameType, keepLevel) {
+        this.stopAll();          // 上一局遗留的朗读/推进定时器不能带进新一局
+        this.gameCompleted = false;
         this.currentGame = gameType;
         this.gameScore = 0;
         if (!keepLevel) this.gameLevel = 1;
@@ -163,6 +199,16 @@ const Game = {
 
     // 通关奖励：固定 3 颗星 + 颁发当前游戏专属样式的小奖状
     completeGame: function() {
+        // 一局只结算一次：句子小剧场最后一句连点会排出多个 completeGame 定时器
+        if (this.gameCompleted) return 0;
+        // 通关瞬间人已经切到首页/成就页时，奖状不能盖在别的页面上；
+        // 先记下来，等切回「🎮 游戏」Tab 再补发。
+        if (!this.isActivePage()) {
+            this.pendingComplete = true;
+            return 0;
+        }
+        this.gameCompleted = true;
+        this.pendingComplete = false;
         const stars = 3;
 
         App.userData.totalGames++;
@@ -297,11 +343,11 @@ const Game = {
                 if (matchedWord) SpeechHelper.speakWord(matchedWord.word);
 
                 if (matchedCount === words.length) {
-                    setTimeout(() => this.completeGame(), 500);
+                    this.later(() => this.completeGame(), 500);
                 }
             } else {
                 if (typeof Combo !== 'undefined') Combo.miss();
-                setTimeout(() => {
+                this.later(() => {
                     enItem.classList.remove('selected');
                     picItem.classList.remove('selected');
                 }, 300);
@@ -320,7 +366,7 @@ const Game = {
 
         const renderQuestion = () => {
             if (currentIndex >= words.length) {
-                setTimeout(() => this.completeGame(), 500);
+                this.later(() => this.completeGame(), 500);
                 return;
             }
 
@@ -346,7 +392,7 @@ const Game = {
             `;
 
             if (SpeechHelper.settings.autoSpeak) {
-                setTimeout(() => SpeechHelper.speakWord(currentWord.word), 300);
+                this.later(() => { if (this.isActivePage()) SpeechHelper.speakWord(currentWord.word); }, 300);
             }
 
             document.getElementById('guessAudioBtn').addEventListener('click', () => {
@@ -366,7 +412,7 @@ const Game = {
                         btn.classList.add('correct');
                         this.updateScore(triedWrong ? 5 : 10);
                         SpeechHelper.speak('Correct! Well done!');
-                        setTimeout(() => {
+                        this.later(() => {
                             currentIndex++;
                             renderQuestion();
                         }, 1000);
@@ -375,7 +421,7 @@ const Game = {
                         if (typeof Combo !== 'undefined') Combo.miss();
                         btn.classList.add('wrong');
                         SpeechHelper.speak('Try again!');
-                        setTimeout(() => btn.classList.remove('wrong'), 500);
+                        this.later(() => btn.classList.remove('wrong'), 500);
                     }
                 });
             });
@@ -392,7 +438,7 @@ const Game = {
 
         const renderQuestion = () => {
             if (currentIndex >= words.length) {
-                setTimeout(() => this.completeGame(), 500);
+                this.later(() => this.completeGame(), 500);
                 return;
             }
 
@@ -413,7 +459,7 @@ const Game = {
             `;
 
             if (SpeechHelper.settings.autoSpeak) {
-                setTimeout(() => SpeechHelper.speakWord(currentWord.word), 300);
+                this.later(() => { if (this.isActivePage()) SpeechHelper.speakWord(currentWord.word); }, 300);
             }
 
             const input = document.getElementById('spellInput');
@@ -444,7 +490,7 @@ const Game = {
                     input.style.color = 'var(--color-green)';
                     this.updateScore(triedWrong ? 8 : 15);
                     SpeechHelper.speak('Excellent!');
-                    setTimeout(() => {
+                    this.later(() => {
                         currentIndex++;
                         renderQuestion();
                     }, 1200);
@@ -454,7 +500,7 @@ const Game = {
                     input.style.borderColor = '#EF4444';
                     input.style.color = '#EF4444';
                     SpeechHelper.speak('Almost! Listen again.');
-                    setTimeout(() => {
+                    this.later(() => {
                         input.style.borderColor = 'var(--color-blue)';
                         input.style.color = 'var(--color-text)';
                         if (!solved && document.getElementById('spellInput') === input) {
@@ -517,7 +563,7 @@ const Game = {
                     const [first, second] = flippedCards;
 
                     if (first.data.pairId === second.data.pairId && first.data.type !== second.data.type) {
-                        setTimeout(() => {
+                        this.later(() => {
                             first.el.classList.add('matched');
                             second.el.classList.add('matched');
                             first.el.classList.remove('flipped');
@@ -528,12 +574,12 @@ const Game = {
                             isProcessing = false;
 
                             if (matchedPairs === words.length) {
-                                setTimeout(() => this.completeGame(), 500);
+                                this.later(() => this.completeGame(), 500);
                             }
                         }, 600);
                     } else {
                         if (typeof Combo !== 'undefined') Combo.miss();
-                        setTimeout(() => {
+                        this.later(() => {
                             first.el.textContent = '?';
                             second.el.textContent = '?';
                             first.el.classList.remove('flipped', 'picture');
@@ -560,7 +606,7 @@ const Game = {
 
         const renderQuestion = () => {
             if (currentIndex >= words.length) {
-                setTimeout(() => this.completeGame(), 500);
+                this.later(() => this.completeGame(), 500);
                 return;
             }
 
@@ -608,7 +654,7 @@ const Game = {
             `;
 
             if (SpeechHelper.settings.autoSpeak) {
-                setTimeout(() => SpeechHelper.speakWord(currentWord.word), 300);
+                this.later(() => { if (this.isActivePage()) SpeechHelper.speakWord(currentWord.word); }, 300);
             }
             document.getElementById('fillAudioBtn').onclick = () => SpeechHelper.speakWord(currentWord.word);
 
@@ -640,7 +686,7 @@ const Game = {
                         });
                         this.updateScore(triedWrong ? 8 : 15);
                         SpeechHelper.speak('Excellent!');
-                        setTimeout(() => {
+                        this.later(() => {
                             currentIndex++;
                             renderQuestion();
                         }, 1200);
@@ -649,7 +695,7 @@ const Game = {
                         if (typeof Combo !== 'undefined') Combo.miss();
                         document.querySelectorAll('.fill-slot').forEach(s => s.classList.add('shake'));
                         SpeechHelper.speak('Almost!');
-                        setTimeout(() => {
+                        this.later(() => {
                             document.querySelectorAll('.fill-slot').forEach(s => s.classList.remove('shake'));
                             answerSlots.fill(null);
                             usedPoolIdx.clear();
@@ -715,7 +761,7 @@ const Game = {
 
         const renderQuestion = () => {
             if (currentIndex >= sentences.length) {
-                setTimeout(() => this.completeGame(), 500);
+                this.later(() => this.completeGame(), 500);
                 return;
             }
 
@@ -741,7 +787,7 @@ const Game = {
             document.getElementById('sgAudioBtn').onclick = () => SpeechHelper.speakSentence(item.text);
             document.getElementById('sgSlowBtn').onclick = () => SpeechHelper.speak(item.text, { rate: 0.6 });
             if (SpeechHelper.settings.autoSpeak) {
-                setTimeout(() => SpeechHelper.speakSentence(item.text), 400);
+                this.later(() => { if (this.isActivePage()) SpeechHelper.speakSentence(item.text); }, 400);
             }
 
             SentenceLab.renderPuzzle({
@@ -769,7 +815,11 @@ const Game = {
                     const actions = document.getElementById('sgActions');
                     actions.innerHTML = `
                         <button class="sentence-btn primary" id="sgNextBtn">${isLast ? '完成闯关 ✓' : '下一句 ▶'}</button>`;
-                    document.getElementById('sgNextBtn').onclick = () => {
+                    const nextBtn = document.getElementById('sgNextBtn');
+                    nextBtn.onclick = () => {
+                        // 连点「下一句」会一次跳掉两题；最后一题则会排出多个通关定时器
+                        if (nextBtn.disabled) return;
+                        nextBtn.disabled = true;
                         currentIndex++;
                         renderQuestion();
                     };

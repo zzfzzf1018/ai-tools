@@ -13,7 +13,8 @@ function stackToasts() {
     let offset = 100;
     list.forEach(el => {
         el.style.bottom = offset + 'px';
-        offset += el.offsetHeight + 12;
+        // 首帧尚未布局 / 无布局引擎时 offsetHeight 为 0，给个兜底高度避免提示叠在一起
+        offset += (el.offsetHeight || 64) + 12;
     });
 }
 
@@ -358,6 +359,12 @@ const Listening = {
         }
     },
 
+    // 离开玩法：连代次一起作废，旧语音的 onend 回调就不会再挂上新定时器
+    cancelBlind: function() {
+        this.blindToken++;
+        this.clearBlindTimer();
+    },
+
     playBlindSeq: function() {
         const stage = document.getElementById('playStage');
         if (this.blindIndex >= this.blindItems.length) {
@@ -419,8 +426,13 @@ const Listening = {
         const firstToday = App.userData.listenDate !== today;
         if (firstToday) {
             App.userData.listenDate = today;
+            // 每日奖励用 listenDate 判定就够了。若按日期往 playDone 里塞 key，
+            // 用得越久数组越长、存档越大，且每次都会多一次线性查找。
+            App.userData.stars += 2;
             App.saveUserData();
-            Play.reward('listen-blind-' + today, 4);
+            App.updateStats();
+            Play.addXp(4);
+            if (typeof Stickers !== 'undefined') Stickers.refresh();
         }
         App.createConfetti(20);
         stage.innerHTML = `
@@ -746,6 +758,9 @@ const Quest = {
     // 关卡通关时，若处于剧情模式，给宠物一句鼓励
     encourage: function(level) {
         if (!this.activeUnit || !level || this.activeUnit !== level.unit) return;
+        // 章节编号只在同一年级内有意义，换年级后的同编号单元不能误触发剧情鼓励
+        if (level.grade && App.currentGrade &&
+            String(level.grade) !== String(App.currentGrade)) return;
         if (!Array.isArray(App.levelPlan) || !App.levelPlan.length) return;
         const unitLevels = App.levelPlan.filter(l => l.unit === level.unit);
         const allDone = unitLevels.length && unitLevels.every(l => App.userData.completedLevels.includes(l.key));

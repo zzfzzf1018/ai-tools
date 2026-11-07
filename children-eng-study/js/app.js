@@ -110,7 +110,7 @@ const App = {
         if (saved) {
             try {
                 const parsed = JSON.parse(saved);
-                if (parsed && typeof parsed === 'object') {
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
                     this.userData = Object.assign({}, this.userData, parsed);
                 }
             } catch(e) {
@@ -120,28 +120,48 @@ const App = {
         this.normalizeUserData();
     },
 
-    // 兼容旧版本存档：补齐缺失字段，并把纯单词迁移成 "年级-单元-单词"
+    // 兼容旧版本存档：补齐缺失字段、清洗畸形值，并把纯单词迁移成 "年级-单元-单词"
+    // 导入进度文件或手工篡改 localStorage 都可能写入非字符串数组元素 / 非数字计数，
+    // 这里统一归一化，避免成就页 key.split 抛错或任务 UI 显示 NaN。
     normalizeUserData: function() {
         const data = this.userData;
-        ['learnedWords', 'completedGames', 'completedUnits', 'completedLevels',
-         'completedSentences', 'badges', 'favorites', 'weakWords', 'stickers'].forEach(key => {
-            if (!Array.isArray(data[key])) data[key] = [];
+        const stringLists = ['learnedWords', 'completedGames', 'completedUnits', 'completedLevels',
+            'completedSentences', 'badges', 'favorites', 'weakWords', 'stickers', 'playDone'];
+        stringLists.forEach(key => {
+            data[key] = Array.isArray(data[key])
+                ? data[key].filter(x => typeof x === 'string')
+                : [];
         });
         if (!data.recordings || typeof data.recordings !== 'object' || Array.isArray(data.recordings)) {
             data.recordings = {};
         }
+        Object.keys(data.recordings).forEach(k => {
+            if (typeof data.recordings[k] !== 'string') delete data.recordings[k];
+        });
         if (!data.reviewSchedule || typeof data.reviewSchedule !== 'object' || Array.isArray(data.reviewSchedule)) {
             data.reviewSchedule = {};
         }
-        if (!Array.isArray(data.dubs)) data.dubs = [];
-        if (!Array.isArray(data.playDone)) data.playDone = [];
+        // 复习排期项必须是 { step, due }，畸形项丢弃（等同「已到期」）
+        Object.keys(data.reviewSchedule).forEach(k => {
+            const it = data.reviewSchedule[k];
+            if (!it || typeof it !== 'object' || Array.isArray(it) ||
+                !Number.isFinite(it.step) || typeof it.due !== 'string') {
+                delete data.reviewSchedule[k];
+            }
+        });
+        data.dubs = Array.isArray(data.dubs)
+            ? data.dubs.filter(x => x && typeof x === 'object' && !Array.isArray(x) && typeof x.id === 'string')
+            : [];
         ['stars', 'streak', 'totalWords', 'totalSpeak', 'totalGames', 'totalDays', 'petXp', 'weakPracticed'].forEach(key => {
             if (!Number.isFinite(data[key])) data[key] = 0;
         });
-        data.missions = Object.assign(
-            { learn: 0, speak: 0, game: false },
-            data.missions && typeof data.missions === 'object' ? data.missions : {}
-        );
+        const m = data.missions && typeof data.missions === 'object' && !Array.isArray(data.missions)
+            ? data.missions : {};
+        data.missions = {
+            learn: Number.isFinite(m.learn) ? m.learn : 0,
+            speak: Number.isFinite(m.speak) ? m.speak : 0,
+            game: m.game === true
+        };
         if (!LEARNING_DATA[data.lastGrade]) data.lastGrade = null;
         if (data.listenDate && typeof data.listenDate !== 'string') data.listenDate = null;
         data.schemaVersion = 6;
@@ -262,7 +282,12 @@ const App = {
                 this.resetDailyMissions(today);
                 this.saveUserData();
                 this.updateMissionsUI();
+            } else {
+                return;
             }
+            // 跨天后到期的复习词会变化，首页「今日复习」计数与按钮状态必须同步刷新，
+            // 否则昨天为 0 时今天按钮仍是禁用状态，孩子进不去复习。
+            if (typeof Play !== 'undefined') Play.renderReviewCard();
         };
         setInterval(check, 60 * 1000);
         document.addEventListener('visibilitychange', () => {
@@ -285,10 +310,21 @@ const App = {
     // 统一切换页面：停止发音、作废旧语音回调、恢复/隐藏学习控制条
     showPage: function(tab) {
         SpeechHelper.stop();
-        if (typeof Combo !== 'undefined') Combo.reset();
+        // 只隐藏徽标、不清连击计数：切 Tab 不会重建游戏 DOM，
+        // 孩子看一眼成就再回来应当能接着累积 Combo（切玩法时才由 Play 重置）
+        if (typeof Combo !== 'undefined') Combo.hide();
+        // 注意：这里不能清 Game 的题目推进定时器。它们依赖闭包里的 renderQuestion，
+        // 清掉后孩子切回来会卡在已答对的那一题。跨页副作用改由 Game.completeGame 的
+        // 页面守卫与自动朗读的 isActivePage 判断来抑制。
         if (tab !== 'learn') {
             this.followReadToken = (this.followReadToken || 0) + 1;
+            if (this.followRecognition) {
+                try { this.followRecognition.abort(); } catch (e) {}
+                this.followRecognition = null;
+            }
             if (typeof Play !== 'undefined') Play.stopAll();
+            // 剧情任务只在本次学习会话内有效，离开学习页即作废
+            if (typeof Quest !== 'undefined') Quest.activeUnit = null;
         }
         this.stopRecordingQuiet();
         this.speechToken++;
@@ -333,6 +369,11 @@ const App = {
         if (tab === 'progress') {
             this.updateStats();
             this.updateWordList();
+        }
+
+        // 通关那一刻人在别的 Tab：回到游戏页再补发奖状，既不盖住首页也不吞掉奖励
+        if (tab === 'game' && typeof Game !== 'undefined' && Game.pendingComplete) {
+            Game.completeGame();
         }
     },
 
@@ -399,6 +440,8 @@ const App = {
     enterGrade: function(grade) {
         this.currentGrade = grade;
         this.playMode = 'map';
+        // 章节编号只在同一年级内有意义，换年级必须作废旧剧情状态
+        if (typeof Quest !== 'undefined') Quest.activeUnit = null;
         if (this.userData.lastGrade !== grade) {
             this.userData.lastGrade = grade;
             this.saveUserData();
@@ -557,6 +600,8 @@ const App = {
     showLevelMap: function() {
         this.inLevel = false;
         this.playMode = 'map';
+        // 回到关卡地图 = 退出剧情任务模式，清掉残留的章节状态
+        if (typeof Quest !== 'undefined') Quest.activeUnit = null;
         this.currentLevel = null;
         this.currentLevelIndex = -1;
         this.currentCards = [];
@@ -1311,9 +1356,14 @@ const App = {
                     return;
                 }
 
+                const previousData = this.userData;
                 this.userData = Object.assign({}, this.userData, data);
                 this.normalizeUserData();
-                this.saveUserData();
+                // 导入数据可能超出 localStorage 配额；写入失败时回滚并明确报错，不能静默 reload
+                if (!this.saveUserData()) {
+                    this.userData = previousData;
+                    throw new Error('存储空间不足，进度未保存，请先删除一些旧录音');
+                }
                 if (parsed.speechSettings && typeof parsed.speechSettings === 'object') {
                     Object.assign(SpeechHelper.settings, parsed.speechSettings);
                     SpeechHelper.saveSettings();
@@ -1399,8 +1449,14 @@ const App = {
                     const reader = new FileReader();
                     reader.onload = () => {
                         this.userData.recordings[wordKey] = reader.result;
-                        this.saveUserData();
-                        this.renderCard();
+                        // 存储空间不足时必须回滚：否则这段 base64 常驻内存，
+                        // 之后每一次 saveUserData 都会继续超限，星星/关卡/连续天数全部无法落盘。
+                        if (!this.saveUserData()) {
+                            delete this.userData.recordings[wordKey];
+                        }
+                        // 授权/录音期间孩子可能已经翻到别的卡片，此时不要重绘新卡片，
+                        // 否则会把 A 的录音状态画到 B 的界面上
+                        if (this.currentWordKey() === wordKey) this.renderCard();
                     };
                     reader.readAsDataURL(blob);
                 };
@@ -1411,7 +1467,8 @@ const App = {
                     }
                 }, 10000);
                 const btn = document.getElementById('recordBtn');
-                if (btn) {
+                // 只改本次录音发起时那张卡片的按钮，别把新卡片的按钮改成「停止」
+                if (btn && this.currentWordKey() === wordKey) {
                     btn.textContent = '⏹️';
                     btn.title = '停止录音（最长10秒）';
                 }
@@ -1419,6 +1476,12 @@ const App = {
             .catch(() => {
                 this.showModal('⚠️', '无法录音', '请允许浏览器使用麦克风权限');
             });
+    },
+
+    // 当前正在展示的单词卡 key；录音是异步的，完成后要用它确认卡片没被切走
+    currentWordKey: function() {
+        const card = this.currentCards && this.currentCards[this.currentCardIndex];
+        return card ? `${this.currentGrade}-${this.currentUnit}-${card.word}` : null;
     },
 
     playRecording: function(wordKey) {
@@ -1450,6 +1513,7 @@ const App = {
         SpeechHelper.speakSentence(text);
 
         const recognition = new SpeechRecognition();
+        this.followRecognition = recognition;   // 切页时主动 abort，别把麦克风留在后台
         recognition.lang = 'en-US';
         recognition.interimResults = false;
         recognition.maxAlternatives = 3;
@@ -1468,11 +1532,16 @@ const App = {
             }
         };
         recognition.onerror = () => {
+            if (token !== this.followReadToken || hintEl.isConnected === false) return;
             hadError = true;
             hintEl.textContent = '😢 识别出错了，再试一次吧';
             hintEl.hidden = false;
         };
         recognition.onend = () => {
+            // 切离学习页、重新发起跟读、或卡片被 innerHTML 重建后，旧识别一律作废：
+            // 既不能在用户看不见的页面上偷偷发星，也不改已脱离文档的旧提示节点
+            if (token !== this.followReadToken || hintEl.isConnected === false) return;
+            this.followRecognition = null;
             // 识别失败不发星，也不把「出错」误判成「没听到声音」
             if (hadError) {
                 hintEl.hidden = false;

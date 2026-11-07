@@ -57,8 +57,16 @@ const Play = {
         this.timers = [];
         this.stopRecordingQuiet();
         SpeechHelper.stop();
-        // 盲听用独立可取消定时器推进（需单独重置才能支持「再听一次」）
-        if (typeof Listening !== 'undefined' && Listening.clearBlindTimer) Listening.clearBlindTimer();
+        // 学习页的卡片/句子自动朗读定时器由 App 持有。直接点 play-tab 不经过 App.showPage，
+        // 若不清理，300~400ms 后旧回调会在新玩法里读出上一关的单词。
+        if (typeof App !== 'undefined') {
+            App.speechToken++;
+            if (App.autoSpeakTimer) { clearTimeout(App.autoSpeakTimer); App.autoSpeakTimer = null; }
+            App.clearSentenceSpeakTimer();
+        }
+        // 盲听用独立可取消定时器推进；离开玩法时连代次一起作废，
+        // 避免旧语音的 onend 回调又重新挂上一个新定时器
+        if (typeof Listening !== 'undefined' && Listening.cancelBlind) Listening.cancelBlind();
     },
 
     later: function(fn, ms) {
@@ -73,6 +81,8 @@ const Play = {
     // ============== 模式切换 ==============
     showMode: function(mode) {
         this.stopAll();
+        // 切换玩法等于结束上一轮练习，连击从头开始，徽标也不残留
+        if (typeof Combo !== 'undefined') Combo.reset();
         App.playMode = mode;
         document.querySelectorAll('.play-tab').forEach(b => {
             b.classList.toggle('active', b.dataset.mode === mode);
@@ -131,10 +141,12 @@ const Play = {
         if (!d.playDone.includes(key)) {
             d.playDone.push(key);
             d.stars += 2;
+            // 宠物经验同样只在首次完成给：不然「再玩一次」可以无限刷 petXp，
+            // 满级后还会每次都写一次存档
+            this.addXp(xp || 2);
             App.saveUserData();
             App.updateStats();
         }
-        this.addXp(xp || 2);
         if (typeof Stickers !== 'undefined') Stickers.refresh();
     },
 
@@ -178,9 +190,9 @@ const Play = {
         this.renderPet();
         if (after > before) {
             App.createConfetti(30);
-            // 用轻提示而不是模态弹窗：不抢占通关弹窗队列、不打断闯关
+            // 用轻提示而不是模态弹窗：不抢占通关弹窗队列、不打断闯关。
+            // 这里刻意不朗读：speechSynthesis.cancel() 会掐掉孩子刚点的单词/句子示范发音。
             this.showGrowthToast(PET_STAGES[after]);
-            SpeechHelper.speak('Wow! Your pet grew up!');
         }
     },
 
@@ -864,7 +876,8 @@ const Play = {
             btn.onclick = () => {
                 App.userData.dubs = dubs.filter(x => x.id !== btn.dataset.del);
                 App.saveUserData();
-                this.renderDubList(container);
+                // updateWordList 会同时刷新 Tab 上的「🎬 配音 N」计数并重绘当前列表
+                App.updateWordList();
             };
         });
     }
