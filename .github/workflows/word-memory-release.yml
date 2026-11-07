@@ -127,6 +127,12 @@ jobs:
       - name: 安装依赖
         run: npm ci --no-audit --no-fund
 
+      # electron 45.x 不再通过 npm postinstall 自动下载二进制，
+      # 需显式执行 install.js 把运行时解压到 node_modules/electron/dist，
+      # 否则 electron-builder 会因 electronDist 指向的目录不存在而失败。
+      - name: 安装 Electron 运行时二进制
+        run: node node_modules/electron/install.js
+
       - name: Windows 平台单元测试
         run: npm test
 
