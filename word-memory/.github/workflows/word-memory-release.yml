@@ -1,0 +1,149 @@
+name: WordMemory Release
+
+on:
+  push:
+    tags:
+      - "word-memory-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要重新发布的 tag（如 word-memory-v1.0.0）"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: wordmemory-release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: word-memory
+    shell: bash
+
+jobs:
+  build:
+    name: 构建与校验
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          persist-credentials: false
+
+      - name: 配置 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: word-memory/package-lock.json
+
+      - name: 安装依赖
+        run: npm ci --no-audit --no-fund
+
+      - name: 运行测试
+        run: npm test
+
+      - name: 构建产物
+        run: npm run build
+
+      - name: 校验产物
+        run: node scripts/verify.mjs
+
+      - name: 读取版本号
+        id: version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "版本号：$version"
+
+      - name: 重命名单文件版
+        run: |
+          mkdir -p release
+          cp dist/word-memory.html "release/word-memory-${{ steps.version.outputs.version }}.html"
+          ls -lh release/
+
+      - name: 生成发布说明
+        run: node scripts/release-notes.mjs "${{ steps.version.outputs.version }}" > release/RELEASE_NOTES.md
+
+      - name: 上传发布产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-files
+          path: |
+            word-memory/release/word-memory-*.html
+            word-memory/release/RELEASE_NOTES.md
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: 上传 Web 站点
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: word-memory/dist/web
+          retention-days: 30
+          if-no-files-found: error
+
+  release:
+    name: 创建 GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # 该任务不在 word-memory 子目录内工作（未检出代码），覆盖顶层默认值
+    defaults:
+      run:
+        working-directory: .
+        shell: bash
+    steps:
+      - name: 下载发布产物
+        uses: actions/download-artifact@v4
+        with:
+          name: release-files
+          path: release
+
+      - name: 创建 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -e
+          gh release create "word-memory-v${VERSION}" \
+            "release/word-memory-${VERSION}.html" \
+            --repo "${{ github.repository }}" \
+            --title "WordMemory v${VERSION}" \
+            --notes-file release/RELEASE_NOTES.md
+
+  pages:
+    name: 部署 Web 版到 Pages
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 下载 Web 站点
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: site
+
+      - name: 配置 Pages
+        uses: actions/configure-pages@v5
+
+      - name: 上传站点产物
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: 部署
+        id: deployment
+        uses: actions/deploy-pages@v4

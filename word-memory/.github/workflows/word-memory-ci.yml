@@ -1,0 +1,85 @@
+name: WordMemory CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "word-memory/**"
+      - ".github/workflows/word-memory-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "word-memory/**"
+      - ".github/workflows/word-memory-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wordmemory-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: word-memory
+    shell: bash
+
+jobs:
+  verify:
+    name: 测试与校验
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: 配置 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: word-memory/package-lock.json
+
+      - name: 安装依赖
+        run: npm ci --no-audit --no-fund
+
+      - name: 语法检查
+        run: |
+          set -e
+          for file in src/main.js src/core/*.js src/ui/*.js src/ui/views/*.js scripts/*.mjs; do
+            node --check "$file"
+          done
+          echo "语法检查通过"
+
+      - name: 校验词库数据
+        run: |
+          node -e '
+            const fs = require("fs");
+            const data = JSON.parse(fs.readFileSync("data/words.json", "utf8"));
+            if (data.words.length !== 8000) {
+              throw new Error("词库应为 8000 条，实际 " + data.words.length);
+            }
+            const bad = data.words.filter((w) => !Array.isArray(w) || w.length !== 4 || !w[0] || !w[1]);
+            if (bad.length) throw new Error("存在非法词条：" + bad.length + " 条");
+            console.log("词库校验通过：" + data.words.length + " 条，指纹 " + data.meta.sourceHash);
+          '
+
+      - name: 运行测试
+        run: npm test
+
+      - name: 构建产物
+        run: npm run build
+
+      - name: 校验产物
+        run: node scripts/verify.mjs
+
+      - name: 上传单文件版
+        uses: actions/upload-artifact@v4
+        with:
+          name: word-memory-single-file
+          path: word-memory/dist/word-memory.html
+          retention-days: 7
+          if-no-files-found: error
