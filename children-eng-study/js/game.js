@@ -1,6 +1,7 @@
 /* ========================================
    趣味英语乐园 - 游戏逻辑
-   连连看、听音选词、拼写大师、记忆翻牌
+   6 个闯关游戏：连连看 / 听音选图 / 拼写 / 记忆翻牌 / 字母拼拼乐 / 句子小剧场
+   v1.3.0：全英文 + 图片，通关后可直接进入下一关
    ======================================== */
 
 const Game = {
@@ -9,7 +10,11 @@ const Game = {
     currentGameTitle: '',
     currentGrade: 1,
     gameScore: 0,
+    gameLevel: 1,
     gameData: [],
+
+    // 闯关顺序：通关后「下一关」按此序列推进，循环进入更高 Level
+    GAME_ORDER: ['match', 'guess', 'spell', 'memory', 'fillword', 'sentence'],
 
     // 每个游戏的专属奖状样式（称号 + 奖牌 + 配色类名）
     CERTIFICATES: {
@@ -17,25 +22,40 @@ const Game = {
         guess:    { cls: 'cert-guess',    ribbon: '🎯', award: '听力小达人', en: 'Super Listener' },
         spell:    { cls: 'cert-spell',    ribbon: '✏️', award: '拼写小明星', en: 'Spelling Star' },
         memory:   { cls: 'cert-memory',   ribbon: '🃏', award: '记忆小超人', en: 'Memory Hero' },
-        fillword: { cls: 'cert-fillword', ribbon: '🧱', award: '拼词小工匠', en: 'Word Builder' }
+        fillword: { cls: 'cert-fillword', ribbon: '🧱', award: '拼词小工匠', en: 'Word Builder' },
+        sentence: { cls: 'cert-sentence', ribbon: '💬', award: '句子小明星', en: 'Sentence Star' }
     },
-    
+
     init: function() {
+        if (this.initialized) return;
+        this.initialized = true;
         this.bindGameSelector();
 
-        // 奖状关闭：按钮、点击遮罩或 Esc
         const certOverlay = document.getElementById('certOverlay');
-        document.getElementById('certBtn').addEventListener('click', () => {
-            certOverlay.classList.remove('show');
-        });
+        document.getElementById('certBtn').addEventListener('click', () => this.closeCertificate());
         certOverlay.addEventListener('click', (e) => {
-            if (e.target === certOverlay) certOverlay.classList.remove('show');
+            if (e.target === certOverlay) this.closeCertificate();
         });
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && certOverlay.classList.contains('show')) {
-                certOverlay.classList.remove('show');
+                this.closeCertificate();
             }
         });
+    },
+
+    closeCertificate: function(afterClose) {
+        const overlay = document.getElementById('certOverlay');
+        const wasShown = overlay.classList.contains('show');
+        overlay.classList.remove('show');
+        // 徽章提示等弹窗等奖状收起后再显示，避免被奖状遮住
+        if (wasShown) App.checkBadges();
+        if (afterClose) afterClose();
+    },
+
+    backToSelector: function() {
+        document.querySelector('.game-selector').style.display = 'block';
+        document.getElementById('gameArea').style.display = 'none';
+        SpeechHelper.stop();
     },
 
     bindGameSelector: function() {
@@ -43,10 +63,7 @@ const Game = {
         gameCards.forEach(card => {
             card.setAttribute('role', 'button');
             card.setAttribute('tabindex', '0');
-            card.addEventListener('click', () => {
-                const gameType = card.dataset.game;
-                this.startGame(gameType);
-            });
+            card.addEventListener('click', () => this.startGame(card.dataset.game));
             card.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
@@ -55,72 +72,80 @@ const Game = {
             });
         });
 
-        // 返回按钮
         const backBtn = document.getElementById('gameBack');
-        if (backBtn) {
-            backBtn.addEventListener('click', () => {
-                document.querySelector('.game-selector').style.display = 'block';
-                document.getElementById('gameArea').style.display = 'none';
-                SpeechHelper.stop();
-            });
-        }
+        if (backBtn) backBtn.addEventListener('click', () => this.backToSelector());
     },
 
-    // 获取游戏用的单词数据（优先当前单元，不足时用同年级其他单元补齐）
+    // 游戏词汇取自当前年级的完整词库；每进一关轮换一批，多闯几关即可覆盖全部单词
     getGameWords: function(count = 8) {
         const grade = LEARNING_DATA[this.currentGrade] || LEARNING_DATA[1];
-        const unitWords = [];
-        const otherWords = [];
-
+        const all = [];
+        const seen = new Set();
         Object.keys(grade.units).forEach(unitKey => {
-            grade.units[unitKey].words.forEach(word => {
-                if (String(unitKey) === String(App.currentUnit) && this.currentGrade === App.currentGrade) {
-                    unitWords.push(word);
-                } else {
-                    otherWords.push(word);
-                }
+            grade.units[unitKey].words.forEach(w => {
+                if (seen.has(w.word)) return;
+                seen.add(w.word);
+                all.push({ ...w, unitKey });
             });
         });
 
-        // 当前单元的词优先出现，其余随机补齐
-        const prioritized = unitWords.sort(() => Math.random() - 0.5);
-        const fillers = otherWords.sort(() => Math.random() - 0.5);
-        return prioritized.concat(fillers).slice(0, count);
+        // 第一关优先复习学习页当前正在学的那一关
+        let priorityWords = [];
+        if (this.gameLevel === 1 && App.currentGrade === this.currentGrade &&
+            App.currentLevel && App.currentLevel.type === 'word') {
+            priorityWords = App.currentLevel.words.map(w => w.word);
+        }
+        const first = all.filter(w => priorityWords.includes(w.word));
+        const rest = all.filter(w => !priorityWords.includes(w.word));
+        const start = (this.gameLevel * count) % (rest.length || 1);
+        const rotated = rest.slice(start).concat(rest.slice(0, start));
+        return first.concat(rotated).slice(0, count);
     },
 
-    startGame: function(gameType) {
+    startGame: function(gameType, keepLevel) {
         this.currentGame = gameType;
         this.gameScore = 0;
-        // 游戏词汇跟随学习页选择的年级，未选择时默认一年级
+        if (!keepLevel) this.gameLevel = 1;
         this.currentGrade = App.currentGrade || 1;
 
         SpeechHelper.stop();
+        this.closeCertificate();
 
-        // 切换显示
         document.querySelector('.game-selector').style.display = 'none';
-        const gameArea = document.getElementById('gameArea');
-        gameArea.style.display = 'block';
-        
-        // 更新标题
+        document.getElementById('gameArea').style.display = 'block';
+
         const titles = {
             match: '🧩 单词连连看',
             guess: '🎯 听音选词',
             spell: '✏️ 拼写大师',
             memory: '🃏 记忆翻牌',
-            fillword: '🧱 字母拼拼乐'
+            fillword: '🧱 字母拼拼乐',
+            sentence: '💬 句子小剧场'
         };
-        document.getElementById('gameTitle').textContent = titles[gameType] || '游戏';
-        this.currentGameTitle = titles[gameType] || '游戏';
+        const baseTitle = titles[gameType] || '游戏';
+        this.currentGameTitle = baseTitle;
+        document.getElementById('gameTitle').textContent = `${baseTitle} · Lv.${this.gameLevel}`;
+        const orderIdx = this.GAME_ORDER.indexOf(gameType);
+        document.getElementById('gameLevel').textContent =
+            `Level ${this.gameLevel} · ${orderIdx >= 0 ? orderIdx + 1 : 1}/${this.GAME_ORDER.length}`;
         document.getElementById('gameScore').textContent = '0';
 
-        // 根据游戏类型初始化
         switch (gameType) {
             case 'match': this.initMatchGame(); break;
             case 'guess': this.initGuessGame(); break;
             case 'spell': this.initSpellGame(); break;
             case 'memory': this.initMemoryGame(); break;
             case 'fillword': this.initFillWordGame(); break;
+            case 'sentence': this.initSentenceGame(); break;
         }
+    },
+
+    // 通关后继续下一关，不必退回主页
+    startNextLevel: function() {
+        const idx = this.GAME_ORDER.indexOf(this.currentGame);
+        const next = this.GAME_ORDER[(idx + 1) % this.GAME_ORDER.length];
+        this.gameLevel++;
+        this.startGame(next, true);
     },
 
     updateScore: function(points = 1) {
@@ -141,14 +166,13 @@ const Game = {
         App.saveUserData();
         App.updateStats();
         App.updateMissionsUI();
-        App.checkBadges();
         App.createConfetti();
         this.showCertificate(stars);
 
         return stars;
     },
 
-    // 颁发小奖状：按游戏切换配色/称号，星星逐颗弹出
+    // 颁发小奖状：按游戏切换配色/称号，星星逐颗弹出，并提供连续闯关入口
     showCertificate: function(stars) {
         const conf = this.CERTIFICATES[this.currentGame] ||
             { cls: '', ribbon: '🏅', award: '闯关小达人', en: 'Great Job' };
@@ -160,103 +184,104 @@ const Game = {
         document.getElementById('certTitleEn').textContent = conf.en;
         document.getElementById('certAwardName').textContent = conf.award;
         document.getElementById('certReason').textContent =
-            `恭喜通关「${this.currentGameTitle}」，得分 ${this.gameScore} 分`;
+            `恭喜通关「${this.currentGameTitle}」Level ${this.gameLevel}，得分 ${this.gameScore} 分`;
         document.getElementById('certDate').textContent =
             new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
 
-        // 重建星星节点，保证每次通关弹出动画都能重播
         const starsBox = document.getElementById('certStars');
         starsBox.innerHTML = Array.from({ length: stars }, () => '<span>⭐</span>').join('');
 
+        // 奖状上的多个去向：下一关 / 再玩一次 / 游戏列表 / 首页
+        const actionsBox = document.getElementById('certActions');
+        actionsBox.innerHTML = '';
+        const actions = [
+            { label: '▶ 下一关', primary: true, run: () => this.startNextLevel() },
+            { label: '🔄 再玩一次', run: () => this.startGame(this.currentGame, true) },
+            { label: '🎮 游戏列表', run: () => this.backToSelector() },
+            { label: '🏠 首页', run: () => { this.backToSelector(); App.showPage('home'); } }
+        ];
+        actions.forEach(action => {
+            const btn = document.createElement('button');
+            btn.className = 'cert-action-btn' + (action.primary ? ' primary' : '');
+            btn.textContent = action.label;
+            btn.onclick = () => this.closeCertificate(action.run);
+            actionsBox.appendChild(btn);
+        });
+
         overlay.classList.add('show');
-        // 焦点落到按钮上，键盘用户可直接回车关闭
         document.getElementById('certBtn').focus();
     },
 
-    // ============== 连连看游戏 ==============
+    // ============== 连连看：英文 ↔ 图片 ==============
     initMatchGame: function() {
         const words = this.getGameWords(6);
         const content = document.getElementById('gameContent');
-        
+
         content.innerHTML = `
             <div class="match-container">
                 <div class="match-column" id="matchColumn1"></div>
                 <div class="match-column" id="matchColumn2"></div>
             </div>
             <div style="text-align: center; margin-top: 24px; color: #6B7280;">
-                左边选英文，右边选中文，配对成功就消除！
+                左边选英文，右边选对应的图片，配对成功就消除！
             </div>
         `;
 
         const col1 = document.getElementById('matchColumn1');
         const col2 = document.getElementById('matchColumn2');
 
-        // 英文列
         const englishWords = words.map((w, i) => ({ ...w, id: i, type: 'en' }));
-        const chineseWords = words.map((w, i) => ({ ...w, id: i, type: 'cn' }));
+        const pictureWords = words.map((w, i) => ({ ...w, id: i, type: 'pic' }));
 
-        // 打乱顺序
         const shuffledEn = [...englishWords].sort(() => Math.random() - 0.5);
-        const shuffledCn = [...chineseWords].sort(() => Math.random() - 0.5);
+        const shuffledPic = [...pictureWords].sort(() => Math.random() - 0.5);
 
         let selectedEn = null;
-        let selectedCn = null;
+        let selectedPic = null;
         let matchedCount = 0;
 
-        // 渲染英文
         shuffledEn.forEach(word => {
             const div = document.createElement('div');
             div.className = 'match-item';
-            div.textContent = `${word.emoji} ${word.word}`;
+            div.textContent = word.word;
             div.dataset.id = word.id;
             div.addEventListener('click', () => {
                 if (div.classList.contains('matched')) return;
-                
                 col1.querySelectorAll('.match-item').forEach(el => el.classList.remove('selected'));
                 div.classList.add('selected');
                 selectedEn = div.dataset.id;
-
-                if (selectedEn !== null && selectedCn !== null) {
-                    checkMatch();
-                }
+                if (selectedEn !== null && selectedPic !== null) checkMatch();
             });
             col1.appendChild(div);
         });
 
-        // 渲染中文
-        shuffledCn.forEach(word => {
+        shuffledPic.forEach(word => {
             const div = document.createElement('div');
-            div.className = 'match-item';
-            div.textContent = `${word.emoji} ${word.cn}`;
+            div.className = 'match-item match-picture';
+            div.textContent = word.emoji;
             div.dataset.id = word.id;
             div.addEventListener('click', () => {
                 if (div.classList.contains('matched')) return;
-                
                 col2.querySelectorAll('.match-item').forEach(el => el.classList.remove('selected'));
                 div.classList.add('selected');
-                selectedCn = div.dataset.id;
-
-                if (selectedEn !== null && selectedCn !== null) {
-                    checkMatch();
-                }
+                selectedPic = div.dataset.id;
+                if (selectedEn !== null && selectedPic !== null) checkMatch();
             });
             col2.appendChild(div);
         });
 
         const checkMatch = () => {
             const enItem = col1.querySelector(`[data-id="${selectedEn}"]`);
-            const cnItem = col2.querySelector(`[data-id="${selectedCn}"]`);
-            
-            if (selectedEn === selectedCn) {
-                // 匹配成功
+            const picItem = col2.querySelector(`[data-id="${selectedPic}"]`);
+
+            if (selectedEn === selectedPic) {
                 enItem.classList.add('matched');
-                cnItem.classList.add('matched');
+                picItem.classList.add('matched');
                 enItem.classList.remove('selected');
-                cnItem.classList.remove('selected');
+                picItem.classList.remove('selected');
                 this.updateScore(10);
                 matchedCount++;
 
-                // 配对成功时朗读该单词（用户操作触发的即时反馈）
                 const matchedWord = words[Number(selectedEn)];
                 if (matchedWord) SpeechHelper.speakWord(matchedWord.word);
 
@@ -264,19 +289,18 @@ const Game = {
                     setTimeout(() => this.completeGame(), 500);
                 }
             } else {
-                // 不匹配
                 setTimeout(() => {
                     enItem.classList.remove('selected');
-                    cnItem.classList.remove('selected');
+                    picItem.classList.remove('selected');
                 }, 300);
             }
-            
+
             selectedEn = null;
-            selectedCn = null;
+            selectedPic = null;
         };
     },
 
-    // ============== 听音选词游戏 ==============
+    // ============== 听音选词：听发音选图片 + 英文 ==============
     initGuessGame: function() {
         const words = this.getGameWords(10);
         let currentIndex = 0;
@@ -284,14 +308,11 @@ const Game = {
 
         const renderQuestion = () => {
             if (currentIndex >= words.length) {
-                // 游戏结束
                 setTimeout(() => this.completeGame(), 500);
                 return;
             }
 
             const currentWord = words[currentIndex];
-            
-            // 生成干扰选项
             const otherWords = words.filter(w => w.word !== currentWord.word);
             const wrongOptions = otherWords.sort(() => Math.random() - 0.5).slice(0, 3);
             const allOptions = [currentWord, ...wrongOptions].sort(() => Math.random() - 0.5);
@@ -300,32 +321,29 @@ const Game = {
                 <div class="guess-container">
                     <h3 style="margin-bottom: 16px; color: #6B7280;">第 ${currentIndex + 1} / ${words.length} 题</h3>
                     <button class="guess-audio-btn" id="guessAudioBtn">🔊</button>
-                    <p style="margin: 12px 0 24px; color: #374151; font-size: 18px;">听发音，选择正确的中文意思</p>
+                    <p style="margin: 12px 0 24px; color: #374151; font-size: 18px;">听发音，选出对应的图片和单词</p>
                     <div class="guess-options" id="guessOptions">
                         ${allOptions.map(opt => `
                             <button class="guess-option" data-word="${opt.word}">
-                                ${opt.emoji} ${opt.cn}
+                                <span class="guess-option-emoji">${opt.emoji}</span>
+                                <span class="guess-option-word">${opt.word}</span>
                             </button>
                         `).join('')}
                     </div>
                 </div>
             `;
 
-            // 自动播放发音（可在语音设置里关闭）
             if (SpeechHelper.settings.autoSpeak) {
                 setTimeout(() => SpeechHelper.speakWord(currentWord.word), 300);
             }
 
-            // 播放按钮
             document.getElementById('guessAudioBtn').addEventListener('click', () => {
                 SpeechHelper.speakWord(currentWord.word);
             });
 
-            // answered 防止答对后等待期间重复点击，造成重复计分跳题
             let answered = false;
             let triedWrong = false;
 
-            // 选项点击（箭头函数保证 this 指向 Game）
             document.querySelectorAll('.guess-option').forEach(btn => {
                 btn.addEventListener('click', () => {
                     if (answered) return;
@@ -353,7 +371,7 @@ const Game = {
         renderQuestion();
     },
 
-    // ============== 拼写游戏 ==============
+    // ============== 拼写游戏：看图 + 听音 ==============
     initSpellGame: function() {
         const words = this.getGameWords(8);
         let currentIndex = 0;
@@ -366,24 +384,21 @@ const Game = {
             }
 
             const currentWord = words[currentIndex];
-            // 字母数只统计 a-z，不把空格、撇号算进去
             const letterCount = currentWord.word.replace(/[^a-zA-Z]/g, '').length;
-            
+
             content.innerHTML = `
                 <div class="spell-container">
                     <h3 style="margin-bottom: 16px; color: #6B7280;">第 ${currentIndex + 1} / ${words.length} 题</h3>
                     <div style="font-size: 80px; margin-bottom: 16px;">${currentWord.emoji}</div>
-                    <p style="font-size: 24px; margin-bottom: 8px;">${currentWord.cn}</p>
                     <button class="guess-audio-btn" id="spellAudioBtn" style="font-size: 48px; padding: 20px; margin-bottom: 20px;">🔊</button>
                     <div class="spell-input-area">
-                        <input type="text" class="spell-input" id="spellInput" placeholder="输入英文" autocomplete="off" spellcheck="false">
+                        <input type="text" class="spell-input" id="spellInput" placeholder="Type the word" autocomplete="off" spellcheck="false">
                         <button class="spell-check-btn" id="spellCheckBtn">检查 ✅</button>
                     </div>
-                    <div class="spell-hint">💡 提示：这个单词有 ${letterCount} 个字母</div>
+                    <div class="spell-hint">💡 ${letterCount} letters</div>
                 </div>
             `;
 
-            // 自动播放发音（可在语音设置里关闭）
             if (SpeechHelper.settings.autoSpeak) {
                 setTimeout(() => SpeechHelper.speakWord(currentWord.word), 300);
             }
@@ -395,13 +410,11 @@ const Game = {
                 SpeechHelper.speakWord(currentWord.word);
             });
 
-            // solved 防止答对后 1.2 秒内重复提交，导致连跳多题
             let solved = false;
             let triedWrong = false;
 
             const checkAnswer = () => {
                 if (solved) return;
-
                 const answer = input.value.trim().toLowerCase();
                 const correct = currentWord.word.toLowerCase();
 
@@ -430,7 +443,6 @@ const Game = {
                     setTimeout(() => {
                         input.style.borderColor = 'var(--color-blue)';
                         input.style.color = 'var(--color-text)';
-                        // 仅在题目仍未切换时重读单词，避免切走后残留发音
                         if (!solved && document.getElementById('spellInput') === input) {
                             SpeechHelper.speakWord(currentWord.word);
                         }
@@ -439,7 +451,6 @@ const Game = {
             };
 
             document.getElementById('spellCheckBtn').addEventListener('click', checkAnswer);
-            
             input.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') checkAnswer();
             });
@@ -448,19 +459,16 @@ const Game = {
         renderQuestion();
     },
 
-    // ============== 记忆翻牌游戏 ==============
+    // ============== 记忆翻牌：英文 ↔ 图片 ==============
     initMemoryGame: function() {
         const words = this.getGameWords(8);
         const content = document.getElementById('gameContent');
 
-        // 创建配对卡片
         const cards = [];
         words.forEach((word, i) => {
-            cards.push({ id: i, type: 'en', content: `${word.emoji} ${word.word}`, pairId: i });
-            cards.push({ id: i + 100, type: 'cn', content: `${word.emoji} ${word.cn}`, pairId: i });
+            cards.push({ id: i, type: 'en', content: word.word, pairId: i });
+            cards.push({ id: i + 100, type: 'pic', content: word.emoji, pairId: i });
         });
-
-        // 打乱
         cards.sort(() => Math.random() - 0.5);
 
         let flippedCards = [];
@@ -469,7 +477,7 @@ const Game = {
 
         content.innerHTML = `
             <div style="text-align: center; margin-bottom: 16px; color: #6B7280;">
-                翻开卡片，找到英文和中文的配对！
+                翻开卡片，找到英文单词和对应图片的配对！
             </div>
             <div class="memory-grid" id="memoryGrid">
                 ${cards.map((card, idx) => `
@@ -478,17 +486,15 @@ const Game = {
             </div>
         `;
 
-        const grid = document.getElementById('memoryGrid');
-        const cardElements = grid.querySelectorAll('.memory-card');
-
+        const cardElements = document.querySelectorAll('.memory-card');
         cardElements.forEach((cardEl, idx) => {
             cardEl.addEventListener('click', () => {
                 if (isProcessing) return;
                 if (cardEl.classList.contains('flipped') || cardEl.classList.contains('matched')) return;
                 if (flippedCards.length >= 2) return;
 
-                // 翻开卡片
                 cardEl.textContent = cards[idx].content;
+                if (cards[idx].type === 'pic') cardEl.classList.add('picture');
                 cardEl.classList.add('flipped');
                 flippedCards.push({ el: cardEl, data: cards[idx] });
 
@@ -497,7 +503,6 @@ const Game = {
                     const [first, second] = flippedCards;
 
                     if (first.data.pairId === second.data.pairId && first.data.type !== second.data.type) {
-                        // 配对成功
                         setTimeout(() => {
                             first.el.classList.add('matched');
                             second.el.classList.add('matched');
@@ -513,12 +518,11 @@ const Game = {
                             }
                         }, 600);
                     } else {
-                        // 配对失败
                         setTimeout(() => {
                             first.el.textContent = '?';
                             second.el.textContent = '?';
-                            first.el.classList.remove('flipped');
-                            second.el.classList.remove('flipped');
+                            first.el.classList.remove('flipped', 'picture');
+                            second.el.classList.remove('flipped', 'picture');
                             flippedCards = [];
                             isProcessing = false;
                         }, 1000);
@@ -528,9 +532,8 @@ const Game = {
         });
     },
 
-    // ============== 字母拼拼乐游戏 ==============
+    // ============== 字母拼拼乐：看图片拼单词 ==============
     initFillWordGame: function() {
-        // 从当前单元或同年级取 6 个纯字母单词（过滤掉空格的短语）
         const words = this.getGameWords(10).filter(w => /^[a-zA-Z]+$/.test(w.word)).slice(0, 6);
         if (words.length < 3) {
             App.showModal('😅', '词汇不够', '当前年级适合的单词太少，换个年级试试吧');
@@ -550,13 +553,11 @@ const Game = {
             const target = currentWord.word.toLowerCase();
             const targetLetters = target.split('');
 
-            // 生成干扰字母池（从同年级其他单词里随机取）
             const otherWords = words.filter(w => w.word !== currentWord.word);
             const extraLetters = [];
             for (let i = 0; i < Math.min(2, otherWords.length); i++) {
                 const lw = otherWords[i].word.toLowerCase();
                 if (lw && /^[a-z]+$/.test(lw)) {
-                    // 取第一个不重复的字母
                     for (const ch of lw) {
                         if (!targetLetters.includes(ch) && !extraLetters.includes(ch)) {
                             extraLetters.push(ch);
@@ -565,7 +566,6 @@ const Game = {
                     }
                 }
             }
-            // 把干扰字母凑到至少 2 个
             const allUsed = new Set(targetLetters);
             const alphabet = 'abcdefghijklmnopqrstuvwxyz';
             while (extraLetters.length < 2) {
@@ -573,39 +573,34 @@ const Game = {
                 if (!allUsed.has(ch) && !extraLetters.includes(ch)) extraLetters.push(ch);
             }
 
-            // 打乱
             const pool = [...targetLetters, ...extraLetters].sort(() => Math.random() - 0.5);
 
             content.innerHTML = `
                 <div class="fillword-container">
                     <h3 style="margin-bottom: 16px; color: #6B7280;">第 ${currentIndex + 1} / ${words.length} 题</h3>
                     <div style="font-size: 80px; margin-bottom: 8px;">${currentWord.emoji}</div>
-                    <p style="font-size: 24px; margin-bottom: 8px;">${currentWord.cn}</p>
                     <button class="guess-audio-btn" id="fillAudioBtn" style="font-size: 40px; padding: 16px;">🔊</button>
+                    <div class="spell-hint" style="margin: 8px 0 16px;">💡 ${targetLetters.length} letters</div>
 
-                    <!-- 答案槽 -->
                     <div class="fillword-slots" id="fillSlots">
                         ${targetLetters.map((_, i) => `<div class="fill-slot" data-slot="${i}"></div>`).join('')}
                     </div>
-
-                    <!-- 字母池 -->
                     <div class="fillword-pool" id="fillPool">
                         ${pool.map((ch, i) => `<button class="fill-letter" data-letter="${ch}" data-pool-idx="${i}">${ch}</button>`).join('')}
                     </div>
-
                     <button class="fillword-undo" id="fillUndoBtn">↩️ 撤回</button>
                 </div>
             `;
 
-            // 自动播放发音
             if (SpeechHelper.settings.autoSpeak) {
                 setTimeout(() => SpeechHelper.speakWord(currentWord.word), 300);
             }
             document.getElementById('fillAudioBtn').onclick = () => SpeechHelper.speakWord(currentWord.word);
 
-            // 游戏状态
             const answerSlots = Array(targetLetters.length).fill(null);
             const usedPoolIdx = new Set();
+            // 记录每个答案槽用的是字母池里的哪一个按钮，撤回含重复字母的单词时才不会误恢复
+            const slotPoolIdx = Array(targetLetters.length).fill(null);
             let solved = false;
             let triedWrong = false;
 
@@ -625,7 +620,6 @@ const Game = {
                     if (spelled === target) {
                         solved = true;
                         renderSlots();
-                        // 禁用所有剩余字母按钮
                         document.querySelectorAll('.fill-letter').forEach(b => {
                             if (!usedPoolIdx.has(Number(b.dataset.poolIdx))) b.disabled = true;
                         });
@@ -637,13 +631,13 @@ const Game = {
                         }, 1200);
                     } else {
                         triedWrong = true;
-                        // 全槽闪红，然后清空重来
                         document.querySelectorAll('.fill-slot').forEach(s => s.classList.add('shake'));
                         SpeechHelper.speak('Almost!');
                         setTimeout(() => {
                             document.querySelectorAll('.fill-slot').forEach(s => s.classList.remove('shake'));
                             answerSlots.fill(null);
                             usedPoolIdx.clear();
+                            slotPoolIdx.fill(null);
                             document.querySelectorAll('.fill-letter').forEach(b => {
                                 b.classList.remove('used');
                                 b.disabled = false;
@@ -654,16 +648,15 @@ const Game = {
                 }
             };
 
-            // 点击字母 → 填入第一个空槽
             document.querySelectorAll('.fill-letter').forEach(btn => {
                 btn.addEventListener('click', () => {
                     if (solved) return;
                     const poolIdx = Number(btn.dataset.poolIdx);
                     if (usedPoolIdx.has(poolIdx)) return;
-                    // 找第一个空槽
                     const emptyIdx = answerSlots.findIndex(s => s === null);
                     if (emptyIdx === -1) return;
                     answerSlots[emptyIdx] = btn.dataset.letter;
+                    slotPoolIdx[emptyIdx] = poolIdx;
                     usedPoolIdx.add(poolIdx);
                     btn.classList.add('used');
                     btn.disabled = true;
@@ -672,22 +665,99 @@ const Game = {
                 });
             });
 
-            // 撤回最后一个字母
             document.getElementById('fillUndoBtn').addEventListener('click', () => {
                 if (solved) return;
                 const lastFilled = answerSlots.map((s, i) => s !== null ? i : -1).filter(i => i >= 0).pop();
                 if (lastFilled === undefined) return;
-                const letter = answerSlots[lastFilled];
+                const poolIdx = slotPoolIdx[lastFilled];
                 answerSlots[lastFilled] = null;
-                // 找回对应按钮
-                document.querySelectorAll('.fill-letter').forEach(b => {
-                    if (b.dataset.letter === letter && b.classList.contains('used')) {
-                        usedPoolIdx.delete(Number(b.dataset.poolIdx));
-                        b.classList.remove('used');
-                        b.disabled = false;
-                    }
-                });
+                slotPoolIdx[lastFilled] = null;
+                usedPoolIdx.delete(poolIdx);
+                // 只恢复这一个槽实际用过的按钮，避免重复字母被一起释放
+                const usedBtn = document.querySelector(`.fill-letter[data-pool-idx="${poolIdx}"]`);
+                if (usedBtn) {
+                    usedBtn.classList.remove('used');
+                    usedBtn.disabled = false;
+                }
                 renderSlots();
+            });
+        };
+
+        renderQuestion();
+    },
+
+    // ============== 句子小剧场：听句子 → 看图片 → 按顺序拼词块 ==============
+    initSentenceGame: function() {
+        const sentences = SentenceLab.pick(this.currentGrade, 4, this.gameLevel - 1);
+        if (!sentences.length) {
+            App.showModal('😅', '句子不够', '当前年级还没有句子，换个年级试试吧');
+            return;
+        }
+
+        let currentIndex = 0;
+        const content = document.getElementById('gameContent');
+
+        const renderQuestion = () => {
+            if (currentIndex >= sentences.length) {
+                setTimeout(() => this.completeGame(), 500);
+                return;
+            }
+
+            const item = sentences[currentIndex];
+            content.innerHTML = `
+                <div class="sentence-card">
+                    <div class="sentence-top">
+                        <span class="sentence-badge">💬 Sentence Show</span>
+                        <span class="sentence-progress">${currentIndex + 1} / ${sentences.length}</span>
+                    </div>
+                    <div class="sentence-scene">${SentenceLab.sceneHtml(item)}</div>
+                    <div class="sentence-listen">
+                        <button class="sentence-audio" id="sgAudioBtn">🔊 Listen</button>
+                        <button class="sentence-audio slow" id="sgSlowBtn">🐢 Slow</button>
+                    </div>
+                    <div class="sentence-hint" id="sgHint">Listen, then tap the words in order! 👆</div>
+                    <div class="sentence-slots" id="sgSlots"></div>
+                    <div class="sentence-tiles" id="sgTiles"></div>
+                    <div class="sentence-reveal" id="sgReveal" hidden></div>
+                    <div class="sentence-actions" id="sgActions"></div>
+                </div>`;
+
+            document.getElementById('sgAudioBtn').onclick = () => SpeechHelper.speakSentence(item.text);
+            document.getElementById('sgSlowBtn').onclick = () => SpeechHelper.speak(item.text, { rate: 0.6 });
+            if (SpeechHelper.settings.autoSpeak) {
+                setTimeout(() => SpeechHelper.speakSentence(item.text), 400);
+            }
+
+            SentenceLab.renderPuzzle({
+                text: item.text,
+                slotsEl: document.getElementById('sgSlots'),
+                tilesEl: document.getElementById('sgTiles'),
+                onProgress: (cur, total) => {
+                    const hint = document.getElementById('sgHint');
+                    if (hint) hint.textContent = `Great! ${cur} / ${total} words ⭐`;
+                },
+                onWrong: () => {
+                    const hint = document.getElementById('sgHint');
+                    if (hint) hint.textContent = 'Oops! Try another word 🙈';
+                },
+                onSolved: () => {
+                    const reveal = document.getElementById('sgReveal');
+                    const marked = item.text.split(item.word).join(`<mark>${item.word}</mark>`);
+                    reveal.innerHTML = `<div class="sentence-full">${marked}</div>`;
+                    reveal.hidden = false;
+                    SpeechHelper.speakSentence(item.text);
+                    this.updateScore(15);
+                    App.createConfetti(16);
+
+                    const isLast = currentIndex === sentences.length - 1;
+                    const actions = document.getElementById('sgActions');
+                    actions.innerHTML = `
+                        <button class="sentence-btn primary" id="sgNextBtn">${isLast ? '完成闯关 ✓' : '下一句 ▶'}</button>`;
+                    document.getElementById('sgNextBtn').onclick = () => {
+                        currentIndex++;
+                        renderQuestion();
+                    };
+                }
             });
         };
 

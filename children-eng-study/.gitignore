@@ -41,6 +41,9 @@ ehthumbs.db
 *.local.json
 storage.local
 
+# WorkBuddy 工作区内部数据（记忆/日志，不入库）
+.workbuddy/
+
 # 打包产物
 dist/
 build/

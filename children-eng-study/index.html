@@ -83,6 +83,29 @@
                 </div>
             </div>
 
+            <!-- 单词宠物 + 今日复习 -->
+            <div class="fun-row">
+                <div class="pet-card" id="petCard">
+                    <div class="pet-emoji" id="petEmoji">🥚</div>
+                    <div class="pet-info">
+                        <div class="pet-title">🐾 My Word Pet</div>
+                        <div class="pet-name" id="petName">Little Egg</div>
+                        <div class="pet-track"><span id="petFill" style="width:0%"></span></div>
+                        <div class="pet-hint" id="petHint">Learn words to grow your pet!</div>
+                    </div>
+                    <button class="pet-feed" id="petFeedBtn">⭐ Feed 5</button>
+                </div>
+                <div class="review-card" id="reviewCard">
+                    <div class="review-emoji">🔁</div>
+                    <div class="review-info">
+                        <div class="review-title">Today's Review</div>
+                        <div class="review-count"><span id="reviewCount">0</span> words to review</div>
+                        <div class="review-hint">Keep them in your memory!</div>
+                    </div>
+                    <button class="review-go" id="reviewGoBtn">▶ Start</button>
+                </div>
+            </div>
+
             <!-- 每日任务卡片 -->
             <div class="daily-mission">
                 <div class="mission-header">
@@ -121,9 +144,28 @@
                 </div>
             </div>
 
-            <div class="card-container" id="cardContainer">
+            <!-- 趣味乐园：六类新玩法 -->
+            <div class="play-nav" id="playNav">
+                <button class="play-tab active" data-mode="map">🗺️ 关卡地图</button>
+                <button class="play-tab" data-mode="phonics">🔤 自然拼读</button>
+                <button class="play-tab" data-mode="story">📖 绘本剧场</button>
+                <button class="play-tab" data-mode="pattern">🧩 句型换词</button>
+                <button class="play-tab" data-mode="chant">🎵 韵律儿歌</button>
+                <button class="play-tab" data-mode="dub">🎬 小配音员</button>
+                <button class="play-tab" data-mode="review">🔁 今日复习</button>
+            </div>
+
+            <div class="level-map" id="levelMap" hidden></div>
+
+            <div class="card-container" id="cardContainer" hidden>
                 <!-- 学习卡片会动态插入 -->
             </div>
+
+            <!-- 句子小剧场（句子关 / 句子游戏共用样式） -->
+            <div class="sentence-stage" id="sentenceStage" hidden></div>
+
+            <!-- 趣味乐园舞台 -->
+            <div class="play-stage" id="playStage" hidden></div>
 
             <!-- 控制按钮 -->
             <div class="card-controls" id="cardControls" style="display:none;">
@@ -148,27 +190,32 @@
                     <div class="game-card" data-game="match">
                         <div class="game-icon">🧩</div>
                         <div class="game-name">单词连连看</div>
-                        <div class="game-desc">把英文和中文配对</div>
+                        <div class="game-desc">把英文和图片配对</div>
                     </div>
                     <div class="game-card" data-game="guess">
                         <div class="game-icon">🎯</div>
                         <div class="game-name">听音选词</div>
-                        <div class="game-desc">听发音选正确答案</div>
+                        <div class="game-desc">听发音选对应图片</div>
                     </div>
                     <div class="game-card" data-game="spell">
                         <div class="game-icon">✏️</div>
                         <div class="game-name">拼写大师</div>
-                        <div class="game-desc">听音拼写单词</div>
+                        <div class="game-desc">看图听音拼单词</div>
                     </div>
                     <div class="game-card" data-game="memory">
                         <div class="game-icon">🃏</div>
                         <div class="game-name">记忆翻牌</div>
-                        <div class="game-desc">翻牌配对记忆</div>
+                        <div class="game-desc">单词图片翻翻乐</div>
                     </div>
                     <div class="game-card" data-game="fillword">
                         <div class="game-icon">🧱</div>
                         <div class="game-name">字母拼拼乐</div>
                         <div class="game-desc">用打乱的字母拼词</div>
+                    </div>
+                    <div class="game-card" data-game="sentence">
+                        <div class="game-icon">💬</div>
+                        <div class="game-name">句子小剧场</div>
+                        <div class="game-desc">听句子，按顺序拼出来</div>
                     </div>
                 </div>
             </div>
@@ -178,7 +225,10 @@
                 <div class="game-header">
                     <button class="back-btn" id="gameBack">← 返回</button>
                     <h3 id="gameTitle">游戏</h3>
-                    <div class="game-score">得分: <span id="gameScore">0</span></div>
+                    <div class="game-meta">
+                        <span class="game-level" id="gameLevel">Level 1</span>
+                        <span class="game-score">得分: <span id="gameScore">0</span></span>
+                    </div>
                 </div>
                 <div class="game-content" id="gameContent">
                     <!-- 游戏内容动态插入 -->
@@ -218,6 +268,7 @@
                 <div class="mini-tab-nav" id="wordListNav">
                     <button class="mini-tab active" data-list="favorites">⭐ 收藏 <span id="favCount">0</span></button>
                     <button class="mini-tab" data-list="weak">❌ 不熟 <span id="weakCount">0</span></button>
+                    <button class="mini-tab" data-list="dubs">🎬 配音 <span id="dubCount">0</span></button>
                 </div>
                 <div class="word-list-container" id="wordListContainer">
                     <div class="word-list" id="wordList"></div>
@@ -249,6 +300,7 @@
             <div class="modal-emoji" id="modalEmoji">🎉</div>
             <div class="modal-title" id="modalTitle">太棒了！</div>
             <div class="modal-message" id="modalMessage"></div>
+            <div class="modal-actions" id="modalActions"></div>
             <button class="modal-btn" id="modalBtn">继续</button>
         </div>
     </div>
@@ -291,6 +343,7 @@
                 <span class="cert-date" id="certDate"></span>
                 <span class="cert-seal">🎖️ 英语乐园认证</span>
             </div>
+            <div class="cert-actions" id="certActions"></div>
             <button class="cert-btn" id="certBtn">太开心啦！🎉</button>
         </div>
     </div>
@@ -300,8 +353,10 @@
 
     <!-- 脚本 -->
     <script src="js/data.js"></script>
+    <script src="js/content.js"></script>
     <script src="js/speech.js"></script>
     <script src="js/app.js"></script>
     <script src="js/game.js"></script>
+    <script src="js/play.js"></script>
 </body>
 </html>
