@@ -6,6 +6,9 @@ dist/
 .cache/
 .shots/
 
+# 工作区内部数据
+.workbuddy/
+
 # 日志与临时文件
 *.log
 npm-debug.log*

@@ -5,6 +5,8 @@
 
 **版本**：v1.0.0 ｜ **词库**：8000 词（COCA 词频排序）｜ **依赖**：运行时零依赖
 
+在线体验：<https://zzfzzf1018.github.io/ai-tools/> ｜ 离线版：[Releases](https://github.com/zzfzzf1018/ai-tools/releases)
+
 ---
 
 ## 目录
