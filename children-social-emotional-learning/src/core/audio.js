@@ -109,10 +109,43 @@
     } catch (e) { return null; }
   }
 
+  /* 中文语音可用性检测。getVoices() 首次常为空，要等 voiceschanged；
+     一直为空时只报 unknown（有些环境不列声音但仍能念中文），不误报给家长。 */
+  var voiceListeners = [];
+  function isZhVoice(v) { return /^(zh|cmn)|Chinese/i.test((v.lang || '') + ' ' + (v.name || '')); }
+  function voiceStatus() {
+    if (!('speechSynthesis' in window)) return { state: 'unsupported', zh: 0, total: 0 };
+    var voices = [];
+    try { voices = window.speechSynthesis.getVoices() || []; } catch (e) {}
+    if (!voices.length) return { state: 'unknown', zh: 0, total: 0 };
+    var zh = voices.filter(isZhVoice).length;
+    return { state: zh ? 'ok' : 'missing', zh: zh, total: voices.length };
+  }
+  function onVoicesChange(fn) {
+    if (typeof fn === 'function' && voiceListeners.indexOf(fn) < 0) voiceListeners.push(fn);
+  }
+
+  /* 角色化语音：同一套本机中文语音，用音高/语速区分三位伙伴 */
+  function roles() {
+    try { return (window.SEL.state.data().voiceRoles || {}); }
+    catch (e) { return {}; }
+  }
+  function voiceRolesEnabled() {
+    try { return window.SEL.state.current().settings.voiceRoles !== false; }
+    catch (e) { return true; }
+  }
+  function roleForSpeaker(name) {
+    var s = String(name || '');
+    if (s.indexOf('咕咕') >= 0) return 'owl';
+    if (s.indexOf('小火苗') >= 0 || s.indexOf('火苗') >= 0) return 'fox';
+    return 'cloud';
+  }
+
   /* ---------------- 朗读队列 ----------------
-     voice     总开关：关掉后所有朗读（含手动小喇叭）都不出声
-     autoRead  自动引导开关：只管「不需要孩子点小喇叭」的朗读（读题、反馈、鼓励、结算）
-     voiceRate 语速 0.7–1.2，家长可调                                          */
+     voice      总开关：关掉后所有朗读（含手动小喇叭）都不出声
+     autoRead   自动引导开关：只管「不需要孩子点小喇叭」的朗读（读题、反馈、鼓励、结算）
+     voiceRate  语速 0.7–1.2，家长可调
+     voiceRoles 角色化语音开关；每句可带 role 覆盖整段默认角色                        */
   var queue = [];
   var speaking = false;
   var gen = 0;
@@ -154,8 +187,10 @@
     try { u = new SpeechSynthesisUtterance(item.text); }
     catch (e) { speaking = false; activeOpts = null; return pump(); }
     u.lang = 'zh-CN';
-    u.rate = item.opts.rate || readRate();
-    u.pitch = item.opts.pitch || 1.12;
+    var conf = item.role && voiceRolesEnabled() ? roles()[item.role] : null;
+    u.rate = item.opts.rate ||
+      Math.max(0.5, Math.min(1.5, readRate() * (conf ? (Number(conf.rate) || 1) : 1)));
+    u.pitch = item.opts.pitch || (conf ? (Number(conf.pitch) || 1.12) : 1.12);
     u.volume = 1;
     if (zhVoice) u.voice = zhVoice;
     var timer = null;
@@ -188,14 +223,20 @@
   function enqueue(parts, opts) {
     if (!voiceEnabled()) return;
     var o = opts || {};
-    var list = (Array.isArray(parts) ? parts : [parts]).map(cleanText).filter(Boolean);
+    /* 每句可以是纯文本，也可以是 { text, role }：一个故事里三位伙伴各用自己的声音 */
+    var list = (Array.isArray(parts) ? parts : [parts]).map(function (p) {
+      if (p && typeof p === 'object' && !Array.isArray(p)) {
+        return { text: cleanText(p.text), role: p.role || o.role || null };
+      }
+      return { text: cleanText(p), role: o.role || null };
+    }).filter(function (x) { return x.text; });
     if (!list.length) return;
-    list.forEach(function (t) { log(t); queue.push({ text: t, opts: o }); });
+    list.forEach(function (x) { log(x.text); queue.push({ text: x.text, opts: o, role: x.role }); });
     if (!hasSpeech()) {
       queue.length = 0;
       speaking = false;
       activeOpts = null;
-      if (o.onItem) { try { o.onItem(list[0]); } catch (e) {} }
+      if (o.onItem) { try { o.onItem(list[0].text); } catch (e) {} }
       if (o.onDone) { try { o.onDone(); } catch (e) {} }
       return;
     }
@@ -222,25 +263,35 @@
     queue.length = 0;
   }
 
+  /* 自动引导默认由团团来讲；故事里某句自带 role 时会覆盖它 */
+  function withRole(opts) {
+    var o = {};
+    for (var k in (opts || {})) {
+      if (Object.prototype.hasOwnProperty.call(opts, k)) o[k] = opts[k];
+    }
+    if (!o.role) o.role = 'cloud';
+    return o;
+  }
+
   /* 只允许「自动引导」调用的入口：家长关掉自动读题后，读题/反馈/鼓励全部安静 */
   function readAuto(parts, opts) {
     if (!autoReadEnabled()) return;
-    speakSequence(parts, opts);
+    speakSequence(parts, withRole(opts));
   }
   function readQuestion(parts, opts) {
     if (!autoReadEnabled()) return;
-    speakSequence(parts, opts);
+    speakSequence(parts, withRole(opts));
   }
   function readAutoOne(text, opts) {
     if (!autoReadEnabled()) return;
-    speak(text, opts);
+    speak(text, withRole(opts));
   }
   /* 交互短提示：不清当前正在念的一句，只把排队中的旧提示换成最新这条。
      连点卡片不会听到一串被切断的残句，也不会积压十几条等着念。 */
   function readAutoTail(text, opts) {
     if (!autoReadEnabled()) return;
     dropPending();
-    var o = opts || {};
+    var o = withRole(opts);
     o.queue = true;
     speak(text, o);
   }
@@ -260,6 +311,8 @@
     readQuestion: readQuestion,
     stopSpeak: stopSpeak, tone: tone,
     voiceEnabled: voiceEnabled, autoReadEnabled: autoReadEnabled, readRate: readRate,
+    voiceStatus: voiceStatus, onVoicesChange: onVoicesChange,
+    roles: roles, roleForSpeaker: roleForSpeaker, voiceRolesEnabled: voiceRolesEnabled,
     recent: function () { return spokenLog.slice(); },
     clearLog: function () { spokenLog = []; },
     isSpeaking: function () { return speaking || queue.length > 0; }
@@ -272,7 +325,10 @@
   if ('speechSynthesis' in window) {
     try {
       zhVoice = pickZhVoice();
-      window.speechSynthesis.addEventListener('voiceschanged', function () { zhVoice = pickZhVoice(); });
+      window.speechSynthesis.addEventListener('voiceschanged', function () {
+        zhVoice = pickZhVoice();
+        voiceListeners.forEach(function (fn) { try { fn(voiceStatus()); } catch (e) {} });
+      });
     } catch (e) {}
   }
 })();

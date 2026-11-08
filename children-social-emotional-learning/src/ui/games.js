@@ -90,14 +90,15 @@
   }
 
   function voiceBarHtml(script) {
-    return '<div class="voice-bar" data-voice-bar role="group" aria-label="题目朗读">' +
+    return '<div class="voice-bar" data-voice-bar data-read-ignore role="group" aria-label="题目朗读">' +
       '<span class="vb-icon" aria-hidden="true">🔊</span>' +
       '<span class="vb-text" data-voice-label aria-live="polite">团团把题目和选项都念给你听</span>' +
       '<button class="btn tiny blue" data-voice-replay aria-label="再听一遍整道题">🔁 再听一遍</button>' +
       (script.options && script.options.length
         ? '<button class="btn tiny ghost" data-voice-options aria-label="只听选项">📖 听选项</button>' : '') +
+      '<button class="btn tiny ghost" data-read-toggle aria-pressed="false" aria-label="切换逐句点读模式">👆 点读模式</button>' +
       '<button class="btn tiny ghost" data-voice-stop aria-label="停止朗读">⏸ 停一停</button>' +
-      '</div>';
+      '</div>' + '<div data-voice-hint-slot>' + UI.voiceHint(true) + '</div>';
   }
 
   function startReading(root, script) {
@@ -111,22 +112,35 @@
       bar.classList.remove('speaking');
       if (label) label.textContent = '团团把题目和选项都念给你听';
     }
-    function hooks() {
+    function hooks(role) {
       return {
+        role: role || 'cloud',
         onItem: function (t) {
           bar.classList.add('speaking');
           if (label) label.textContent = '正在读：' + U.cut(strip(t), 20);
+          UI.highlight(t);
         },
         onDone: function () {
           bar.classList.remove('speaking');
           if (label) label.textContent = '读完啦，想再听就点「再听一遍」';
+          UI.clearHighlight();
         },
         /* 被反馈朗读 / 换页 / 停一停打断时，audio.js 会调用它复位状态 */
-        onStop: resetBar
+        onStop: function () { resetBar(); UI.clearHighlight(); }
       };
     }
     activeHooks = hooks;
     function play(parts) { if (parts.length) Audio.speakSequence(parts, hooks()); }
+    U.delegate(bar, 'click', '[data-read-toggle]', function (e, t) {
+      var on = !UI.isReadMode();
+      UI.setReadMode(on);
+      t.setAttribute('aria-pressed', on ? 'true' : 'false');
+      t.classList.toggle('on', on);
+      t.textContent = on ? '👆 点读中（再点退出）' : '👆 点读模式';
+      Audio.readAutoOne(on
+        ? '点读模式打开啦。点哪一句就念哪一句，不会选中答案。再点一次按钮就回到玩游戏。'
+        : '回到玩游戏啦。');
+    });
     U.delegate(bar, 'click', '[data-voice-replay]', function () {
       Audio.unlock();
       if (replayHandler) { replayHandler(); return; }
@@ -147,7 +161,7 @@
 
   function setExtra(root, html) {
     var ex = U.$('.game-extra', root);
-    if (ex) ex.innerHTML = html || '';
+    if (ex) { ex.innerHTML = html || ''; UI.markReadable(ex); }
     return ex;
   }
 
@@ -586,21 +600,24 @@
         var firstDraw = true;
         /* 每个节点的完整朗读稿：说话人 + 正文 + 所有做法 / 结局的道理与探索度 */
         function nodeParts(n, ending, prog) {
-          var parts = [(n.speaker || '团团') + '说：' + strip(n.text || '')];
+          var role = Audio.roleForSpeaker(n.speaker);
+          function line(text, r) { return { text: text, role: r || role }; }
+          /* 每句带自己的角色：说话人用自己的声音，结尾的道理交给咕咕老师 */
+          var parts = [line((n.speaker || '团团') + '说：' + strip(n.text || ''))];
           if (ending) {
-            parts.push('这个小故事的道理：' + strip(n.moral || level.teach || ''));
-            parts.push('故事走到这里啦。你一共做了 ' + steps + ' 次选择，每个做法都会带来不一样的结果。');
-            parts.push('已发现 ' + prog.endingsSeen + ' 个结局，一共 ' + prog.endingsTotal + ' 个。' +
+            parts.push(line('这个小故事的道理：' + strip(n.moral || level.teach || ''), 'owl'));
+            parts.push(line('故事走到这里啦。你一共做了 ' + steps + ' 次选择，每个做法都会带来不一样的结果。'));
+            parts.push(line('已发现 ' + prog.endingsSeen + ' 个结局，一共 ' + prog.endingsTotal + ' 个。' +
               (prog.endingsRemaining > 0
                 ? '还有 ' + prog.endingsRemaining + ' 条路没走过，下次可以试试另一个做法。'
-                : '每个结局你都看过了，真好奇宝宝。'));
+                : '每个结局你都看过了，真好奇宝宝。')));
           } else {
-            parts.push('如果是你，会怎么做？');
+            parts.push(line('如果是你，会怎么做？', 'cloud'));
             (n.choices || []).forEach(function (c, i) {
-              parts.push('做法 ' + (i + 1) + '：' + strip(c.text || ''));
+              parts.push(line('做法 ' + (i + 1) + '：' + strip(c.text || ''), 'cloud'));
             });
           }
-          return parts.filter(Boolean);
+          return parts.filter(function (x) { return x && x.text; });
         }
         function draw(nodeId) {
           var n = nodes[nodeId] || {};
@@ -612,7 +629,7 @@
           var body = pathDots() +
             '<div class="story-top"><div class="story-avatar">' + face + '</div>' +
             '<div style="flex:1"><div class="spread"><div class="chip purple">' + U.esc(n.speaker || '团团') + '</div>' +
-            UI.speakBtn(n.text || '') + '</div>' +
+            UI.speakBtn(n.text || '', '朗读这一段', Audio.roleForSpeaker(n.speaker)) + '</div>' +
             '<div class="story-text" style="margin-top:10px">' + U.esc(n.text || '') + '</div></div></div>';
           if (ending) {
             var prog = { endingsSeen: 0, endingsTotal: 0, endingsRemaining: 0 };
@@ -636,6 +653,8 @@
               }).join('') + '</div>';
           }
           panel.innerHTML = body;
+          panel.setAttribute('data-role', Audio.roleForSpeaker(n.speaker));
+          UI.markReadable(panel);
           /* 正文、做法、结局的道理与探索度一次连读完，不再被下一句顶掉；
              「再听一遍」指向当前节点，手动点不受「自动读题」开关影响。 */
           var parts = nodeParts(n, ending, prog);
@@ -661,8 +680,12 @@
             '<p>' + U.esc(c.feedback || '') + '</p>' +
             '<div style="margin-top:12px"><button class="btn tiny blue" data-go>继续故事 →</button></div>';
           panel.appendChild(box);
-          Audio.readAuto(['你选了：' + strip(c.text || '') + '。',
-            (c.good ? '这样处理，感觉更稳。' : '看看接下来会发生什么。'), strip(c.feedback || '')]);
+          var feedbackRole = Audio.roleForSpeaker(node.speaker);
+          Audio.readAuto([
+            { text: '你选了：' + strip(c.text || '') + '。', role: feedbackRole },
+            { text: c.good ? '这样处理，感觉更稳。' : '看看接下来会发生什么。', role: 'cloud' },
+            { text: strip(c.feedback || ''), role: feedbackRole }
+          ], activeHooks ? activeHooks(feedbackRole) : null);
           U.$('[data-go]', box).addEventListener('click', function () {
             steps++;
             /* 点「继续故事」才算真的选定了这条路：只点开看看又离开，不写库 */

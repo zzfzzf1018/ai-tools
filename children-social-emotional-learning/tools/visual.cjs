@@ -86,7 +86,9 @@ async function makeWindow(width, height) {
   `);
   await win.loadFile(path.join(ROOT, 'index.html'));
   await sleep(500);
-  await win.webContents.insertCSS('*{animation:none !important;transition:none !important;caret-color:transparent !important}html{scroll-behavior:auto !important}');
+  /* 家长语音提示取决于运行机器有没有装中文语音，必须屏蔽，
+     否则同一份代码在不同机器上截出来的基线永远对不上。 */
+  await win.webContents.insertCSS('*{animation:none !important;transition:none !important;caret-color:transparent !important}html{scroll-behavior:auto !important}.voice-hint{display:none !important}');
   return win;
 }
 

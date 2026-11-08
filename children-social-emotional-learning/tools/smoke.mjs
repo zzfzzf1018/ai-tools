@@ -39,7 +39,7 @@ Object.defineProperty(w, 'speechSynthesis', {
   configurable: true,
   value: {
     getVoices: () => [],
-    addEventListener: () => {},
+    addEventListener: (name, fn) => { if (name === 'voiceschanged') w.__voicesChanged = fn; },
     removeEventListener: () => {},
     cancel: () => { cancelCount++; },
     speak: (u) => {
@@ -1225,6 +1225,259 @@ try {
   try { if (backup29) w.SEL.state.importSave(backup29); } catch (e) {}
 }
 
+/* ==================== 30. v1.3.0：逐句点读 / 角色语音 / 双示范 ==================== */
+let getVoices30 = null, backup30 = null;
+try {
+  const A = w.SEL.audio;
+  const UI30 = w.SEL.ui;
+  backup30 = w.SEL.state.exportSave();
+  getVoices30 = w.speechSynthesis.getVoices;
+  const spoken = () => utterances.map(u => u.text);
+  const levels30 = w.SEL.state.allLevels();
+  const choiceLv = levels30.find(x => x.level.type === 'choice').level;
+  const storyLv = levels30.find(x => x.level.type === 'story').level;
+  w.SEL.state.clearPin();
+  w.SEL.state.update(p => {
+    p.stars = 999;
+    levels30.forEach(x => { p.levels[x.level.id] = { done: true, stars: 3, attempts: 1, lastAt: '2026-01-01' }; });
+  });
+  w.SEL.state.setSetting('voice', true);
+  w.SEL.state.setSetting('autoRead', true);
+  w.SEL.state.setSetting('voiceRate', 0.9);
+  w.SEL.state.setSetting('voiceRoles', true);
+  function freshRoute(hash) {
+    utterances.length = 0;
+    A.clearLog();
+    route(hash);
+    return spoken();
+  }
+
+  // 30a 数据：31 组双示范 + 三位角色音高各不相同
+  {
+    const exD = w.SEL_DATA.expression;
+    must(exD.prompts.every(p => p.demoAdult && p.demoAdult !== p.demo), '情境卡缺少「对大人说」示范');
+    const keys = Object.keys(exD.levelPrompts);
+    must(keys.length === 19, '关卡话题数量不对');
+    must(keys.every(k => exD.levelPrompts[k].demoAdult && exD.levelPrompts[k].demoAdult !== exD.levelPrompts[k].demo),
+      '关卡话题缺少「对大人说」示范');
+    const vr = w.SEL_DATA.voiceRoles;
+    must(new Set(['cloud', 'owl', 'fox'].map(k => vr[k].pitch)).size === 3 &&
+      new Set(['cloud', 'owl', 'fox'].map(k => vr[k].rate)).size === 3, '三位角色的音高/语速没区分开');
+    must(A.roleForSpeaker('咕咕老师') === 'owl' && A.roleForSpeaker('小火苗') === 'fox' &&
+      A.roleForSpeaker('团团') === 'cloud', '说话人到角色的映射不对');
+  }
+
+  // 30b 逐句点读：非交互文本随时可点并高亮；交互选项只在点读模式下才读
+  {
+    freshRoute('#/level/' + choiceLv.id);
+    const prompt = q('.game-prompt');
+    const option = q('.option-btn');
+    must(!!prompt && prompt.hasAttribute('data-read'), '题干没有标成可点读');
+    must(!!prompt && prompt.hasAttribute('data-say'), '非交互题干应随时可点读');
+    must(!!option && option.hasAttribute('data-read') && !option.hasAttribute('data-say'),
+      '交互选项不该在正常模式下抢朗读');
+    syncEnd = false;
+    utterances.length = 0;
+    click(prompt);
+    must(spoken().some(t => t.includes(String(choiceLv.data.prompt).slice(0, 8))), '点题干没有朗读');
+    must(prompt.classList.contains('reading'), '点读后没有高亮当前句');
+    A.stopSpeak();
+    must(!prompt.classList.contains('reading'), '打断朗读后高亮没有清除');
+    syncEnd = true;
+  }
+
+  // 30c 自动读题时高亮跟着一句一句走；打断后清除
+  {
+    syncEnd = false;
+    freshRoute('#/level/' + choiceLv.id);
+    must(!!q('.reading'), '自动读题没有高亮正在读的句子');
+    A.stopSpeak();
+    must(!q('.reading'), '打断自动读题后仍残留高亮');
+    syncEnd = true;
+    freshRoute('#/level/' + choiceLv.id);
+    const opt = q('.option-btn');
+    const optText = opt.getAttribute('data-read');
+    must(!!optText && optText.indexOf('做法') < 0, '可点读文本仍带着选项装饰文字');
+    UI30.highlight('做法 1：' + optText);
+    must(opt.classList.contains('reading'), '读到选项时没有高亮对应选项（前缀/emoji 匹配失败）');
+    UI30.clearHighlight();
+    utterances.length = 0;
+    click(q('.game-prompt'));
+    must(spoken().length === 1, '点一句非交互文本触发了不止一次朗读');
+    must(q('.game-prompt').getAttribute('data-role') === 'cloud', '手动点读没有默认用团团的声音');
+    const gpPitch = utterances[0] && utterances[0].pitch;
+    must(gpPitch === w.SEL_DATA.voiceRoles.cloud.pitch, '手动点读没有应用角色音高');
+  }
+
+  // 30d 点读模式：点选项只念不选，退出后恢复正常交互
+  {
+    freshRoute('#/level/' + choiceLv.id);
+    click(q('[data-read-toggle]'));
+    must(UI30.isReadMode(), '点读模式没有打开');
+    utterances.length = 0;
+    click(q('.option-btn'));
+    must(!q('.feedback-box'), '点读模式下点选项仍然触发了选择');
+    must(spoken().length > 0, '点读模式下点选项没有朗读');
+    click(q('[data-read-toggle]'));
+    must(!UI30.isReadMode(), '点读模式没有退出');
+    click(q('.option-btn'));
+    must(!!q('.feedback-box'), '退出点读模式后选项点不动了');
+    route('#/home');
+  }
+
+  // 30d-2 点读模式不能吞掉结算按钮 / 篮子 / 说一说提交 / 返回按钮
+  {
+    const sliderLv = levels30.find(x => x.level.type === 'slider').level;
+    const classifyLv = levels30.find(x => x.level.type === 'classify').level;
+    freshRoute('#/level/' + sliderLv.id);
+    click(q('[data-submit]'));
+    must(!!q('[data-finish]'), '温度计关没有出现「收下星星」按钮');
+    click(q('[data-read-toggle]'));
+    const attemptsBefore = w.SEL.state.current().levels[sliderLv.id].attempts;
+    click(q('[data-finish]'));
+    must(w.SEL.state.current().levels[sliderLv.id].attempts === attemptsBefore + 1,
+      '点读模式吞掉了「收下星星」，关卡无法结算');
+    w.SEL.ui.closeModal();
+
+    freshRoute('#/level/' + classifyLv.id);
+    click(q('.drag-item'));
+    click(q('[data-read-toggle]'));
+    const placedBefore = qa('.drag-item[data-placed]').length;
+    click(q('.bucket'));
+    must(qa('.drag-item[data-placed]').length === placedBefore, '点读模式下点篮子仍触发了放置');
+    click(q('[data-read-toggle]'));
+
+    freshRoute('#/level/' + choiceLv.id);
+    click(q('[data-read-toggle]'));
+    const totalBefore = w.SEL.state.expressionStats().total;
+    click(q('[data-say-done]'));
+    must(w.SEL.state.expressionStats().total === totalBefore + 1, '点读模式吞掉了「我说出来啦」');
+    const back = q('[data-nav^="#/island/"]');
+    click(back);
+    must(String(w.location.hash).indexOf('#/island/') === 0, '点读模式下返回按钮失灵');
+    w.SEL.render();   // jsdom 的 hashchange 是异步的，显式触发一次路由重绘
+    must(!UI30.isReadMode(), '换页后点读模式没退出');
+  }
+
+  // 30e 角色音高/语速、逐句角色、家长关闭开关
+  {
+    const pitches = {}, rates = {};
+    ['cloud', 'owl', 'fox'].forEach(id => {
+      utterances.length = 0;
+      A.speak('测试声音', { role: id });
+      pitches[id] = utterances[0].pitch;
+      rates[id] = utterances[0].rate;
+    });
+    must(new Set(Object.values(pitches)).size === 3, '三位角色音高没有区别');
+    must(new Set(Object.values(rates)).size === 3, '三位角色语速没有区别');
+    utterances.length = 0;
+    A.speakSequence([{ text: '团团说', role: 'cloud' }, { text: '咕咕说', role: 'owl' }]);
+    must(utterances.length === 2 && utterances[0].pitch !== utterances[1].pitch, '逐句角色没有生效');
+    w.SEL.state.setSetting('voiceRoles', false);
+    utterances.length = 0;
+    A.speak('测试声音', { role: 'fox' });
+    must(utterances[0].pitch === 1.12, '关掉角色化语音后仍用了角色音高');
+    w.SEL.state.setSetting('voiceRoles', true);
+    w.SEL.state.setSetting('voiceRate', 1.2);
+    utterances.length = 0;
+    A.readAutoOne('试听', { role: 'fox' });
+    must(Math.abs(utterances[0].rate - 1.2 * w.SEL_DATA.voiceRoles.fox.rate) < 0.001,
+      '自动朗读没有把家长语速与角色倍率相乘');
+    w.SEL.state.setSetting('voiceRate', 0.9);
+  }
+
+  // 30f 中文语音状态三态 + 家长提示 + 设置页试听
+  {
+    w.speechSynthesis.getVoices = () => [{ lang: 'en-US', name: 'English' }];
+    must(A.voiceStatus().state === 'missing', '只有英文语音时应报 missing');
+    const hint = UI30.voiceHint(false);
+    must(hint.includes('Windows') && hint.includes('试听一句'), '缺语音时没有给家长安装指引');
+    route('#/settings');
+    must(!!q('[data-voice-status]'), '设置页缺少中文语音状态卡');
+    must(qa('[data-role-test]').length === 3, '设置页没有三个角色试听按钮');
+    utterances.length = 0;
+    click(q('[data-voice-test]'));
+    must(spoken().length > 0, '家长试听按钮没有朗读');
+    w.speechSynthesis.getVoices = () => [{ lang: 'zh-CN', name: 'Huihui' }];
+    must(A.voiceStatus().state === 'ok', '检测到中文语音时应报 ok');
+    must(UI30.voiceHint(false) === '', '有中文语音时仍显示缺语音提示');
+    w.speechSynthesis.getVoices = () => [];
+    must(A.voiceStatus().state === 'unknown', '语音清单为空时应报 unknown');
+    must(UI30.voiceHint(false) === '', 'unknown 状态不该误报给家长');
+
+    /* voiceschanged 常常晚到：关卡页与设置页都要局部刷新，且不能整页重绘掐断试听 */
+    freshRoute('#/level/' + choiceLv.id);
+    must(!q('[data-voice-hint]'), 'unknown 时关卡页不该显示语音提示');
+    w.speechSynthesis.getVoices = () => [{ lang: 'en-US', name: 'English' }];
+    if (w.__voicesChanged) w.__voicesChanged();
+    must(!!q('[data-voice-hint]'), 'voiceschanged 后关卡页没有出现家长提示');
+    w.speechSynthesis.getVoices = () => [{ lang: 'zh-CN', name: 'Huihui' }];
+    if (w.__voicesChanged) w.__voicesChanged();
+    must(!q('[data-voice-hint]'), '语音就绪后关卡页的提示没有撤掉');
+
+    route('#/settings');
+    w.speechSynthesis.getVoices = () => [{ lang: 'en-US', name: 'English' }];
+    if (w.__voicesChanged) w.__voicesChanged();
+    must(!!q('[data-voice-status] [data-voice-hint]'), '设置页状态卡没有随 voiceschanged 局部刷新');
+    w.speechSynthesis.getVoices = () => [{ lang: 'zh-CN', name: 'Huihui' }];
+    if (w.__voicesChanged) w.__voicesChanged();
+    must(!q('[data-voice-status] [data-voice-hint]'), '语音就绪后设置页提示没有撤掉');
+  }
+
+  // 30g 双示范切换：文本/点读/朗读/计次/家长统计全链路
+  {
+    route('#/express/ex-1');
+    const card = q('[data-say-card]');
+    must(card.getAttribute('data-variant') === 'peer', '默认示范不是「对同伴说」');
+    const demoP = q('[data-say-demo-text]');
+    const peerText = demoP.textContent;
+    click(q('[data-variant="adult"]'));
+    must(card.getAttribute('data-variant') === 'adult', '没有切到「对大人说」');
+    must(demoP.textContent !== peerText, '切换后示范句没有变');
+    must(demoP.getAttribute('data-read') === demoP.textContent, '切换示范后逐句点读文本没更新');
+    utterances.length = 0;
+    click(q('[data-say-demo]'));
+    must(spoken()[0] === demoP.textContent, '听示范读的不是当前选中的那一句');
+    const beforeAdult = w.SEL.state.expressionStats().variants.adult;
+    click(q('[data-say-done]'));
+    must(w.SEL.state.expressionStats().variants.adult === beforeAdult + 1, '没有记下 adult 变体');
+    const parentHtml = route('#/parent');
+    must(parentHtml.includes('对大人说'), '家长面板没有显示双示范统计');
+    route('#/level/' + choiceLv.id);
+    must(!!q('[data-say-card] [data-variant="adult"]'), '关卡页的说一说卡缺少双示范切换');
+  }
+
+  // 30h 导入清洗 / 偏好保留 / 换页复位
+  {
+    const backup = JSON.parse(w.SEL.state.exportSave());
+    backup.profiles[0].expression.variants = JSON.parse('{"peer":-5,"adult":999999,"__proto__":7}');
+    backup.profiles[0].settings.voiceRoles = 'yes';
+    w.SEL.state.importSave(JSON.stringify(backup));
+    const v = w.SEL.state.current().expression.variants;
+    must(Object.keys(v).join(',') === 'peer,adult', 'variants 里混入了未知键');
+    must(v.peer === 0, 'variants 负数没有清洗');
+    must(w.SEL.state.current().settings.voiceRoles === true, '非法 voiceRoles 没有回落默认值');
+    w.SEL.state.setSetting('voiceRoles', false);
+    w.SEL.state.resetProfile(w.SEL.state.current().id);
+    must(w.SEL.state.current().settings.voiceRoles === false, '清空进度把角色化语音偏好也清掉了');
+    UI30.setReadMode(true);
+    route('#/home');
+    must(!UI30.isReadMode(), '换页后点读模式没有自动退出');
+    must(!q('.reading'), '换页后仍残留高亮');
+  }
+
+  w.SEL.state.importSave(backup30);
+} catch (e) {
+  fails.push('回归组30异常: ' + (e && e.stack || e));
+} finally {
+  syncEnd = true;
+  try { if (getVoices30) w.speechSynthesis.getVoices = getVoices30; } catch (e) {}
+  try { w.SEL.state.setSetting('voiceRoles', true); } catch (e) {}
+  try { w.SEL.ui.setReadMode(false); w.SEL.ui.clearHighlight(); } catch (e) {}
+  try { w.SEL.audio.stopSpeak(); } catch (e) {}
+  try { if (backup30) w.SEL.state.importSave(backup30); } catch (e) {}
+}
+
 const levelCount = (w.SEL_DATA.islands || []).reduce((a, i) => a + i.levels.length, 0);
 console.log('=== 心晴岛 运行时冒烟测试 ===');
 console.log(`页面/关卡覆盖: 12 页 + ${(w.SEL_DATA.islands || []).length} 岛 + ${levelCount} 关`);
@@ -1236,6 +1489,6 @@ if (fails.length) {
   console.log(`\n--- 失败 (${fails.length}) ---`);
   [...new Set(fails)].forEach(f => console.log('  x ' + f));
 } else if (!runtimeErrors.length) {
-  console.log(`\n✅ 全部页面、${levelCount} 个关卡、签到闭环、7 种题型、解锁链路、存档导入、家长面板、1.1.x 功能与 1.2.0 全关卡朗读 / 说一说均通过`);
+  console.log(`\n✅ 全部页面、${levelCount} 个关卡、签到闭环、7 种题型、解锁链路、存档导入、家长面板，1.1.x / 1.2.0 功能与 1.3.0 逐句点读 / 角色语音 / 双示范均通过`);
 }
 process.exit(fails.length || runtimeErrors.length ? 1 : 0);

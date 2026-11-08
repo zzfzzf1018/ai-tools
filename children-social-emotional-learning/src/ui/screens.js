@@ -357,8 +357,9 @@
       (topic ? E().card(topic, { hideable: true }) : '') +
       '<div class="center small muted" style="margin-top:20px">慢慢来，没有时间限制，也没有「答错」这回事 🌿</div></div>';
     return wrap(html, function (root) {
-      /* 先挂播报条与状态回调，再挂载玩法：互动故事在首次 draw() 时就要用上
-         同一套 onItem/onDone，否则故事关的播报条永远停在初始文案。 */
+      /* 先把静态文字标成可点读，自动朗读的 onItem 才能命中并高亮；
+         再挂播报条与状态回调，最后挂载玩法（互动故事 draw() 时会自己重标一次）。 */
+      UI.markReadable(root);
       G.startReading(root, game.read);
       game.mount(root);
       if (topic) E().mount(root, topic);
@@ -1116,6 +1117,37 @@
   }
 
   /* ==================== 设置 ==================== */
+  function voiceStatusBody() {
+    var st = Audio.voiceStatus();
+    var txt = st.state === 'ok'
+      ? '已检测到 ' + st.zh + ' 个中文语音，朗读可以正常使用。'
+      : (st.state === 'unknown'
+        ? '浏览器还没列出语音清单，可以先点下面的按钮试听一句。'
+        : '朗读由这台电脑本机完成，不会联网。');
+    var roles = Audio.roles();
+    var roleBtns = ['cloud', 'owl', 'fox'].map(function (id) {
+      var r = roles[id] || {};
+      return '<button class="btn tiny blue" data-role-test="' + id + '">' +
+        esc(r.emoji || '🔊') + ' 听' + esc(r.name || id) + '</button>';
+    }).join('');
+    return '<h3>🔊 这台电脑的中文语音</h3>' +
+      '<p class="small muted">' + esc(txt) + '</p>' +
+      UI.voiceHint(false) +
+      '<div class="row tight" style="margin-top:12px;flex-wrap:wrap">' +
+        (st.state === 'missing' || st.state === 'unsupported'
+          ? '' : '<button class="btn tiny ghost" data-voice-test>🔊 试听一句</button>') +
+        (st.state === 'unsupported' ? '' : roleBtns) + '</div>' +
+      '<p class="small muted" style="margin-top:10px">三位伙伴用同一套本机语音、不同音高与语速；关掉「角色化语音」就都用同一个声音。</p>';
+  }
+  function voiceStatusCard() {
+    return '<div class="card" style="margin-top:20px" data-voice-status>' + voiceStatusBody() + '</div>';
+  }
+  /* voiceschanged 常常晚到：只局部刷新状态卡，不整页重绘（会掐断家长正在试听的一句） */
+  function refreshVoiceStatus() {
+    var box = U.$('[data-voice-status]');
+    if (box) box.innerHTML = voiceStatusBody();
+  }
+
   function settings() {
     var p = S.current();
     function row(label, desc, key) {
@@ -1129,6 +1161,7 @@
       '<div class="card">' +
         row('朗读文字 🔊', '总开关：点小喇叭、自动读题、反馈与鼓励都用中文念出来', 'voice') +
         row('自动读题 📖', '进入关卡自动念题目、玩法、选项与反馈；关掉后仍可点小喇叭重听', 'autoRead') +
+        row('角色化语音 🎭', '团团、咕咕老师、小火苗用不同音高与语速讲故事', 'voiceRoles') +
         '<div class="setting-row"><div><b>朗读语速 🐢</b><div class="small muted">念得快一点还是慢一点，选完马上试听一句</div></div>' +
           '<select class="time-select" data-rate aria-label="朗读语速">' +
           [0.7, 0.8, 0.9, 1, 1.1, 1.2].map(function (v) {
@@ -1159,17 +1192,24 @@
         '<div class="setting-row"><div><b>导出备份 💾</b><div class="small muted">把所有记录存成一个文件</div></div>' +
           '<button class="btn tiny blue" data-export>导出 JSON</button></div>' +
       '</div>' +
+      voiceStatusCard() +
       '<div class="card" style="margin-top:20px"><h3>关于心晴岛</h3>' +
         '<p class="muted">面向 6-10 岁儿童的社会情绪学习游戏，参考 CASEL 五大能力框架，用情境故事、配对、排序、呼吸练习和每日心情签到，把「认识情绪—练习方法—用到生活里」串成一条闭环。全部内容离线运行，无广告、无账号、无数据上传。</p>' +
         '<p class="small muted"><b>边界：</b>这是教育游戏，不是心理评估或诊断工具，也不构成任何医疗建议。孩子若持续困扰，请寻求学校心理老师或专业人士的帮助。</p>' +
         '<p class="small muted">版本 ' + esc(appVersion() || '未知') + ' · Web 版与 Windows 桌面版共用同一份内容</p></div>';
     return wrap(html, function (root) {
       U.delegate(root, 'click', '[data-export]', function () { exportFile(); });
+      U.delegate(root, 'click', '[data-role-test]', function (e, t) {
+        var id = t.getAttribute('data-role-test');
+        Audio.unlock();
+        Audio.speak('你好呀，我是' + ((Audio.roles()[id] || {}).name || '团团') + '，我们一起玩吧。', { role: id });
+      });
       U.delegate(root, 'change', '[data-rate]', function (e, t) {
         S.setSetting('voiceRate', Number(t.value));
         Audio.readAutoOne('这样念，速度可以吗？');
         UI.toast('朗读语速已经调好啦');
       });
+      /* voiceschanged 由 main.js 全局监听一次，这里只负责本页按钮 */
     });
   }
 
@@ -1181,6 +1221,7 @@
     checkin: checkin, strategies: strategies, runStrategy: runStrategy,
     garden: garden, stickers: stickers, parent: parent, profile: profile,
     settings: settings, help: help, report: report, express: express, exportFile: exportFile,
+    refreshVoiceStatus: refreshVoiceStatus,
     gateModal: gateModal,
     TYPE_NAME: TYPE_NAME, ISLAND_LABEL: ISLAND_LABEL
   };

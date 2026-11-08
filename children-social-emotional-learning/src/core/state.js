@@ -48,11 +48,13 @@
       usage: { date: U.today(), seconds: 0 },   // 当天累计使用秒数（家长端时长限制用）
       stories: {},         // storyId -> { nodes: [], endings: [] } 走过的分支
       /* 只记「说过的次数 / 日期 / 用过的句式」，绝不保存孩子说的内容 */
-      expression: { total: 0, days: [], frames: {}, prompts: {}, todayStars: { date: '', count: 0 }, lastAt: '' },
+      expression: { total: 0, days: [], frames: {}, prompts: {}, variants: { peer: 0, adult: 0 },
+        todayStars: { date: '', count: 0 }, lastAt: '' },
       settings: {
         voice: true, sfx: true, reduceMotion: false,
         autoRead: true,          // 进入关卡自动读题、反馈与鼓励
         voiceRate: 0.9,          // 朗读语速 0.7–1.2
+        voiceRoles: true,        // 团团 / 咕咕老师 / 小火苗 用不同音高语速
         screenLimit: 0,          // 每日分钟上限，0 = 不限制
         bedtimeOn: false,        // 睡前锁定
         bedtimeStart: '20:30',
@@ -213,11 +215,20 @@
     });
     return out;
   }
+  /* 两种示范各练了多少次，只认这两个键，导入的怪键一律丢弃 */
+  function cleanVariants(v) {
+    var out = { peer: 0, adult: 0 };
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return out;
+    out.peer = Math.max(0, intIn(v.peer, 0, 1e6, 0));
+    out.adult = Math.max(0, intIn(v.adult, 0, 1e6, 0));
+    return out;
+  }
   function cleanExpression(x) {
     var known = knownExpressionKeys();
     var out = {
       total: 0, days: [], frames: cleanCountMap(x && x.frames, known.frames),
       prompts: cleanCountMap(x && x.prompts, known.prompts),
+      variants: cleanVariants(x && x.variants),
       todayStars: { date: '', count: 0 }, lastAt: ''
     };
     if (!x || typeof x !== 'object' || Array.isArray(x)) return out;
@@ -263,7 +274,7 @@
       SKILLS.forEach(function (k) { p.skills[k] = Math.max(0, intIn(p.skills[k], 0, 1e9, 0)); });
 
       if (!p.settings || typeof p.settings !== 'object' || Array.isArray(p.settings)) p.settings = {};
-      ['voice', 'sfx', 'reduceMotion', 'bedtimeOn', 'autoRead'].forEach(function (k) {
+      ['voice', 'sfx', 'reduceMotion', 'bedtimeOn', 'autoRead', 'voiceRoles'].forEach(function (k) {
         if (typeof p.settings[k] !== 'boolean') p.settings[k] = base.settings[k];
       });
       var vr = Number(p.settings.voiceRate);
@@ -560,12 +571,13 @@
   /* ---------- 说一说 · 勇气小话筒 ----------
      孩子自己点「我说出来啦」才记一次：不录音、不识别、不保存说过的话。
      同一天最多发 3 颗勇气星，之后照常累计次数（避免孩子刷星）。 */
-  function recordExpression(topicId, frameId) {
+  function recordExpression(topicId, frameId, variant) {
     var known = knownExpressionKeys();
     var id = typeof topicId === 'string' ? topicId.slice(0, 60) : '';
     if (!id || !known.prompts[id]) return null;   /* 未知话题不写库，防伪造 */
     var frame = typeof frameId === 'string' ? frameId.slice(0, 40) : '';
     if (frame && !known.frames[frame]) frame = '';
+    var mode = variant === 'adult' ? 'adult' : 'peer';
     var today = U.today();
     var out = { star: 0, total: 0, streak: 0, capped: false, badges: [] };
     update(function (p) {
@@ -578,6 +590,7 @@
       rec.count = Math.min(999, rec.count + 1);
       if (frame) e.frames[frame] = (e.frames[frame] || 0) + 1;
       e.prompts[id] = (e.prompts[id] || 0) + 1;
+      e.variants[mode] = (e.variants[mode] || 0) + 1;
       e.lastAt = today;
       if (e.todayStars.date !== today) e.todayStars = { date: today, count: 0 };
       var cap = dailyCap();
@@ -615,7 +628,7 @@
     });
     return {
       total: e.total, streak: streak, week: week, days: e.days.length,
-      lastAt: e.lastAt, topFrame: topFrame, frames: e.frames,
+      lastAt: e.lastAt, topFrame: topFrame, frames: e.frames, variants: e.variants,
       today: byDate[U.today()] || 0,
       todayStars: e.todayStars.date === U.today() ? e.todayStars.count : 0
     };
@@ -815,6 +828,7 @@
         f.settings = {
           voice: p.settings.voice, sfx: p.settings.sfx, reduceMotion: p.settings.reduceMotion,
           autoRead: p.settings.autoRead, voiceRate: p.settings.voiceRate,
+          voiceRoles: p.settings.voiceRoles,
           screenLimit: p.settings.screenLimit, bedtimeOn: p.settings.bedtimeOn,
           bedtimeStart: p.settings.bedtimeStart, bedtimeEnd: p.settings.bedtimeEnd
         };

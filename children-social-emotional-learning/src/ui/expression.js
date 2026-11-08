@@ -23,12 +23,12 @@
     var t = (cfg().levelPrompts || {})[level && level.id];
     if (!t) return null;
     return { id: level.id, scene: t.scene || level.intro || '', who: t.who || '团团',
-      demo: t.demo || '', frame: '', fromLevel: true };
+      demo: t.demo || '', demoAdult: t.demoAdult || t.demo || '', frame: '', fromLevel: true };
   }
 
   function toTopic(p) {
     return { id: p.id, scene: p.scene, who: p.who, demo: p.demo,
-      frame: p.frame, emoji: p.emoji, feeling: p.feeling };
+      demoAdult: p.demoAdult || p.demo || '', frame: p.frame, emoji: p.emoji, feeling: p.feeling };
   }
   function randomTopic(excludeId) {
     var list = prompts();
@@ -85,14 +85,16 @@
     opts = opts || {};
     var st = S.expressionStats();
     var fs = frames();
-    var cardText = [topic.scene, topic.who, topic.demo].concat(fs.map(function (f) { return f.label + f.hint; })).filter(Boolean).join('。');
+    var cardText = [topic.scene, topic.who, topic.demo, topic.demoAdult]
+      .concat(fs.map(function (f) { return f.label + f.hint; })).filter(Boolean).join('。');
     var audienceHtml = opts.showAudience
       ? '<div class="say-audience"><label for="say-who">这句话，想说给谁听？</label> ' +
         '<select id="say-who" data-say-who aria-label="选择说话对象">' +
         audiences().map(function (a, i) { return '<option value="' + i + '">' + esc(a) + '</option>'; }).join('') +
         '</select><span class="small muted">选谁都可以，说给自己听也算数</span></div>'
       : '';
-    return '<section class="say-card" data-say-card data-topic="' + esc(topic.id) + '" data-frame="' + esc(topic.frame || '') + '">' +
+    return '<section class="say-card" data-say-card data-topic="' + esc(topic.id) +
+      '" data-frame="' + esc(topic.frame || '') + '" data-variant="peer">' +
       '<div class="say-head">' +
         '<span class="say-emoji" aria-hidden="true">' + esc(topic.emoji || '🗣️') + '</span>' +
         '<div class="say-head-text"><h3>说一说 · 勇气小话筒</h3>' +
@@ -107,9 +109,13 @@
           '<div><b>' + esc(f.label) + '</b><div class="small muted">' + esc(f.hint) + '，例如：' + esc(f.example) + '</div></div></div>';
       }).join('') + '</div>' +
       audienceHtml +
-      '<div class="say-demo"><div class="spread"><b>🔊 先听团团说一遍</b>' +
+      '<div class="say-demo"><div class="spread"><b>🔊 先听一句话怎么说</b>' +
         '<button class="btn tiny blue" data-say-demo>听示范 ▶</button></div>' +
-        '<p>' + esc(topic.demo) + '</p>' +
+        '<div class="say-variants" role="group" aria-label="选择示范对象">' +
+          '<button class="btn tiny primary" data-variant="peer" aria-pressed="true">👫 对同伴说</button>' +
+          '<button class="btn tiny ghost" data-variant="adult" aria-pressed="false">🧑 对大人说</button>' +
+          '<span class="small muted">同一件事，换个人听，说法也换一换</span></div>' +
+        '<p data-say-demo-text>' + esc(topic.demo) + '</p>' +
         '<div class="small muted">听完就轮到你啦，用自己的话说说看，说得不一样也没关系。</div></div>' +
       '<div class="say-actions">' +
         '<button class="btn primary" data-say-done>🗣️ 我说出来啦</button>' +
@@ -132,6 +138,8 @@
     var feedback = U.$('[data-say-feedback]', box);
     var whoSel = U.$('[data-say-who]', box);
     var target = U.$('[data-say-target]', box);
+    var variant = 'peer';
+    function demoText() { return variant === 'adult' ? (topic.demoAdult || topic.demo) : topic.demo; }
 
     if (whoSel) {
       whoSel.addEventListener('change', function () {
@@ -139,8 +147,24 @@
         if (target && a) target.textContent = a;
       });
     }
+    /* 同一话题两种示范：对同伴说更短更直接，对大人说带称呼、把需要什么帮助讲清楚 */
+    U.delegate(box, 'click', '[data-variant]', function (e, t) {
+      var v = t.getAttribute('data-variant') === 'adult' ? 'adult' : 'peer';
+      if (v === variant) return;
+      variant = v;
+      box.setAttribute('data-variant', v);
+      U.$$('[data-variant]', box).forEach(function (b) {
+        var on = b.getAttribute('data-variant') === v;
+        b.classList.toggle('primary', on);
+        b.classList.toggle('ghost', !on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      var p = U.$('[data-say-demo-text]', box);
+      if (p) { p.textContent = demoText(); UI.setReadable(p); }
+      Audio.speak(demoText(), { role: 'cloud' });
+    });
     U.delegate(box, 'click', '[data-say-demo]', function () {
-      Audio.speak(topic.demo);
+      Audio.speak(demoText(), { role: 'cloud' });
       UI.toast('听完轮到你啦 🗣️');
     });
     if (U.$('[data-say-hide]', box)) {
@@ -161,7 +185,7 @@
       doneBtn.setAttribute('data-claimed', '1');
       doneBtn.disabled = true;
       doneBtn.textContent = '已说出口 ✓';
-      var r = S.recordExpression(topic.id, box.getAttribute('data-frame') || '');
+      var r = S.recordExpression(topic.id, box.getAttribute('data-frame') || '', variant);
       if (!r) {   /* 课程数据异常时不写库，但仍给孩子一句鼓励 */
         feedback.innerHTML = '<div class="feedback-box good"><b>你把话说出来啦 💛</b></div>';
         return;
@@ -172,7 +196,8 @@
         '<div class="small" style="margin-top:6px">' +
         (r.star ? '收到 1 颗勇气星 ⭐'
           : '今天的勇气星已经收满 ' + starCap() + ' 颗啦，说出来本身就很棒 💛') +
-        ' · 累计说出来 ' + r.total + ' 次' + (r.streak > 1 ? ' · 连续 ' + r.streak + ' 天' : '') + '</div>' +
+        ' · 累计说出来 ' + r.total + ' 次' + (r.streak > 1 ? ' · 连续 ' + r.streak + ' 天' : '') +
+        ' · 这次练的是对' + (variant === 'adult' ? '大人' : '同伴') + '说</div>' +
         r.badges.map(function (b) {
           return '<div class="say-badge">🎖️ 新贴纸：' + esc(b.title) + ' — ' + esc(b.text) + '</div>';
         }).join('') +
@@ -234,6 +259,7 @@
     return {
       html: html,
       mount: function (root) {
+        UI.markReadable(root);
         function refresh() {
           var s = U.$('[data-say-stat-slot]', root);
           if (s) s.innerHTML = statStrip() + weekStrip();
@@ -249,6 +275,7 @@
           inner.innerHTML = card(topic, { next: true, showAudience: true });
           slot.innerHTML = '';
           slot.appendChild(inner);
+          UI.markReadable(inner);
           mount(inner, topic, function () { draw(randomTopic(topic.id), true); }, refresh);
           if (announce) {
             Audio.readAuto(['换一张情境卡。' + topic.scene + '。想好了就大声说出来。']);
@@ -268,6 +295,7 @@
     var fs = frames().filter(function (f) { return f.id === st.topFrame; })[0];
     var owned = S.current().stickers || [];
     var got = badges().filter(function (b) { return owned.indexOf(b.id) >= 0; }).length;
+    var v = st.variants || { peer: 0, adult: 0 };
     return '<div class="card" style="margin-top:20px"><h3>🗣️ 开口表达</h3>' +
       '<div class="kpi-grid" style="margin-top:10px">' +
         '<div class="kpi"><b>' + st.total + '</b><span>累计说出来</span></div>' +
@@ -276,6 +304,8 @@
         '<div class="kpi"><b>' + got + '/' + badges().length + '</b><span>勇气贴纸</span></div>' +
       '</div>' +
       weekStrip() +
+      '<p class="small muted" style="margin-top:10px">两种示范各练了：对同伴说 <b>' + v.peer +
+        '</b> 次 · 对大人说 <b>' + v.adult + '</b> 次。</p>' +
       '<p class="small muted" style="margin-top:10px">' +
         (st.total ? '最近一次：' + esc(U.prettyDate(st.lastAt || U.today())) +
           (fs ? ' · 最常练的句式：' + esc(fs.label) : '') : '还没有开口记录，可以从首页的「说一说」陪孩子试一次。') +

@@ -27,6 +27,8 @@
     UI.closeModal();
     UI.resetSay();
     Audio.stopSpeak();
+    UI.setReadMode(false);      /* 换页自动退出点读模式，免得孩子到新页面点不动 */
+    UI.clearHighlight();
 
     var p = parts(), view;
     currentRoute = p[0] || 'home';
@@ -120,6 +122,25 @@
     }
   }
 
+  /* 点读模式：捕获阶段拦下点击，点任何一句只朗读、不触发选项/卡片的游戏逻辑。
+     播报条（data-read-ignore）里的按钮照常工作，用来退出点读模式。 */
+  document.addEventListener('click', function (e) {
+    if (!UI.isReadMode()) return;
+    var t = e.target;
+    if (!t || !t.closest || t.closest('[data-read-ignore]')) return;
+    var el = t.closest('[data-read]');
+    if (!el) return;
+    /* 命中祖先容器、但点的是里面另一个按钮（如反馈框里的「收下星星」、换做法按钮）：
+       放行，否则点读模式会吞掉结算，孩子拿不到星星。ctrl === el 时说明点的就是
+       这个可点读的选项本身（option-btn / pair-item），仍然只读不选。 */
+    var ctrl = t.closest('button, a, input, select, textarea');
+    if (ctrl && ctrl !== el) return;
+    e.preventDefault();
+    e.stopPropagation();
+    Audio.unlock();
+    UI.readElement(el);
+  }, true);
+
   /* 全局事件：一次绑定，页面重绘不重复注册 */
   document.addEventListener('click', function (e) {
     var t = e.target;
@@ -130,6 +151,15 @@
       e.preventDefault();
       Audio.unlock();
       if (Calm) Calm.open();
+      return;
+    }
+
+    /* 家长在设置页试听一句，自己判断这台电脑有没有中文语音 */
+    if (t.closest('[data-voice-test]')) {
+      Audio.unlock();
+      Audio.speak('团团、咕咕老师和小火苗，一起陪你认识心里的小天气。', { role: 'cloud' });
+      UI.toast(Audio.voiceStatus().state === 'unsupported'
+        ? '这个浏览器暂不支持朗读' : '听到了就说明中文语音可用 😊');
       return;
     }
 
@@ -159,7 +189,11 @@
     var say = t.closest('[data-say]');
     if (say) {
       Audio.unlock();
-      Audio.speak(UI.getSay(say.getAttribute('data-say')));
+      Audio.speak(UI.getSay(say.getAttribute('data-say')), {
+        role: say.getAttribute('data-role') || undefined,
+        onItem: function () { UI.clearHighlight(); say.classList.add('reading'); },
+        onDone: UI.clearHighlight, onStop: UI.clearHighlight
+      });
       return;
     }
 
@@ -192,6 +226,14 @@
 
   window.addEventListener('hashchange', render);
   window.SEL.render = render;
+
+  /* 语音清单常常在页面打开后才到（voiceschanged）：只局部刷新提示，
+     不整页重绘，否则会掐断家长正在试听的那一句。 */
+  Audio.onVoicesChange(function () {
+    var slot = document.querySelector('[data-voice-hint-slot]');
+    if (slot) slot.innerHTML = UI.voiceHint(true);
+    if (SC && SC.refreshVoiceStatus) SC.refreshVoiceStatus();
+  });
 
   /* 使用时长按 20 秒累加：只统计窗口可见的时间，切到后台不算。
      到点由 checkTimeLock 盖上软锁；家长解锁后当天不再打扰。 */

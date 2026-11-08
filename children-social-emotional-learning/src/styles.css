@@ -707,3 +707,38 @@ body.modal-open { overflow: hidden; }
   .say-frames, .say-badges { grid-template-columns: 1fr; }
   .say-stats { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ---------- 逐句点读 / 正在读高亮（v1.3.0） ---------- */
+.readable { transition: background-color .18s ease, box-shadow .18s ease; }
+[data-read]:not(button):not(.feedback-box) { cursor: pointer; }
+[data-read]:not(button):not(.feedback-box):hover {
+  text-decoration: underline dotted var(--blue); text-underline-offset: 4px;
+}
+[data-read].reading {
+  background: var(--yellow-soft);
+  box-shadow: 0 0 0 4px var(--yellow-soft);
+  border-radius: 10px;
+  text-decoration: none !important;
+}
+.read-mode [data-read] {
+  outline: 2px dashed rgba(102, 196, 238, .6);
+  outline-offset: 3px;
+  border-radius: 10px;
+}
+.read-mode [data-read]:hover { background: var(--blue-soft); }
+[data-read-toggle].on { background: var(--green); color: #fff; border-color: var(--green); }
+
+/* ---------- 两种示范 / 家长语音提示（v1.3.0） ---------- */
+.say-variants { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 10px 0 8px; }
+.say-demo [data-say-demo-text] { font-weight: 700; margin: 8px 0; }
+.voice-hint {
+  margin: 10px 0 14px; padding: 12px 14px; border-radius: 14px;
+  background: var(--yellow-soft); border: 2px solid var(--yellow);
+  font-size: 14px; line-height: 1.6;
+}
+.voice-hint ul { margin: 8px 0 10px; padding-left: 20px; }
+.voice-hint.compact { margin: 0 0 14px; padding: 8px 12px; font-size: 13px; }
+@media (max-width: 620px) {
+  .say-variants { gap: 6px; }
+  .voice-hint.compact .btn { margin-top: 6px; }
+}

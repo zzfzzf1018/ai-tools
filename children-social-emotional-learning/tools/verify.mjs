@@ -328,6 +328,58 @@ const cspForPwa = (html.match(/http-equiv="Content-Security-Policy" content="([^
 if (!/manifest-src\s+'self'/.test(cspForPwa)) E('CSP 缺少 manifest-src，PWA 清单会被拦截');
 if (!/worker-src\s+'self'/.test(cspForPwa)) E('CSP 缺少 worker-src，Service Worker 无法注册');
 
+/* ---------- v1.3.0：角色语音 / 双示范 / 逐句点读契约 ---------- */
+const vr = d.voiceRoles;
+if (!vr || typeof vr !== 'object') E('voiceRoles 缺失');
+else {
+  ['cloud', 'owl', 'fox'].forEach(id => {
+    const r = vr[id];
+    if (!r || !has(r, 'name') || !has(r, 'emoji')) E(`voiceRoles.${id} 字段不全`);
+    if (!(Number(r.pitch) >= 0.5 && Number(r.pitch) <= 2)) E(`voiceRoles.${id}.pitch 非法`);
+    if (!(Number(r.rate) >= 0.5 && Number(r.rate) <= 1.5)) E(`voiceRoles.${id}.rate 非法`);
+  });
+  const pitches = ['cloud', 'owl', 'fox'].map(id => Number(vr[id] && vr[id].pitch));
+  if (new Set(pitches).size !== 3) E('三位角色的音高没有区分开');
+}
+const vh = d.voiceHelp;
+if (!vh || !has(vh, 'missing') || !isArr(vh.steps) || vh.steps.length < 2) {
+  E('voiceHelp 缺少给家长的安装指引');
+}
+if (ex && typeof ex === 'object') {
+  (ex.prompts || []).forEach(p => {
+    if (!has(p, 'demoAdult')) E(`expression.prompts ${p.id} 缺 demoAdult`);
+    else if (p.demoAdult === p.demo) E(`expression.prompts ${p.id} 两种示范完全相同`);
+    else if (!/我觉得/.test(p.demoAdult) || !/因为/.test(p.demoAdult) || !/我希望/.test(p.demoAdult)) {
+      W(`expression.prompts ${p.id} 的第二种示范没有完整覆盖三句式`);
+    }
+  });
+  Object.keys(ex.levelPrompts || {}).forEach(k => {
+    const t = ex.levelPrompts[k];
+    if (!has(t, 'demoAdult')) E(`expression.levelPrompts ${k} 缺 demoAdult`);
+    else if (t.demoAdult === t.demo) E(`expression.levelPrompts ${k} 两种示范完全相同`);
+    else if (!/我觉得/.test(t.demoAdult) || !/因为/.test(t.demoAdult) || !/我希望/.test(t.demoAdult)) {
+      W(`expression.levelPrompts ${k} 的第二种示范没有完整覆盖三句式`);
+    }
+  });
+}
+const compSrc = fs.readFileSync(path.join(root, 'src/ui/components.js'), 'utf8');
+['markReadable', 'setReadable', 'highlight', 'readElement', 'setReadMode', 'voiceHint'].forEach(k => {
+  if (!compSrc.includes(k)) E('components.js 缺少逐句点读能力: ' + k);
+});
+const mainForRead = fs.readFileSync(path.join(root, 'src/main.js'), 'utf8');
+if (!/isReadMode\(\)/.test(mainForRead) || !/,\s*true\)/.test(mainForRead)) {
+  E('main.js 的点读模式缺少捕获阶段拦截（addEventListener(..., true)）');
+}
+if (!/data-read-ignore/.test(mainForRead)) E('main.js 没有放行播报条等不可点读控件');
+if (!/ctrl\s*&&\s*ctrl\s*!==\s*el/.test(mainForRead)) {
+  E('点读模式缺少「祖先容器内的按钮放行」判断，会吞掉收下星星等结算按钮');
+}
+if (!/data-voice-test/.test(mainForRead)) E('main.js 缺少家长试听入口');
+const visualForHint = fs.readFileSync(path.join(root, 'tools/visual.cjs'), 'utf8');
+if (!/\.voice-hint/.test(visualForHint)) {
+  E('视觉基线没有屏蔽家长语音提示；不同机器有无中文语音会让像素基线漂移');
+}
+
 /* ---------- 朗读链路：入口、脚本清单、离线安全 ---------- */
 const audioSrc = fs.readFileSync(path.join(root, 'src/core/audio.js'), 'utf8');
 ['speakSequence', 'readQuestion', 'readAuto', 'stopSpeak', 'voiceRate'].forEach(k => {
