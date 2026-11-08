@@ -195,6 +195,12 @@
     if (zhVoice) u.voice = zhVoice;
     var timer = null;
     var finished = false;
+    var retries = 0;
+    /* 超时按「实际语速」估算：0.7×0.86≈0.6 倍速时中文 TTS 约 400ms/字，
+       固定 300ms/字会让 watchdog 在句子还没念完时就 done()，下一句被塞进浏览器内部队列。 */
+    var effRate = Math.max(0.5, Number(u.rate) || 1);
+    var waitMs = Math.min(120000, Math.max(8000, Math.ceil(item.text.length * 550 / effRate)));
+    function schedule() { watchdog = timer = setTimeout(onWatchdog, waitMs); }
     function done() {
       if (finished || my !== gen) return;   /* 换页 / 新一句已把这一代作废 */
       finished = true;
@@ -205,12 +211,26 @@
       if (queue.length) pump();
       else if (item.opts.onDone) { try { item.opts.onDone(); } catch (e2) {} }
     }
+    function onWatchdog() {
+      if (finished || my !== gen) return;
+      /* 浏览器还在念/排队就续期，绝不提前把下一句塞进去 */
+      try {
+        if (window.speechSynthesis.speaking || window.speechSynthesis.pending) { schedule(); return; }
+      } catch (e5) {}
+      /* cancel() 后紧接 speak() 被吞时新 utterance 不会有任何回调：
+         重试一次，而不是把整段题目当成「已念完」静默跳过。 */
+      if (retries < 1) {
+        retries++;
+        try { window.speechSynthesis.speak(u); } catch (e6) {}
+        schedule();
+        return;
+      }
+      done();   /* 兜底复位，保证 speaking 不会永久卡住 */
+    }
     u.onend = done;
     u.onerror = done;                       /* 语音服务失败也安静收尾，不卡住队列 */
     if (item.opts.onItem) { try { item.opts.onItem(item.text); } catch (e3) {} }
-    /* Chrome/Electron 偶发 cancel() 后立刻 speak() 把新 utterance 吞掉且不报事件；
-       超时后按「念完了」处理，保证 speaking 一定能复位，后续朗读不会被永久卡住。 */
-    watchdog = timer = setTimeout(done, Math.min(30000, Math.max(8000, item.text.length * 300)));
+    schedule();
     try { window.speechSynthesis.speak(u); }
     catch (e4) { done(); }
   }

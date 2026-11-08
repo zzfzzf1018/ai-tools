@@ -85,6 +85,12 @@ async function makeWindow(width, height) {
     } catch (e) {}
   `);
   await win.loadFile(path.join(ROOT, 'index.html'));
+  /* 第二次加载后上下文已重建，这时再固定随机数并等字体就绪：
+     彩带、随机话题、shuffle 等都走 Math.random，固定后基线不再依赖时序。 */
+  await win.webContents.executeJavaScript(`(function () {
+    Math.random = function () { return 0.42; };
+    return document.fonts.ready.then(function () { return true; });
+  })()`);
   await sleep(500);
   /* 家长语音提示取决于运行机器有没有装中文语音，必须屏蔽，
      否则同一份代码在不同机器上截出来的基线永远对不上。 */

@@ -106,6 +106,10 @@
       box.innerHTML = ST.lockView(info);
       box.hidden = false;
       document.body.classList.add('time-locked');
+      /* 时间锁盖住整页后，背后关卡不该继续念、也不该留着高亮/点读模式 */
+      Audio.stopSpeak();
+      UI.clearHighlight();
+      UI.setReadMode(false);
       UI.closeModal();
       syncCalm();
       try { document.getElementById('screen').setAttribute('aria-hidden', 'true'); } catch (e) {}
@@ -221,6 +225,17 @@
       if (document.getElementById('overlay') && document.getElementById('overlay').querySelector('.modal')) return;
       var btn = document.querySelector('[data-voice-replay]');
       if (btn) { e.preventDefault(); btn.click(); }
+    }
+    /* 键盘 / 读屏逐句点读：非交互文本在 markReadable 里带了 tabindex + role=button */
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+      var t = e.target;
+      var tag = t && t.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      var el = t && t.closest && t.closest('[data-read][tabindex]');
+      if (!el) return;
+      e.preventDefault();
+      Audio.unlock();
+      UI.readElement(el);
     }
   });
 

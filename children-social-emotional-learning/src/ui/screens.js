@@ -1123,7 +1123,9 @@
       ? '已检测到 ' + st.zh + ' 个中文语音，朗读可以正常使用。'
       : (st.state === 'unknown'
         ? '浏览器还没列出语音清单，可以先点下面的按钮试听一句。'
-        : '朗读由这台电脑本机完成，不会联网。');
+        : (st.state === 'unsupported'
+          ? '这台浏览器不支持朗读功能，建议换用 Chrome / Edge，或使用 Windows 桌面版。'
+          : '朗读由这台电脑本机完成，不会联网；先按下面的步骤添加中文语音。'));
     var roles = Audio.roles();
     var roleBtns = ['cloud', 'owl', 'fox'].map(function (id) {
       var r = roles[id] || {};

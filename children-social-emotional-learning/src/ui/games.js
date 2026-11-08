@@ -627,7 +627,8 @@
           try { S.markStoryNode(story.id, nodeId, ending); } catch (e) {}
           var face = A.buddy('cloud', n.emotion || 'calm', 90);
           var body = pathDots() +
-            '<div class="story-top"><div class="story-avatar">' + face + '</div>' +
+            '<div class="story-top" data-role="' + U.esc(Audio.roleForSpeaker(n.speaker)) + '">' +
+            '<div class="story-avatar">' + face + '</div>' +
             '<div style="flex:1"><div class="spread"><div class="chip purple">' + U.esc(n.speaker || '团团') + '</div>' +
             UI.speakBtn(n.text || '', '朗读这一段', Audio.roleForSpeaker(n.speaker)) + '</div>' +
             '<div class="story-text" style="margin-top:10px">' + U.esc(n.text || '') + '</div></div></div>';
@@ -653,7 +654,7 @@
               }).join('') + '</div>';
           }
           panel.innerHTML = body;
-          panel.setAttribute('data-role', Audio.roleForSpeaker(n.speaker));
+          /* role 只挂在正文区：做法/指令由团团念，若挂到整个 panel 会被它们继承 */
           UI.markReadable(panel);
           /* 正文、做法、结局的道理与探索度一次连读完，不再被下一句顶掉；
              「再听一遍」指向当前节点，手动点不受「自动读题」开关影响。 */
@@ -681,6 +682,8 @@
             '<div style="margin-top:12px"><button class="btn tiny blue" data-go>继续故事 →</button></div>';
           panel.appendChild(box);
           var feedbackRole = Audio.roleForSpeaker(node.speaker);
+          box.setAttribute('data-role', feedbackRole);
+          UI.setReadable(box);   /* 反馈框是后插入的，也要能逐句点读并高亮 */
           Audio.readAuto([
             { text: '你选了：' + strip(c.text || '') + '。', role: feedbackRole },
             { text: c.good ? '这样处理，感觉更稳。' : '看看接下来会发生什么。', role: 'cloud' },

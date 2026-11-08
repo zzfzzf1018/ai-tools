@@ -16,8 +16,8 @@
   function prompts() { return cfg().prompts || []; }
   function audiences() { return cfg().audiences || []; }
   function badges() { return cfg().badges || []; }
-  /* 与 state.js 的 dailyCap() 同口径，别把分母写死 */
-  function starCap() { return U.clamp(Number(cfg().dailyStarCap) || 3, 1, 10); }
+  /* 直接复用存档层的 dailyCap()，避免界面再复制一份上限逻辑 */
+  function starCap() { return S.dailyCap ? S.dailyCap() : 3; }
 
   function levelTopic(level) {
     var t = (cfg().levelPrompts || {})[level && level.id];
@@ -66,8 +66,8 @@
 
   function weekStrip() {
     var st = S.expressionStats();
-    var byDate = {};
-    (S.current().expression && S.current().expression.days || []).forEach(function (d) { byDate[d.date] = d.count; });
+    /* 与统计条同源（走清洗后的 byDay），不再直接读未清洗的存档字段 */
+    var byDate = st.byDay || {};
     var out = '';
     for (var i = 6; i >= 0; i--) {
       var day = U.daysAgo(i);
@@ -186,8 +186,12 @@
       doneBtn.disabled = true;
       doneBtn.textContent = '已说出口 ✓';
       var r = S.recordExpression(topic.id, box.getAttribute('data-frame') || '', variant);
-      if (!r) {   /* 课程数据异常时不写库，但仍给孩子一句鼓励 */
-        feedback.innerHTML = '<div class="feedback-box good"><b>你把话说出来啦 💛</b></div>';
+      if (!r) {
+        /* 课程数据异常时不写库，但按钮必须恢复：否则孩子看到「已说出口」却再也不能重试 */
+        feedback.innerHTML = '<div class="feedback-box"><b>这一句先没记上，等一下再试一次好吗？</b></div>';
+        doneBtn.disabled = false;
+        doneBtn.removeAttribute('data-claimed');
+        doneBtn.innerHTML = '🗣️ 我说出来啦';
         return;
       }
       var good = cheer();
@@ -240,7 +244,7 @@
       UI.sectionHead('说一说 · 勇气小话筒', '听一句示范，再把自己的话大声说出来', 'SPEAK UP') +
       UI.guideRow('心里的话说出来，别人才能听见呀。不用说得漂亮，说给自己听也算数。', 'cloud', 'happy') +
       '<div class="card soft" style="margin-bottom:18px" data-say-stat-slot>' + statStrip() + weekStrip() + '</div>' +
-      '<div data-say-slot>' + card(first, { next: true, showAudience: true }) + '</div>' +
+      '<div data-say-slot></div>' +   /* 首张卡统一由 draw() 渲染，避免标记两次 */
       '<div class="grid grid-2" style="margin-top:20px">' +
         '<div class="card"><h3>🎖️ 勇气贴纸</h3><div data-say-badge-slot>' + badgeStrip() + '</div>' +
           '<p class="small muted" style="margin-top:10px">累计说出来就能解锁，不比谁说得好。</p></div>' +
@@ -283,7 +287,11 @@
         }
         draw(first, false);
         U.delegate(root, 'click', '[data-say-frames]', function () {
-          Audio.speak(frames().map(function (f) { return f.label + f.hint + '，例如：' + f.example; }).join('。'));
+          /* 逐句念例子并带高亮，别把三句拼成一长串（那样一个元素都命中不了） */
+          Audio.speakSequence(frames().map(function (f) { return f.example; }), {
+            role: 'cloud',
+            onItem: UI.highlight, onDone: UI.clearHighlight, onStop: UI.clearHighlight
+          });
         });
       }
     };
@@ -311,7 +319,8 @@
           (fs ? ' · 最常练的句式：' + esc(fs.label) : '') : '还没有开口记录，可以从首页的「说一说」陪孩子试一次。') +
       '</p>' +
       '<p class="small muted">只记录次数、日期与用过的句式，<b>不录音、不识别、不保存孩子说过的任何一句话</b>；' +
-      '同一天最多 3 颗勇气星，之后仍累计次数。这些数字用来陪伴回顾，请不要当作奖惩依据。</p>' +
+      '同一天最多 ' + starCap() + ' 颗勇气星，之后仍累计次数。这些数字用来陪伴回顾，请不要当作奖惩依据。</p>' +
+      '<p class="small muted">「最常练的句式」只统计独立练习页的情境卡；关卡里的话题按本关内容生成，不计入句式。</p>' +
       '<p class="small muted">可以试试：孩子说完先复述一句「我听见了，你希望…」，再把三句式贴到桌角，冲突后轮流说一轮。</p>' +
       '</div>';
   }

@@ -339,28 +339,34 @@ else {
     if (!(Number(r.rate) >= 0.5 && Number(r.rate) <= 1.5)) E(`voiceRoles.${id}.rate 非法`);
   });
   const pitches = ['cloud', 'owl', 'fox'].map(id => Number(vr[id] && vr[id].pitch));
+  const rates = ['cloud', 'owl', 'fox'].map(id => Number(vr[id] && vr[id].rate));
   if (new Set(pitches).size !== 3) E('三位角色的音高没有区分开');
+  if (new Set(rates).size !== 3) E('三位角色的语速没有区分开');
 }
 const vh = d.voiceHelp;
 if (!vh || !has(vh, 'missing') || !isArr(vh.steps) || vh.steps.length < 2) {
   E('voiceHelp 缺少给家长的安装指引');
+} else {
+  const steps = vh.steps.join(' | ');
+  if (!/Windows/.test(steps) || !/macOS/.test(steps)) E('voiceHelp.steps 缺少平台指引');
 }
 if (ex && typeof ex === 'object') {
+  const adultTexts = [];
+  const threePart = (s) => /我觉得/.test(s) && /因为/.test(s) && /我希望/.test(s);
   (ex.prompts || []).forEach(p => {
     if (!has(p, 'demoAdult')) E(`expression.prompts ${p.id} 缺 demoAdult`);
     else if (p.demoAdult === p.demo) E(`expression.prompts ${p.id} 两种示范完全相同`);
-    else if (!/我觉得/.test(p.demoAdult) || !/因为/.test(p.demoAdult) || !/我希望/.test(p.demoAdult)) {
-      W(`expression.prompts ${p.id} 的第二种示范没有完整覆盖三句式`);
-    }
+    else if (!threePart(p.demoAdult)) E(`expression.prompts ${p.id} 的第二种示范没有完整覆盖三句式`);
+    adultTexts.push(p.demoAdult);
   });
   Object.keys(ex.levelPrompts || {}).forEach(k => {
     const t = ex.levelPrompts[k];
     if (!has(t, 'demoAdult')) E(`expression.levelPrompts ${k} 缺 demoAdult`);
     else if (t.demoAdult === t.demo) E(`expression.levelPrompts ${k} 两种示范完全相同`);
-    else if (!/我觉得/.test(t.demoAdult) || !/因为/.test(t.demoAdult) || !/我希望/.test(t.demoAdult)) {
-      W(`expression.levelPrompts ${k} 的第二种示范没有完整覆盖三句式`);
-    }
+    else if (!threePart(t.demoAdult)) E(`expression.levelPrompts ${k} 的第二种示范没有完整覆盖三句式`);
+    adultTexts.push(t.demoAdult);
   });
+  if (new Set(adultTexts).size !== adultTexts.length) E('有两条话题复用了同一句「对大人说」示范');
 }
 const compSrc = fs.readFileSync(path.join(root, 'src/ui/components.js'), 'utf8');
 ['markReadable', 'setReadable', 'highlight', 'readElement', 'setReadMode', 'voiceHint'].forEach(k => {
@@ -457,6 +463,7 @@ const security = [
   ['will-navigate', /will-navigate/, '未拦截外部导航'],
   ['will-attach-webview', /will-attach-webview/, '未阻止 <webview> 挂载'],
   ['setPermissionRequestHandler', /setPermissionRequestHandler/, '未统一拒绝摄像头/麦克风等权限申请'],
+  ['setPermissionCheckHandler', /setPermissionCheckHandler/, '未拦截权限检查（摄像头/麦克风）'],
 ];
 security.forEach(([label, re, why]) => { if (!re.test(mainSrc)) E(`Electron 安全基线缺失（${why}）：main.js 未见 ${label}`); });
 /* 开发预览服务会按路径开放整个项目目录，必须只监听本机回环地址 */
@@ -488,7 +495,7 @@ function listFiles(dir, out = []) {
     if (e.name === 'package.json' || e.name === 'package-lock.json') continue;
     const p = path.join(dir, e.name);
     if (e.isDirectory()) listFiles(p, out);
-    else if (/\.(js|mjs|css|html|json)$/.test(e.name)) out.push(p);
+    else if (/\.(js|mjs|cjs|css|html|json)$/.test(e.name)) out.push(p);
   }
   return out;
 }
@@ -503,6 +510,29 @@ listFiles(root).forEach(f => {
   }
 });
 if (/<script[^>]+src="https?:/.test(html)) E('index.html 有外部 script');
+
+/* 隐私硬约束的回归保障：麦克风 / 录音 / 语音识别 / 联网 API 一个都不许出现在运行时代码里。
+   Service Worker 的同源 fetch 是离线回源设计，不在此黑名单内。 */
+const forbiddenApi = /\b(getUserMedia|SpeechRecognition|webkitSpeechRecognition|MediaRecorder|XMLHttpRequest|WebSocket|mediaDevices)\b/;
+function runtimeFiles(dir, out = []) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) runtimeFiles(p, out);
+    else if (/\.(js|mjs|cjs)$/.test(e.name)) out.push(p);
+  }
+  return out;
+}
+runtimeFiles(path.join(root, 'src')).forEach(f => {
+  const txt = fs.readFileSync(f, 'utf8');
+  if (forbiddenApi.test(txt)) {
+    E('运行时代码出现麦克风/联网 API（违反「不录音、完全离线」承诺）: ' + path.relative(root, f));
+  }
+});
+/* 上限必须只有一个来源：读取清洗与写入发星都得走 dailyCap() */
+if (!/cleanExpression[\s\S]{0,900}dailyCap\(\)/.test(stateSrc)) {
+  E('导入清洗没有使用统一的 dailyCap()');
+}
+if (!/var cap = dailyCap\(\)/.test(stateSrc)) E('recordExpression 没有使用统一的 dailyCap()');
 
 /* ---------- 报告 ---------- */
 console.log('=== 心晴岛 静态校验 ===');

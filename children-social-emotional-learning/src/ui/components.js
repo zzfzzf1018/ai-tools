@@ -124,6 +124,11 @@
     opts = opts || {};
     var old = document.getElementById('overlay');
     if (!old) return;
+    /* 覆盖型弹窗（家长门、情绪急救、结算等）出现时，背后关卡的朗读、高亮与
+       点读模式都要安静下来；结算文案会在 modal 之后由调用方重新读一遍。 */
+    try { window.SEL.audio.stopSpeak(); } catch (e) {}
+    clearHighlight();
+    setReadMode(false);
     var lastFocus = document.activeElement;
     /* 换掉 overlay 节点，避免每次弹窗都叠加一层事件委托 */
     var ov = document.createElement('div');
@@ -217,15 +222,32 @@
   var INTERACTIVE = /(?:^|\s)(option-btn|pair-item|drag-item|order-item|bucket)(?:\s|$)/;
 
   function clean(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); }
+  /* 朗读稿里没有 emoji：把装饰性符号（含无 class 的 emoji span 文本）按码点滤掉，
+     否则「😢 难过」与「答案：难过」互不为子串，高亮会漏命中。不克隆整棵子树，省一次深拷贝。 */
+  function readableText(s) {
+    var chars = Array.from(String(s == null ? '' : s)).filter(function (ch) {
+      var c = ch.codePointAt(0);
+      return !(c >= 0x1F000 || (c >= 0x2600 && c <= 0x27BF) || c === 0xFE0F || c === 0x200D);
+    });
+    return clean(chars.join('').replace(/[·•|]/g, ' '));
+  }
+
+  function unlockForRead(el) {
+    if (!el.disabled) return;
+    /* 真实浏览器里 disabled 控件（含其子元素）不派发 click，点读模式会彻底哑掉。
+       临时解除禁用：点读模式的捕获拦截会阻止冒泡，所以不会误触发游戏逻辑。 */
+    el.setAttribute('data-read-was-disabled', '1');
+    el.disabled = false;
+  }
+  function relockAfterRead() {
+    U.$$('[data-read-was-disabled]', document.body).forEach(function (el) {
+      el.removeAttribute('data-read-was-disabled');
+      el.disabled = true;
+    });
+  }
 
   function markOne(el) {
-    /* 去掉 emoji / 序号 / 上下箭头这类装饰再取文本：
-       否则「🫧先在心里…」和朗读稿里的「做法 1：先在心里…」互不为子串，
-       自动读题到选项时高亮就找不到对应元素。 */
-    var clone = el.cloneNode(true);
-    U.$$('.opt-emoji, .di-emoji, .ord-emoji, .sf-emoji, .pair-face, .ord-num, .ord-move, .breath-dots', clone)
-      .forEach(function (n) { if (n.parentNode) n.parentNode.removeChild(n); });
-    var text = clean(clone.textContent);
+    var text = readableText(el.textContent);
     if (text.length < 2) return;
     var interactive = INTERACTIVE.test(el.className || '') || !!el.closest('.bucket');
     var hasControl = !!el.querySelector('button, a, input, select, textarea');
@@ -235,8 +257,19 @@
     el.setAttribute('data-read', text);
     el.setAttribute('data-role', role);
     el.classList.add('readable');
-    if (!interactive && !hasControl) el.setAttribute('data-say', sayId(text));
-    else el.removeAttribute('data-say');
+    if (!interactive && !hasControl) {
+      /* 复用已有 id，避免同一页反复重绘时 sayMap 无限累积 */
+      var id = el.getAttribute('data-say');
+      if (id) sayMap[id] = text; else id = sayId(text);
+      el.setAttribute('data-say', id);
+      /* 键盘/读屏也能逐句点读 */
+      el.setAttribute('tabindex', '0');
+      el.setAttribute('role', 'button');
+      el.setAttribute('aria-label', '朗读：' + text);
+    } else {
+      el.removeAttribute('data-say');
+    }
+    if (readMode) unlockForRead(el);
   }
   function markReadable(root) {
     if (!root) return;
@@ -245,19 +278,26 @@
   function clearHighlight() {
     U.$$('.reading', document.body).forEach(function (el) { el.classList.remove('reading'); });
   }
+  /* 朗读稿给选项/卡片加了「做法 1：」「答案：」「篮子：」这类前缀，
+     去掉前缀后应当和元素文本精确相等——这样「难过」这种两字答案也能命中，
+     又不会让长说明句里的短词（如「就一种」）误高亮到一个小标签上。 */
+  var READ_PREFIX = /^(?:做法|线索|答案|卡片|篮子|已发现|如果是你|故事走到这里啦)\s*\d*\s*[:：]?\s*/;
+  function coreText(s) { return clean(String(s == null ? '' : s).replace(READ_PREFIX, '')); }
   function highlight(text) {
-    var t = clean(text), best = null, score = 0;
+    var t = clean(text), core = coreText(t), best = null, score = -1;
     clearHighlight();
     U.$$('[data-read]', document.body).forEach(function (el) {
       var own = clean(el.getAttribute('data-read') || '');
       if (own.length < 2) return;
       var s = 0;
-      if (t.indexOf(own) >= 0) s = own.length;                 /* 朗读稿带前缀，取元素文本长度 */
-      else if (own.indexOf(t) >= 0 && t.length > 4) s = t.length;
+      /* 精确相等（含去前缀）优先，其次长的子串包含；短公共子串不参与 */
+      if (own === t || own === core) s = 10000 + own.length;
+      else if (own.length >= 6 && t.indexOf(own) >= 0) s = 1000 + own.length;
+      else if (t.length >= 6 && own.indexOf(t) >= 0) s = t.length;
       if (s > score) { best = el; score = s; }
     });
-    if (best) best.classList.add('reading');
-    return best;
+    if (best && score > 0) best.classList.add('reading');
+    return score > 0 ? best : null;
   }
   function readElement(el) {
     var text = clean(el.getAttribute('data-read') || el.textContent);
@@ -271,7 +311,8 @@
   function setReadMode(on) {
     readMode = !!on;
     document.body.classList.toggle('read-mode', readMode);
-    if (!readMode) clearHighlight();
+    if (readMode) U.$$('[data-read]:disabled', document.body).forEach(unlockForRead);
+    else { relockAfterRead(); clearHighlight(); }
   }
   function isReadMode() { return readMode; }
 
@@ -287,7 +328,9 @@
       : (help.missing || '还没检测到中文语音。');
     if (compact) {
       return '<div class="voice-hint compact" data-voice-hint role="status">👨‍👩‍👧 给家长：' + U.esc(title) +
-        ' <button class="btn tiny ghost" data-nav="#/settings">看怎么添加 →</button></div>';
+        /* 浏览器压根不支持朗读时，没有「添加语音」这条路，别把家长引到无解页面 */
+        (st.state === 'missing' ? ' <button class="btn tiny ghost" data-nav="#/settings">看怎么添加 →</button>' : '') +
+        '</div>';
     }
     var steps = Array.isArray(help.steps) ? help.steps : [];
     return '<div class="voice-hint" data-voice-hint role="status"><b>👨‍👩‍👧 给家长：' + U.esc(title) + '</b>' +

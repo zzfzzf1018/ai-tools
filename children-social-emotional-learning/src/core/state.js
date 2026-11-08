@@ -192,12 +192,19 @@
      一律走白名单 + 无原型对象，避免 __proto__ 之类的键污染存档。 */
   function knownExpressionKeys() {
     var out = { frames: Object.create(null), prompts: Object.create(null) };
-    try {
-      var ex = (data().expression || {});
-      (ex.frames || []).forEach(function (f) { if (safeId(f.id)) out.frames[f.id] = true; });
-      (ex.prompts || []).forEach(function (p) { if (safeId(p.id)) out.prompts[p.id] = true; });
-      Object.keys(ex.levelPrompts || {}).forEach(function (k) { if (safeId(k)) out.prompts[k] = true; });
-    } catch (e) {}
+    var ex = {};
+    try { ex = data().expression || {}; } catch (e) { return out; }
+    /* 三处各自防御：任何一处数据畸形都不该把另外两处的合法白名单一起吞掉，
+       否则孩子点「我说出来啦」会静默不记账，且界面按钮永久锁死。 */
+    if (Array.isArray(ex.frames)) {
+      ex.frames.forEach(function (f) { if (f && safeId(f.id)) out.frames[f.id] = true; });
+    }
+    if (Array.isArray(ex.prompts)) {
+      ex.prompts.forEach(function (p) { if (p && safeId(p.id)) out.prompts[p.id] = true; });
+    }
+    if (ex.levelPrompts && typeof ex.levelPrompts === 'object' && !Array.isArray(ex.levelPrompts)) {
+      Object.keys(ex.levelPrompts).forEach(function (k) { if (safeId(k)) out.prompts[k] = true; });
+    }
     return out;
   }
   /* 每日勇气星上限：课程数据可配 1–10，读取侧与写入侧必须用同一个值，
@@ -236,6 +243,8 @@
     var seen = Object.create(null);
     out.days = (Array.isArray(x.days) ? x.days : []).slice(-60).filter(function (d) {
       if (!d || typeof d !== 'object' || !validDay(d.date) || seen[d.date]) return false;
+      /* 未来日期（系统时间被改过 / 备份被构造过）不该进「本周/最近 7 天」统计 */
+      if (U.dayDiff(d.date, U.today()) < 0) return false;
       seen[d.date] = true;
       return true;
     }).map(function (d) { return { date: d.date, count: Math.max(1, intIn(d.count, 1, 999, 1)) }; }).slice(-60);
@@ -621,7 +630,11 @@
       else if (i > 0) break;
     }
     var week = 0, monday = U.weekStart();
-    e.days.forEach(function (d) { if (U.dayDiff(monday, d.date) >= 0) week += d.count; });
+    e.days.forEach(function (d) {
+      var fromMonday = U.dayDiff(monday, d.date);
+      /* 只算「本周一 ~ 本周日」且不超过今天，别把未来日期算进本周 */
+      if (fromMonday >= 0 && fromMonday <= 6 && U.dayDiff(d.date, U.today()) >= 0) week += d.count;
+    });
     var topFrame = '', topCount = 0;
     Object.keys(e.frames).forEach(function (k) {
       if (e.frames[k] > topCount) { topCount = e.frames[k]; topFrame = k; }
@@ -629,6 +642,7 @@
     return {
       total: e.total, streak: streak, week: week, days: e.days.length,
       lastAt: e.lastAt, topFrame: topFrame, frames: e.frames, variants: e.variants,
+      byDay: byDate,
       today: byDate[U.today()] || 0,
       todayStars: e.todayStars.date === U.today() ? e.todayStars.count : 0
     };
@@ -892,7 +906,7 @@
     isIslandUnlocked: isIslandUnlocked, isLevelUnlocked: isLevelUnlocked,
     addStars: addStars, unlockSticker: unlockSticker, completeLevel: completeLevel,
     addSkill: addSkill, addCheckin: addCheckin, practiceStrategy: practiceStrategy,
-    recordExpression: recordExpression, expressionStats: expressionStats,
+    recordExpression: recordExpression, expressionStats: expressionStats, dailyCap: dailyCap,
     addUsage: addUsage, usageToday: usageToday,
     markStoryNode: markStoryNode, storyProgress: storyProgress,
     checkinTrend: checkinTrend, strategyEffect: strategyEffect, recommendLevels: recommendLevels,

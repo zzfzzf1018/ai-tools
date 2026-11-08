@@ -76,7 +76,8 @@ function route(hash, label) {
     const t = s ? s.innerHTML : '';
     if (!t || t.length < 80) fails.push(`${label || hash} 页面空白`);
     if (t.includes('这一页遇到一点小云朵')) fails.push(`${label || hash} 渲染抛错`);
-    if (t.includes('交互绑定出错')) fails.push(`${label || hash} 事件绑定抛错`);
+    /* main.js 捕获 mount 异常时插入的是这句提示，不是「交互绑定出错」（那只在 console.error 里） */
+    if (t.includes('这一页的小按钮需要重新加载一下')) fails.push(`${label || hash} 事件绑定抛错`);
     return t;
   } catch (e) { fails.push(`${label || hash} 异常: ${e.message}`); return ''; }
 }
@@ -813,10 +814,11 @@ try {
 }
 
 /* ==================== 28. v1.2.0：全关卡朗读 + 说一说 ==================== */
+let backup28 = null;
 try {
   const A = w.SEL.audio;
   const U = w.SEL.utils;
-  const backup28 = w.SEL.state.exportSave();
+  backup28 = w.SEL.state.exportSave();
   const levels = w.SEL.state.allLevels();
   const spoken = () => utterances.map(u => u.text);
   const choiceLv = levels.find(x => x.level.type === 'choice').level;
@@ -977,7 +979,8 @@ try {
     const topics = w.SEL_DATA.expression.prompts;
     for (let i = 0; i < 3; i++) w.SEL.state.recordExpression(topics[i].id, 'feel');
     const st = w.SEL.state.expressionStats();
-    must(st.todayStars === 3, '每日勇气星上限没有生效，实际 ' + st.todayStars);
+    must(st.todayStars === w.SEL_DATA.expression.dailyStarCap,
+      '每日勇气星上限没有生效，实际 ' + st.todayStars);
     const r = w.SEL.state.recordExpression(topics[3].id, 'hope');
     must(r && r.star === 0 && r.capped === true, '超过每日上限后仍然发星');
     must(w.SEL.state.expressionStats().total === st.total + 1, '超过上限后开口次数没有继续累计');
@@ -997,8 +1000,11 @@ try {
     const before = w.SEL.state.expressionStats().total;
     click(q('[data-say-done]'));
     must(w.SEL.state.expressionStats().total === before + 1, '换卡后事件监听器叠加，点一次记了多次');
+    utterances.length = 0;   /* 不清空的话这条断言会被前面的朗读填成恒真 */
     click(q('[data-say-frames]'));
-    must(spoken().length > 0, '「听一遍三句话」没有朗读');
+    const exFrames = w.SEL_DATA.expression.frames;
+    must(spoken().length === exFrames.length, '「听一遍三句话」没有逐句朗读');
+    must(spoken()[0] === exFrames[0].example, '「听一遍三句话」念的不是句式例句');
   }
 
   // 28h 家长面板与成长周报能看到开口统计
@@ -1050,8 +1056,12 @@ try {
   w.SEL.state.importSave(backup28);
   syncEnd = true;
 } catch (e) {
-  syncEnd = true;
   fails.push('回归组28异常: ' + (e && e.stack || e));
+} finally {
+  /* 中途抛异常也必须还原全局钩子与存档，否则会污染 29/30 组 */
+  syncEnd = true;
+  try { if (backup28) w.SEL.state.importSave(backup28); } catch (e2) {}
+  try { w.SEL.ui.setReadMode(false); w.SEL.ui.clearHighlight(); } catch (e3) {}
 }
 
 /* ==================== 29. 封板深度终审：打断 / 降级 / 状态机 / 配置边界 ==================== */
@@ -1478,6 +1488,186 @@ try {
   try { if (backup30) w.SEL.state.importSave(backup30); } catch (e) {}
 }
 
+/* ==================== 31. 封板故障注入：异步语音 / 禁用控件 / 弹窗 / 畸形数据 ==================== */
+let backup31 = null, frames31 = null, prompts31 = null, cap31 = 3;
+try {
+  const A = w.SEL.audio;
+  const UI31 = w.SEL.ui;
+  const U31 = w.SEL.utils;
+  backup31 = w.SEL.state.exportSave();
+  frames31 = w.SEL_DATA.expression.frames;
+  prompts31 = w.SEL_DATA.expression.prompts;
+  cap31 = w.SEL_DATA.expression.dailyStarCap;
+  const spoken = () => utterances.map(u => u.text);
+  const levels31 = w.SEL.state.allLevels();
+  const choiceLv = levels31.find(x => x.level.type === 'choice').level;
+  const matchLv = levels31.find(x => x.level.type === 'match').level;
+  const storyLv = levels31.find(x => x.level.type === 'story').level;
+  w.SEL.state.clearPin();
+  w.SEL.state.update(p => {
+    p.stars = 999;
+    levels31.forEach(x => { p.levels[x.level.id] = { done: true, stars: 3, attempts: 1, lastAt: '2026-01-01' }; });
+  });
+  w.SEL.state.setSetting('voice', true);
+  w.SEL.state.setSetting('autoRead', true);
+  w.SEL.state.setSetting('voiceRate', 0.9);
+  w.SEL.state.setSetting('voiceRoles', true);
+  function freshRoute(hash) {
+    utterances.length = 0;
+    A.clearLog();
+    route(hash);
+    return spoken();
+  }
+
+  // 31a 真实异步语音：onend 推进队列，onerror 也要能推进，不能卡死
+  {
+    syncEnd = false;
+    utterances.length = 0;
+    A.speakSequence(['A句', 'B句', 'C句']);
+    must(spoken().length === 1, '异步语音下队列一次把三句全念了');
+    utterances[0].onend();
+    must(spoken().length === 2 && spoken()[1] === 'B句', 'onend 没有推进到第二句');
+    utterances[1].onerror();
+    must(spoken().length === 3 && spoken()[2] === 'C句', 'onerror 没有推进到第三句');
+    utterances[2].onend();
+    A.stopSpeak();
+    syncEnd = true;
+  }
+
+  // 31b 慢速语音的 watchdog 估算：rate 越低，超时应该越长（不能固定 300ms/字）
+  {
+    w.SEL.state.setSetting('voiceRate', 0.7);
+    utterances.length = 0;
+    A.speak('很长的一句话'.repeat(10), { role: 'owl' });
+    must(utterances[0].rate < 0.7, '慢速 + 咕咕老师没有真正降低语速');
+    A.stopSpeak();
+    w.SEL.state.setSetting('voiceRate', 0.9);
+  }
+
+  // 31c disabled 选项：点读模式要临时解除禁用，退出后恢复
+  {
+    freshRoute('#/level/' + choiceLv.id);
+    const opts = qa('.option-btn');
+    opts.forEach(b => { b.disabled = true; });
+    click(q('[data-read-toggle]'));
+    must(opts.every(b => !b.disabled), '点读模式没有解除 disabled，禁用按钮无法点读');
+    utterances.length = 0;
+    click(opts[1]);
+    must(spoken().length === 1, '点读模式下点已禁用选项没有朗读');
+    must(!q('.feedback-box'), '点读模式下点已禁用选项仍触发了选择');
+    click(q('[data-read-toggle]'));
+    must(opts.every(b => b.disabled), '退出点读模式后没有恢复禁用状态');
+  }
+
+  // 31d emoji 装饰清理与高亮打分
+  {
+    freshRoute('#/level/' + matchLv.id);
+    const right = q('.pair-item[data-side="R"]');
+    const rightText = right.getAttribute('data-read');
+    must(!!rightText && rightText.indexOf('😊') < 0, '右侧卡片文本仍带着 emoji，高亮会漏命中');
+    UI31.highlight('答案：' + rightText);
+    must(right.classList.contains('reading'), '念「答案：…」时没有高亮右侧卡片');
+    UI31.clearHighlight();
+    UI31.highlight('就一种');
+    must(!right.classList.contains('reading'), '短公共子串误高亮了不相关元素');
+    UI31.clearHighlight();
+  }
+
+  // 31e 故事：role 只挂正文区，反馈框可点读
+  {
+    freshRoute('#/level/' + storyLv.id);
+    must(!!q('.story-top').getAttribute('data-role'), '故事正文区没有角色标记');
+    must(!q('[data-story]').hasAttribute('data-role'), '角色挂到整个 panel 会被做法继承');
+    const choices = qa('.story-choices .option-btn');
+    if (choices.length) {
+      must(choices.every(b => b.getAttribute('data-role') === 'cloud'), '故事做法没有统一用团团的声音');
+      click(choices[0]);
+      const fb = q('.feedback-box');
+      must(!!fb && fb.hasAttribute('data-read'), '故事反馈框没有标成可点读');
+    }
+  }
+
+  // 31f 键盘逐句点读
+  {
+    freshRoute('#/level/' + choiceLv.id);
+    const gp = q('.game-prompt');
+    must(gp.getAttribute('tabindex') === '0' && gp.getAttribute('role') === 'button',
+      '非交互文本对键盘/读屏不可达');
+    utterances.length = 0;
+    gp.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    must(spoken().length === 1, 'Enter 没有触发逐句点读');
+  }
+
+  // 31g 弹窗 / 时间锁出现时，朗读、高亮、点读模式都要复位
+  {
+    freshRoute('#/level/' + choiceLv.id);
+    UI31.highlight(String(choiceLv.title));
+    UI31.setReadMode(true);
+    must(!!q('.reading') && UI31.isReadMode(), '前置条件：高亮与点读模式未生效');
+    w.SEL.ui.modal({ title: '测试弹窗', body: '<p>x</p>',
+      actions: [{ label: '关闭', cls: 'ghost', close: true }] }, function () {});
+    must(!UI31.isReadMode(), '弹窗打开后点读模式没退出');
+    must(!q('.reading'), '弹窗打开后仍残留高亮');
+    w.SEL.ui.closeModal();
+
+    UI31.highlight(String(choiceLv.title));
+    UI31.setReadMode(true);
+    w.SEL.state.setSetting('screenLimit', 15);
+    w.SEL.state.addUsage(16 * 60);
+    w.SEL.render();
+    const lock = q('#time-lock');
+    must(!!lock && !lock.hidden, '前置条件：时间锁没盖上');
+    must(!UI31.isReadMode() && !q('.reading'), '时间锁盖上后仍残留朗读状态/高亮/点读模式');
+    w.SEL.state.setSetting('screenLimit', 0);
+    w.SEL.render();
+  }
+
+  // 31h 未来日期清洗与「本周」上界
+  {
+    const future = U31.addDays(U31.today(), 30);
+    const b = JSON.parse(w.SEL.state.exportSave());
+    b.profiles[0].expression.days = [{ date: U31.today(), count: 2 }, { date: future, count: 99 }];
+    w.SEL.state.importSave(JSON.stringify(b));
+    must(w.SEL.state.expressionStats().week === 2, '未来日期被算进本周次数');
+    must((w.SEL.state.current().expression.days || []).length === 1, '导入时没有丢弃未来日期');
+  }
+
+  // 31i 课程数据畸形：合法话题不能被静默拒写；UI 按钮不能永久锁死
+  {
+    w.SEL_DATA.expression.frames = { feel: true };
+    must(!!w.SEL.state.recordExpression('ex-1', 'feel', 'peer'), 'frames 畸形把合法话题一起拒写了');
+    w.SEL_DATA.expression.frames = frames31;
+
+    route('#/express/ex-1');
+    const done = q('[data-say-done]');
+    w.SEL_DATA.expression.prompts = [];
+    click(done);
+    must(!done.disabled, '课程数据异常时「我说出来啦」按钮永久锁死');
+    w.SEL_DATA.expression.prompts = prompts31;
+  }
+
+  // 31j 上限文案与口径：改配置后家长面板也要跟着变
+  {
+    w.SEL_DATA.expression.dailyStarCap = 5;
+    const ph = route('#/parent');
+    must(ph.includes('同一天最多 5 颗勇气星'), '家长面板把每日上限写死成 3');
+    must(w.SEL.state.dailyCap() === 5, 'state.dailyCap() 没有读到新配置');
+    w.SEL_DATA.expression.dailyStarCap = cap31;
+  }
+
+  w.SEL.state.importSave(backup31);
+} catch (e) {
+  fails.push('回归组31异常: ' + (e && e.stack || e));
+} finally {
+  syncEnd = true;
+  try { w.SEL_DATA.expression.frames = frames31 || w.SEL_DATA.expression.frames; } catch (e) {}
+  try { w.SEL_DATA.expression.prompts = prompts31 || w.SEL_DATA.expression.prompts; } catch (e) {}
+  try { w.SEL_DATA.expression.dailyStarCap = cap31; } catch (e) {}
+  try { w.SEL.state.setSetting('screenLimit', 0); } catch (e) {}
+  try { w.SEL.ui.setReadMode(false); w.SEL.ui.clearHighlight(); w.SEL.audio.stopSpeak(); } catch (e) {}
+  try { if (backup31) w.SEL.state.importSave(backup31); } catch (e) {}
+}
+
 const levelCount = (w.SEL_DATA.islands || []).reduce((a, i) => a + i.levels.length, 0);
 console.log('=== 心晴岛 运行时冒烟测试 ===');
 console.log(`页面/关卡覆盖: 12 页 + ${(w.SEL_DATA.islands || []).length} 岛 + ${levelCount} 关`);
@@ -1489,6 +1679,6 @@ if (fails.length) {
   console.log(`\n--- 失败 (${fails.length}) ---`);
   [...new Set(fails)].forEach(f => console.log('  x ' + f));
 } else if (!runtimeErrors.length) {
-  console.log(`\n✅ 全部页面、${levelCount} 个关卡、签到闭环、7 种题型、解锁链路、存档导入、家长面板，1.1.x / 1.2.0 功能与 1.3.0 逐句点读 / 角色语音 / 双示范均通过`);
+  console.log(`\n✅ 全部页面、${levelCount} 个关卡、签到闭环、7 种题型、解锁链路、存档导入、家长面板，1.1.x / 1.2.0 功能与 1.3.x 朗读 / 点读 / 角色语音 / 双示范 / 故障注入均通过`);
 }
 process.exit(fails.length || runtimeErrors.length ? 1 : 0);
