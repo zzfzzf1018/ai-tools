@@ -1,0 +1,33 @@
+# ============ 打包产物 ============
+*.zip
+*.crx
+*.pem
+
+# ============ 系统垃圾 ============
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ============ IDE / 编辑器 user data ============
+.vscode/
+.idea/
+
+# ============ TRAE / Codebuddy / Workbuddy user data ============
+# 模板文件（SKILL.md、agent 描述等）通常已提交，这里只排除确定的临时产物
+.trae/htmlshare/
+.trae-html-share-packages/
+.codebuddy/agents/user/
+.codebuddy/commands/user/
+.codebuddy/user/
+.workbuddy/user/
+
+# ============ 临时产物 ============
+node_modules/
+.screenshots/.tmp
+
+# ============ 注意事项 ============
+# .agent-toolkit/ 下的配置文件（settings.json / settings.schema.json 等）
+# 已在 git 中且需要提交，不要误排。
+# .trae/ / .codebuddy/ / .workbuddy/ 目录混合了模板和 user data，
+# 上面已用子目录级排除策略处理，整目录不排。

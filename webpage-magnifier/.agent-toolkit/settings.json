@@ -17,7 +17,7 @@
     "useGitVersion": false
   },
   "releaseAutomation": {
-    "githubActions": false,
+    "githubActions": true,
     "azurePipelines": false
   },
   "language": "zh-CN",
