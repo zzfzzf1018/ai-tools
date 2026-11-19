@@ -52,24 +52,35 @@ jobs:
           $version = "${{ steps.extract-version.outputs.version }}"
           $zipName = "webpage-magnifier-$version.zip"
           $zipPath = Join-Path (Get-Location) $zipName
+          $stageDir = Join-Path (Get-Location) "stage-wpm"
 
-          $files = @(
-            "webpage-magnifier/manifest.json",
-            "webpage-magnifier/content.js",
-            "webpage-magnifier/content.css",
-            "webpage-magnifier/popup.html",
-            "webpage-magnifier/popup.js",
-            "webpage-magnifier/popup.css",
-            "webpage-magnifier/background.js",
-            "webpage-magnifier/icons/icon16.png",
-            "webpage-magnifier/icons/icon48.png",
-            "webpage-magnifier/icons/icon128.png"
-          )
+          # Staging dir — copy files with full relative structure preserved
+          if (Test-Path $stageDir) { Remove-Item -Recurse -Force $stageDir }
+          New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
+          New-Item -ItemType Directory -Force -Path "$stageDir\icons" | Out-Null
 
-          Write-Host "Packaging the following files into $zipName :"
-          foreach ($f in $files) { Write-Host "  $f" }
+          Copy-Item "webpage-magnifier/manifest.json" "$stageDir\"
+          Copy-Item "webpage-magnifier/content.js" "$stageDir\"
+          Copy-Item "webpage-magnifier/content.css" "$stageDir\"
+          Copy-Item "webpage-magnifier/popup.html" "$stageDir\"
+          Copy-Item "webpage-magnifier/popup.js" "$stageDir\"
+          Copy-Item "webpage-magnifier/popup.css" "$stageDir\"
+          Copy-Item "webpage-magnifier/background.js" "$stageDir\"
+          Copy-Item "webpage-magnifier/icons/icon16.png" "$stageDir\icons\"
+          Copy-Item "webpage-magnifier/icons/icon48.png" "$stageDir\icons\"
+          Copy-Item "webpage-magnifier/icons/icon128.png" "$stageDir\icons\"
 
-          Compress-Archive -Path $files -DestinationPath $zipPath -Force
+          Write-Host "Staging dir contents:"
+          Get-ChildItem -Recurse $stageDir | ForEach-Object { $_.FullName.Replace((Get-Location).Path + "\", "") }
+
+          Compress-Archive -Path "$stageDir\*" -DestinationPath $zipPath -Force
+
+          # Verify zip internal structure has icons/ subdir
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+          Write-Host "--- ZIP internal structure ---"
+          $zip.Entries | ForEach-Object { Write-Host "  $($_.FullName)" }
+          $zip.Dispose()
 
           Write-Host "---"
           Get-Item $zipPath | Select-Object Name, Length
