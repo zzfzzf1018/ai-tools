@@ -155,25 +155,23 @@ jobs:
           ARGS+=( "--title" "webpage-magnifier v${VERSION}" )
 
           if [ "${{ steps.changelog.outputs.has_body }}" = "true" ]; then
-            echo "=== Using CHANGELOG body from release-body.md ==="
-            echo "--- File contents ---"
+            echo "=== Inline body from release-body.md ==="
             cat release-body.md
-            echo "--- End of file ---"
-            ARGS+=( "--body-file" "release-body.md" )
+            # 用 --body "$(cat file)" 内联，绕开某些环境下 --body-file 路径/编码问题
+            BODY_CONTENT="$(cat release-body.md)"
+            ARGS+=( "--body" "$BODY_CONTENT" )
           else
             echo "=== Falling back to --generate-notes ==="
             ARGS+=( "--generate-notes" )
           fi
 
           echo "=== gh release create args ==="
-          printf '  %s\n' "${ARGS[@]}"
+          printf '  %s\n' "${ARGS[@]}" | sed 's/--body .*/--body <REDACTED>/'
 
           if ! gh release create "${ARGS[@]}" 2>&1 | tee gh-output.txt; then
             echo "gh release create FAILED with exit code ${PIPESTATUS[0]}" >&2
-            echo "=== gh output ===" >&2
+            echo "=== gh stderr ===" >&2
             cat gh-output.txt >&2
-            echo "=== release-body.md if exists ===" >&2
-            ls -la release-body.md 2>&1 || true
             exit 1
           fi
 

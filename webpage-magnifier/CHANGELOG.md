@@ -4,6 +4,14 @@
 
 ---
 
+## [1.0.7] - 2026-11-19
+
+### 修复
+
+- Release workflow Publish step 改用 `--body "$(cat file)"` 内联替代 `--body-file`，绕开 gh CLI 版本/路径兼容性问题
+
+---
+
 ## [1.0.6] - 2026-11-19
 
 ### 修复
