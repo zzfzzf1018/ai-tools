@@ -118,42 +118,23 @@ jobs:
           VERSION="${{ needs.build.outputs.version }}"
           CHANGELOG="webpage-magnifier/CHANGELOG.md"
           BODY_FILE="release-body.md"
-          EMPTY_FILE="release-empty.md"
 
           if [ -f "$CHANGELOG" ]; then
-            python3 - <<PYEOF > "$BODY_FILE"
-import sys
-ver = "${VERSION}"
-with open("$CHANGELOG", "r", encoding="utf-8") as f:
-    content = f.read()
-
-header = f"## [{ver}]"
-idx = content.find(header)
-if idx == -1:
-    print("NOT_FOUND")
-    sys.exit(0)
-
-after = content[idx + len(header):]
-import re
-m = re.search(r'^## \[', after, re.MULTILINE)
-body = after if not m else after[:m.start()]
-print(header + body.strip())
-PYEOF
-            SECTION=$(cat "$BODY_FILE")
-            if [ "$SECTION" != "NOT_FOUND" ] && [ -n "$SECTION" ]; then
-              echo "CHANGELOG section extracted:"
-              cat "$BODY_FILE"
-              echo "has_body=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "CHANGELOG 中未找到 v${VERSION} 段落，退回 --generate-notes"
-              echo "NOT_FOUND" > "$BODY_FILE"
-              echo "has_body=false" >> "$GITHUB_OUTPUT"
+            if python3 webpage-magnifier/scripts/changelog-section.py "$VERSION" "$CHANGELOG" > "$BODY_FILE"; then
+              SECTION=$(cat "$BODY_FILE")
+              if [ "$SECTION" != "NOT_FOUND" ] && [ -n "$SECTION" ]; then
+                echo "CHANGELOG section extracted:"
+                cat "$BODY_FILE"
+                echo "has_body=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
             fi
+            echo "CHANGELOG 中未找到 v${VERSION} 段落，退回 --generate-notes"
           else
             echo "CHANGELOG.md 不存在，退回 --generate-notes"
-            echo "NOT_FOUND" > "$BODY_FILE"
-            echo "has_body=false" >> "$GITHUB_OUTPUT"
           fi
+          echo "NOT_FOUND" > "$BODY_FILE"
+          echo "has_body=false" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub Release
         env:
