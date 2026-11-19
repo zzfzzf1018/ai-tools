@@ -1,0 +1,406 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "settings.schema.json",
+  "title": "Agent Toolkit project settings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "initialized",
+    "developmentWorkflow",
+    "gitAutomation",
+    "gitFlow",
+    "versioning",
+    "releaseAutomation",
+    "language",
+    "additionalRequirements",
+    "customSettings"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "initialized": {
+      "type": "boolean"
+    },
+    "developmentWorkflow": {
+      "enum": [
+        "single-branch",
+        "git-flow",
+        "github-flow",
+        null
+      ]
+    },
+    "gitAutomation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "autoCommit",
+        "autoPush",
+        "autoTag"
+      ],
+      "properties": {
+        "autoCommit": {
+          "type": "boolean"
+        },
+        "autoPush": {
+          "type": "boolean"
+        },
+        "autoTag": {
+          "type": "boolean"
+        },
+        "tagSourceBranch": {
+          "const": "main",
+          "default": "main",
+          "description": "Tags may only be created from main."
+        }
+      }
+    },
+    "gitFlow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "featureBranchFromDevelop",
+        "createPullRequestAutomatically"
+      ],
+      "properties": {
+        "featureBranchFromDevelop": {
+          "type": "boolean"
+        },
+        "createPullRequestAutomatically": {
+          "type": "boolean"
+        },
+        "sealing": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sourceBranch",
+            "targetBranch",
+            "createPullRequest",
+            "mergeStrategy",
+            "tagAfterMerge"
+          ],
+          "properties": {
+            "sourceBranch": {
+              "type": "string",
+              "minLength": 1,
+              "default": "develop"
+            },
+            "targetBranch": {
+              "type": "string",
+              "minLength": 1,
+              "default": "main"
+            },
+            "createPullRequest": {
+              "type": "boolean",
+              "default": true
+            },
+            "mergeStrategy": {
+              "enum": [
+                "squash",
+                "merge",
+                "rebase"
+              ],
+              "default": "merge"
+            },
+            "tagAfterMerge": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "description": "Optional project-specific sealing policy. When tagging after merge, targetBranch must be main."
+        }
+      }
+    },
+    "versioning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "useGitVersion"
+      ],
+      "properties": {
+        "useGitVersion": {
+          "type": "boolean"
+        }
+      }
+    },
+    "releaseAutomation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "githubActions",
+        "azurePipelines"
+      ],
+      "properties": {
+        "githubActions": {
+          "type": "boolean"
+        },
+        "azurePipelines": {
+          "type": "boolean"
+        }
+      }
+    },
+    "language": {
+      "enum": [
+        "zh-CN",
+        "en",
+        "bilingual",
+        null
+      ]
+    },
+    "additionalRequirements": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "customSettings": {
+      "type": "object",
+      "description": "Reserved for future project-specific settings."
+    },
+    "reviewerPolicy": {
+      "enum": [
+        "on-requested-sealing-or-release-tag",
+        "every-task",
+        "never"
+      ],
+      "default": "on-requested-sealing-or-release-tag",
+      "description": "Optional on schema-v1 files; if absent, review only explicitly requested sealing or release-tag work."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "initialized": {
+            "const": true
+          }
+        },
+        "required": [
+          "initialized"
+        ]
+      },
+      "then": {
+        "properties": {
+          "developmentWorkflow": {
+            "enum": [
+              "single-branch",
+              "git-flow",
+              "github-flow"
+            ]
+          },
+          "language": {
+            "enum": [
+              "zh-CN",
+              "en",
+              "bilingual"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "developmentWorkflow": {
+            "const": "single-branch"
+          }
+        },
+        "required": [
+          "developmentWorkflow"
+        ]
+      },
+      "then": {
+        "properties": {
+          "gitFlow": {
+            "properties": {
+              "featureBranchFromDevelop": {
+                "const": false
+              },
+              "createPullRequestAutomatically": {
+                "const": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "properties": { "developmentWorkflow": { "const": "github-flow" } },
+          "required": [ "developmentWorkflow" ]
+        },
+        "properties": {
+          "gitFlow": {
+            "properties": {
+              "createPullRequestAutomatically": {
+                "const": true
+              }
+            },
+            "required": [
+              "createPullRequestAutomatically"
+            ]
+          }
+        },
+        "required": [
+          "gitFlow"
+        ]
+      },
+      "then": {
+        "properties": {
+          "gitAutomation": {
+            "properties": {
+              "autoPush": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "properties": { "developmentWorkflow": { "const": "github-flow" } },
+          "required": [ "developmentWorkflow" ]
+        },
+        "properties": {
+          "initialized": {
+            "const": true
+          },
+          "gitFlow": {
+            "properties": {
+              "sealing": {
+                "properties": {
+                  "createPullRequest": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "createPullRequest"
+                ]
+              }
+            },
+            "required": [
+              "sealing"
+            ]
+          }
+        },
+        "required": [
+          "initialized",
+          "gitFlow"
+        ]
+      },
+      "then": {
+        "properties": {
+          "gitAutomation": {
+            "properties": {
+              "autoPush": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "properties": { "developmentWorkflow": { "const": "github-flow" } },
+          "required": [ "developmentWorkflow" ]
+        },
+        "properties": {
+          "initialized": {
+            "const": true
+          },
+          "gitFlow": {
+            "properties": {
+              "sealing": {
+                "properties": {
+                  "tagAfterMerge": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "tagAfterMerge"
+                ]
+              }
+            },
+            "required": [
+              "sealing"
+            ]
+          }
+        },
+        "required": [
+          "initialized",
+          "gitFlow"
+        ]
+      },
+      "then": {
+        "properties": {
+          "gitAutomation": {
+            "properties": {
+              "autoTag": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "properties": { "developmentWorkflow": { "const": "github-flow" } },
+          "required": [ "developmentWorkflow" ]
+        },
+        "properties": {
+          "initialized": {
+            "const": true
+          },
+          "gitFlow": {
+            "properties": {
+              "sealing": {
+                "properties": {
+                  "tagAfterMerge": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "tagAfterMerge"
+                ]
+              }
+            },
+            "required": [
+              "sealing"
+            ]
+          }
+        },
+        "required": [
+          "initialized",
+          "gitFlow"
+        ]
+      },
+      "then": {
+        "properties": {
+          "gitFlow": {
+            "properties": {
+              "sealing": {
+                "properties": {
+                  "targetBranch": {
+                    "const": "main"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "$schema": "./settings.schema.json",
+  "schemaVersion": 1,
+  "initialized": true,
+  "developmentWorkflow": "single-branch",
+  "gitAutomation": {
+    "autoCommit": true,
+    "autoPush": true,
+    "autoTag": true,
+    "tagSourceBranch": "main"
+  },
+  "gitFlow": {
+    "featureBranchFromDevelop": false,
+    "createPullRequestAutomatically": false
+  },
+  "versioning": {
+    "useGitVersion": false
+  },
+  "releaseAutomation": {
+    "githubActions": false,
+    "azurePipelines": false
+  },
+  "language": "zh-CN",
+  "additionalRequirements": [],
+  "customSettings": {
+    "projectType": "edge-browser-extension",
+    "manifestVersion": 3
+  },
+  "reviewerPolicy": "never"
+}

@@ -1,0 +1,165 @@
+{
+  "manifestVersion": 2,
+  "toolkitVersion": "0.1.2",
+  "installationStatus": "complete",
+  "lastCompleteVersion": "0.1.2",
+  "requestedVersion": "0.1.2",
+  "sourceCommit": "9a129f2fcf69dce7e6b271302ed05cf0dcae6aae",
+  "lastCompleteCommit": "9a129f2fcf69dce7e6b271302ed05cf0dcae6aae",
+  "requestedCommit": "9a129f2fcf69dce7e6b271302ed05cf0dcae6aae",
+  "sourceModified": false,
+  "files": [
+    {
+      "path": ".agent-toolkit/install-files.json",
+      "sha256": "483D86F7235C16033DBE48B17608C8E195F028311DFE8B61AE782F20508DE869"
+    },
+    {
+      "path": ".agent-toolkit/settings.json",
+      "sha256": "BED589F142BA7AD732C8F30A4B3B70A28BBBFAF308C1111BF60554C1E0DDDBB4"
+    },
+    {
+      "path": ".agent-toolkit/settings.schema.json",
+      "sha256": "F561E519206136FD6F4B0363CF1ABB8FFB932FC75D127900F4AE723429B82AE2"
+    },
+    {
+      "path": ".agent-toolkit/settings.template.json",
+      "sha256": "BED589F142BA7AD732C8F30A4B3B70A28BBBFAF308C1111BF60554C1E0DDDBB4"
+    },
+    {
+      "path": ".codebuddy/agents/agent-toolkit-coder.md",
+      "sha256": "3EF01F769C13B5EC421AD3CAF7088951225E78B6C91AE61BC77B7E6ED3AB035C"
+    },
+    {
+      "path": ".codebuddy/agents/agent-toolkit-init.md",
+      "sha256": "7BFAD25B6988978BB340201C379345CBE3C91D38FC38BDF78EE2FFE0C627E552"
+    },
+    {
+      "path": ".codebuddy/agents/agent-toolkit-reviewer.md",
+      "sha256": "3AE06737A5B3B88754C87ED44A72BCB1E521303ACE81B543575964A0FDF655B5"
+    },
+    {
+      "path": ".codebuddy/commands/agent-toolkit-init.md",
+      "sha256": "A4D7D1A86AC1C80BD01F97CF0ADA7C87F0F259BF670E5DE32B0AEE51A6D3302C"
+    },
+    {
+      "path": ".codebuddy/commands/agent-toolkit-orchestrator.md",
+      "sha256": "19154B93213F09AF97799FA589ED92DC5EAC6CD2C1B7D4D40F5817194DAF02B3"
+    },
+    {
+      "path": ".codebuddy/rules/agent-toolkit/RULE.mdc",
+      "sha256": "398B83510B739150271D8B87A51C8C7475D916795ADE1FBBCE005C6D1C90493E"
+    },
+    {
+      "path": ".codebuddy/skills/agent-toolkit-init/SKILL.md",
+      "sha256": "6EE2A6DEA890B2A8F5D388AD7BD57F48CB6F77552A4B26EDBC697CE9B93295E8"
+    },
+    {
+      "path": ".codebuddy/skills/agent-toolkit-orchestrator/SKILL.md",
+      "sha256": "25BE8EE630C933A45E9E1A09AF14ACBE5C7CD4A220ABF33D1D14210B264FE597"
+    },
+    {
+      "path": ".github/agents/agent-toolkit-coder.agent.md",
+      "sha256": "E802A5127C336B89EA57C0955CF95308B17A3909FA3E0BD33334429D0F097984"
+    },
+    {
+      "path": ".github/agents/agent-toolkit-init.agent.md",
+      "sha256": "BAE7DA93A4DFF2131CBDFEC26BA95C5D73CC80C2DBD0399A048BA7B75235460D"
+    },
+    {
+      "path": ".github/agents/agent-toolkit-reviewer.agent.md",
+      "sha256": "9101432C8CA1773A177C8520E0334D58AFF43DEF00E33EECF6D47C4B787C347E"
+    },
+    {
+      "path": ".github/copilot-instructions.md",
+      "sha256": "B9AE283902208ACB9942EE7CBAD35BF058E264518121E44359F0409DF9434BE3"
+    },
+    {
+      "path": ".github/prompts/agent-toolkit-init.prompt.md",
+      "sha256": "E8CF873D3B94B78142E5D87A53B55754C7FEC5E800BFC43B37C1C7D2B7E0CBCB"
+    },
+    {
+      "path": ".github/prompts/agent-toolkit-orchestrator.prompt.md",
+      "sha256": "5E91235919AFCB8180B1CDB42C39ACF9AA3166BEC36D49B3A688A0478AA564BD"
+    },
+    {
+      "path": ".github/skills/agent-toolkit-init/SKILL.md",
+      "sha256": "6EE2A6DEA890B2A8F5D388AD7BD57F48CB6F77552A4B26EDBC697CE9B93295E8"
+    },
+    {
+      "path": ".github/skills/agent-toolkit-orchestrator/SKILL.md",
+      "sha256": "25BE8EE630C933A45E9E1A09AF14ACBE5C7CD4A220ABF33D1D14210B264FE597"
+    },
+    {
+      "path": ".trae/agents/agent-toolkit-coder.md",
+      "sha256": "3EF01F769C13B5EC421AD3CAF7088951225E78B6C91AE61BC77B7E6ED3AB035C"
+    },
+    {
+      "path": ".trae/agents/agent-toolkit-init.md",
+      "sha256": "7BFAD25B6988978BB340201C379345CBE3C91D38FC38BDF78EE2FFE0C627E552"
+    },
+    {
+      "path": ".trae/agents/agent-toolkit-reviewer.md",
+      "sha256": "3AE06737A5B3B88754C87ED44A72BCB1E521303ACE81B543575964A0FDF655B5"
+    },
+    {
+      "path": ".trae/commands/agent-toolkit-init.md",
+      "sha256": "41467E8D367331A511DF3B511A17D052B453252E6A2884DC572C83F84865CA86"
+    },
+    {
+      "path": ".trae/commands/agent-toolkit-orchestrator.md",
+      "sha256": "6AAF8AFC2453AF2336A099BC646A2B8801E16EE6CA89A8C77345A07CCC536B37"
+    },
+    {
+      "path": ".trae/rules/agent-toolkit.md",
+      "sha256": "C284D5E373398AE032DCD883F10D52BCE666B9D724EAB17D22DD85B8B28287E3"
+    },
+    {
+      "path": ".trae/skills/agent-toolkit-init/SKILL.md",
+      "sha256": "6EE2A6DEA890B2A8F5D388AD7BD57F48CB6F77552A4B26EDBC697CE9B93295E8"
+    },
+    {
+      "path": ".trae/skills/agent-toolkit-orchestrator/SKILL.md",
+      "sha256": "25BE8EE630C933A45E9E1A09AF14ACBE5C7CD4A220ABF33D1D14210B264FE597"
+    },
+    {
+      "path": ".workbuddy/skills/agent-toolkit-init/SKILL.md",
+      "sha256": "6EE2A6DEA890B2A8F5D388AD7BD57F48CB6F77552A4B26EDBC697CE9B93295E8"
+    },
+    {
+      "path": ".workbuddy/skills/agent-toolkit-orchestrator/SKILL.md",
+      "sha256": "25BE8EE630C933A45E9E1A09AF14ACBE5C7CD4A220ABF33D1D14210B264FE597"
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "B9AE283902208ACB9942EE7CBAD35BF058E264518121E44359F0409DF9434BE3"
+    },
+    {
+      "path": "docs/agent-toolkit.md",
+      "sha256": "CFFDBE2AA810C3B73DC9BFE71164FD05EDAAC304175162E3C5BC2053E7FE0ACB"
+    },
+    {
+      "path": "docs/people-requirements-record/README.md",
+      "sha256": "9F74A04BFA7323EDC9154B206920802570691FA4D42FEDBCBDBC14D677C4239D"
+    },
+    {
+      "path": "install-agent-toolkit.cmd",
+      "sha256": "DC5C850E471848E0E7C3CF9F5E78F60DF59BD39E11F557ED40CE89F5DBA644BE"
+    },
+    {
+      "path": "scripts/doctor-agent-toolkit.ps1",
+      "sha256": "70BA8C437360B20B3111E443C8E334DCF5DC78E43CC8FC4AC4A81A0EC9BFF6F7"
+    },
+    {
+      "path": "scripts/install-agent-toolkit.ps1",
+      "sha256": "E25C6B1FCD641A5205E5FB6EA4B4C8D895BE698D52B98AB4D7F570DE59634A14"
+    },
+    {
+      "path": "scripts/upgrade-agent-toolkit.ps1",
+      "sha256": "F1C02B47B84829A171E37DE3028524A4DDD84B5FDE8778910B7302429C8A4C4B"
+    },
+    {
+      "path": "scripts/validate-agent-toolkit-settings.ps1",
+      "sha256": "AD5E7BEF4DB8EC590CA1F0D74EEE4CAE0307CE6A453803C4693D18B349887C3C"
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>网页区域放大器</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 网页区域放大器</h1>
+
+    <div class="section">
+      <button id="toggleSelect" class="btn btn-primary">
+        <span id="selectIcon">🎯</span>
+        <span id="selectText">开始选区 (Ctrl+Shift+M)</span>
+      </button>
+    </div>
+
+    <div class="section" id="controlSection" hidden>
+      <div class="row">
+        <label>缩放比例</label>
+        <span id="scaleValue">200%</span>
+      </div>
+      <input type="range" id="scaleRange" min="1" max="5" step="0.1" value="2">
+
+      <div class="row-actions">
+        <button id="scaleDown" class="btn btn-ghost">-</button>
+        <button id="scaleReset" class="btn btn-ghost">重置</button>
+        <button id="scaleUp" class="btn btn-ghost">+</button>
+      </div>
+
+      <div class="row">
+        <button id="toggleZ" class="btn btn-full">⬆️ 层级：置顶</button>
+      </div>
+
+      <div class="row">
+        <button id="destroy" class="btn btn-danger">🗑 关闭放大镜</button>
+      </div>
+    </div>
+
+    <div class="section hint">
+      <p><strong>使用说明：</strong></p>
+      <ol>
+        <li>点击"开始选区"或按 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd></li>
+        <li>在页面上按住鼠标拖拽选择一个矩形区域</li>
+        <li>松开鼠标自动创建放大镜</li>
+        <li>拖动顶部 ⋮⋮ 手柄移动放大镜</li>
+      </ol>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

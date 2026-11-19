@@ -1,0 +1,227 @@
+{
+  "files": [
+    {
+      "source": ".github/copilot-instructions.md",
+      "targets": [
+        {
+          "target": ".github/copilot-instructions.md"
+        },
+        {
+          "target": "AGENTS.md"
+        },
+        {
+          "target": ".trae/rules/agent-toolkit.md",
+          "frontmatter": {
+            "description": "Agent Toolkit 工作区规则，任务开始时自动校验设置并驱动 Orchestrator 工作流",
+            "alwaysApply": true
+          }
+        },
+        {
+          "target": ".codebuddy/rules/agent-toolkit/RULE.mdc",
+          "frontmatter": {
+            "description": "Agent Toolkit workspace rules that drive the initialization preflight and Orchestrator workflow",
+            "alwaysApply": true,
+            "enabled": true
+          }
+        }
+      ]
+    },
+    {
+      "source": ".github/agents/agent-toolkit-coder.agent.md",
+      "targets": [
+        {
+          "target": ".github/agents/agent-toolkit-coder.agent.md"
+        },
+        {
+          "target": ".trae/agents/agent-toolkit-coder.md",
+          "frontmatter": {
+            "name": "agent-toolkit-coder",
+            "tools": "Read, Grep, Glob, Edit, Write, Bash"
+          }
+        },
+        {
+          "target": ".codebuddy/agents/agent-toolkit-coder.md",
+          "frontmatter": {
+            "name": "agent-toolkit-coder",
+            "tools": "Read, Grep, Glob, Edit, Write, Bash",
+            "user-invocable": null
+          }
+        }
+      ]
+    },
+    {
+      "source": ".github/agents/agent-toolkit-init.agent.md",
+      "targets": [
+        {
+          "target": ".github/agents/agent-toolkit-init.agent.md"
+        },
+        {
+          "target": ".trae/agents/agent-toolkit-init.md",
+          "frontmatter": {
+            "name": "agent-toolkit-init",
+            "tools": "Read, Grep, Glob, Edit, Write"
+          }
+        },
+        {
+          "target": ".codebuddy/agents/agent-toolkit-init.md",
+          "frontmatter": {
+            "name": "agent-toolkit-init",
+            "tools": "Read, Grep, Glob, Edit, Write",
+            "user-invocable": null
+          }
+        }
+      ]
+    },
+    {
+      "source": ".github/agents/agent-toolkit-reviewer.agent.md",
+      "targets": [
+        {
+          "target": ".github/agents/agent-toolkit-reviewer.agent.md"
+        },
+        {
+          "target": ".trae/agents/agent-toolkit-reviewer.md",
+          "frontmatter": {
+            "name": "agent-toolkit-reviewer",
+            "tools": "Read, Grep, Glob",
+            "user-invocable": null
+          }
+        },
+        {
+          "target": ".codebuddy/agents/agent-toolkit-reviewer.md",
+          "frontmatter": {
+            "name": "agent-toolkit-reviewer",
+            "tools": "Read, Grep, Glob",
+            "user-invocable": null
+          }
+        }
+      ]
+    },
+    {
+      "source": ".github/skills/agent-toolkit-init/SKILL.md",
+      "targets": [
+        {
+          "target": ".github/skills/agent-toolkit-init/SKILL.md"
+        },
+        {
+          "target": ".codebuddy/skills/agent-toolkit-init/SKILL.md"
+        },
+        {
+          "target": ".workbuddy/skills/agent-toolkit-init/SKILL.md"
+        },
+        {
+          "target": ".trae/skills/agent-toolkit-init/SKILL.md"
+        }
+      ]
+    },
+    {
+      "source": ".github/skills/agent-toolkit-orchestrator/SKILL.md",
+      "targets": [
+        {
+          "target": ".github/skills/agent-toolkit-orchestrator/SKILL.md"
+        },
+        {
+          "target": ".codebuddy/skills/agent-toolkit-orchestrator/SKILL.md"
+        },
+        {
+          "target": ".workbuddy/skills/agent-toolkit-orchestrator/SKILL.md"
+        },
+        {
+          "target": ".trae/skills/agent-toolkit-orchestrator/SKILL.md"
+        }
+      ]
+    },
+    {
+      "source": ".github/prompts/agent-toolkit-init.prompt.md",
+      "targets": [
+        {
+          "target": ".github/prompts/agent-toolkit-init.prompt.md"
+        },
+        {
+          "target": ".codebuddy/commands/agent-toolkit-init.md",
+          "frontmatter": {
+            "mode": null,
+            "tools": null
+          }
+        },
+        {
+          "target": ".trae/commands/agent-toolkit-init.md",
+          "frontmatter": {
+            "name": "agent-toolkit-init",
+            "mode": null,
+            "tools": null
+          }
+        }
+      ]
+    },
+    {
+      "source": ".github/prompts/agent-toolkit-orchestrator.prompt.md",
+      "targets": [
+        {
+          "target": ".github/prompts/agent-toolkit-orchestrator.prompt.md"
+        },
+        {
+          "target": ".codebuddy/commands/agent-toolkit-orchestrator.md",
+          "frontmatter": {
+            "mode": null,
+            "tools": null
+          }
+        },
+        {
+          "target": ".trae/commands/agent-toolkit-orchestrator.md",
+          "frontmatter": {
+            "name": "agent-toolkit-orchestrator",
+            "mode": null,
+            "tools": null
+          }
+        }
+      ]
+    },
+    {
+      "source": ".agent-toolkit/settings.schema.json",
+      "target": ".agent-toolkit/settings.schema.json"
+    },
+    {
+      "source": ".agent-toolkit/settings.template.json",
+      "targets": [
+        {
+          "target": ".agent-toolkit/settings.template.json"
+        },
+        {
+          "target": ".agent-toolkit/settings.json"
+        }
+      ]
+    },
+    {
+      "source": ".agent-toolkit/install-files.json",
+      "target": ".agent-toolkit/install-files.json"
+    },
+    {
+      "source": "scripts/install-agent-toolkit.ps1",
+      "target": "scripts/install-agent-toolkit.ps1"
+    },
+    {
+      "source": "scripts/upgrade-agent-toolkit.ps1",
+      "target": "scripts/upgrade-agent-toolkit.ps1"
+    },
+    {
+      "source": "scripts/doctor-agent-toolkit.ps1",
+      "target": "scripts/doctor-agent-toolkit.ps1"
+    },
+    {
+      "source": "scripts/validate-agent-toolkit-settings.ps1",
+      "target": "scripts/validate-agent-toolkit-settings.ps1"
+    },
+    {
+      "source": "install-agent-toolkit.cmd",
+      "target": "install-agent-toolkit.cmd"
+    },
+    {
+      "source": "docs/agent-toolkit.md",
+      "target": "docs/agent-toolkit.md"
+    },
+    {
+      "source": "docs/people-requirements-record/README.md",
+      "target": "docs/people-requirements-record/README.md"
+    }
+  ]
+}

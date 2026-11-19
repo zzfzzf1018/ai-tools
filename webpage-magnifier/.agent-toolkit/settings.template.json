@@ -1,0 +1,27 @@
+{
+  "$schema": "./settings.schema.json",
+  "schemaVersion": 1,
+  "initialized": false,
+  "developmentWorkflow": null,
+  "gitAutomation": {
+    "autoCommit": false,
+    "autoPush": false,
+    "autoTag": false,
+    "tagSourceBranch": "main"
+  },
+  "gitFlow": {
+    "featureBranchFromDevelop": false,
+    "createPullRequestAutomatically": false
+  },
+  "versioning": {
+    "useGitVersion": false
+  },
+  "releaseAutomation": {
+    "githubActions": false,
+    "azurePipelines": false
+  },
+  "language": null,
+  "additionalRequirements": [],
+  "customSettings": {},
+  "reviewerPolicy": "on-requested-sealing-or-release-tag"
+}

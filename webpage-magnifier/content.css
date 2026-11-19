@@ -1,0 +1,179 @@
+/* ============================================================
+   网页区域放大器 - Content Styles
+   所有类名均以 __wpm_ 前缀，避免与页面样式冲突
+   所有属性均加 !important，抵抗宿主页面 CSS 覆盖
+   ============================================================ */
+
+/* ===== 选区模式覆盖层 =====
+   全屏覆盖 + pointer-events:auto → 彻底阻断鼠标事件穿透到原页面 */
+.__wpm_select_overlay {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  background: rgba(20, 40, 90, 0.18) !important;
+  cursor: crosshair !important;
+  z-index: 2147483647 !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  box-sizing: border-box !important;
+  pointer-events: auto !important; /* 关键：拦截所有鼠标事件，阻止穿透 */
+}
+
+/* 选区矩形预览框 —— 用半透明边框+填充，不再依赖 box-shadow hack */
+.__wpm_select_box {
+  position: absolute !important;
+  border: 2px solid #2979ff !important;
+  border-style: dashed !important;
+  background: rgba(41, 121, 255, 0.10) !important;
+  box-sizing: border-box !important;
+  pointer-events: none !important; /* 选框本身不拦截事件，事件由 overlay 处理 */
+  display: none !important;
+  box-shadow: 0 0 0 9999px rgba(20, 40, 90, 0.18) !important;
+}
+
+.__wpm_select_hint {
+  position: absolute !important;
+  bottom: 28px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  background: rgba(0, 0, 0, 0.78) !important;
+  color: #fff !important;
+  padding: 8px 16px !important;
+  border-radius: 20px !important;
+  font-size: 13px !important;
+  font-family: -apple-system, Segoe UI, "Microsoft YaHei", sans-serif !important;
+  pointer-events: none !important;
+  white-space: nowrap !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* ===== 放大镜浮层 ===== */
+.__wpm_magnifier {
+  position: fixed !important;
+  border: 1px solid #2979ff !important;
+  border-radius: 6px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.30) !important;
+  background: #fff !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+  /* 外层尺寸已在 JS 中按 scale 计算，不要再用 max-* 覆盖 */
+  max-width: none !important;
+  max-height: none !important;
+  pointer-events: auto !important; /* 自身要能接收面板和拖拽事件 */
+}
+
+.__wpm_scale_wrap {
+  position: relative !important;
+  overflow: hidden !important;
+  transform-origin: top left !important;
+  transition: transform 0.08s ease-out !important;
+}
+
+.__wpm_empty {
+  padding: 24px !important;
+  color: #888 !important;
+  font-family: -apple-system, Segoe UI, "Microsoft YaHei", sans-serif !important;
+  font-size: 14px !important;
+  text-align: center !important;
+}
+
+/* ===== 控制面板（位于放大镜右上角）===== */
+.__wpm_panel {
+  position: absolute !important;
+  top: 0 !important;
+  right: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  background: rgba(255, 255, 255, 0.96) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border-left: 1px solid rgba(41, 121, 255, 0.35) !important;
+  border-bottom: 1px solid rgba(41, 121, 255, 0.35) !important;
+  border-bottom-left-radius: 6px !important;
+  padding: 6px 8px !important;
+  font-family: -apple-system, Segoe UI, "Microsoft YaHei", sans-serif !important;
+  font-size: 12px !important;
+  z-index: 2 !important; /* 必须在 scaleWrap 之上，且不超出外层 magnifier 的 overflow:hidden */
+  user-select: none !important;
+  box-shadow: -1px 1px 4px rgba(0, 0, 0, 0.08) !important;
+  pointer-events: auto !important;
+}
+
+.__wpm_panel_drag {
+  cursor: grab !important;
+  padding: 4px 6px !important;
+  color: #2979ff !important;
+  font-weight: bold !important;
+  line-height: 1 !important;
+  border-radius: 3px !important;
+  transition: background 0.12s !important;
+}
+.__wpm_panel_drag:hover {
+  background: rgba(41, 121, 255, 0.12) !important;
+}
+.__wpm_panel_drag:active {
+  cursor: grabbing !important;
+}
+
+.__wpm_panel_body {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.__wpm_scale_label {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 2px !important;
+  color: #333 !important;
+  min-width: 44px !important;
+}
+
+.__wpm_scale_value {
+  font-weight: bold !important;
+  color: #2979ff !important;
+  font-size: 12px !important;
+  font-variant-numeric: tabular-nums !important;
+}
+
+.__wpm_scale_range {
+  width: 110px !important;
+  accent-color: #2979ff !important;
+  cursor: pointer !important;
+}
+
+.__wpm_panel_buttons {
+  display: flex !important;
+  gap: 4px !important;
+}
+
+.__wpm_btn {
+  border: 1px solid #2979ff !important;
+  background: #fff !important;
+  color: #2979ff !important;
+  border-radius: 4px !important;
+  padding: 3px 8px !important;
+  font-size: 12px !important;
+  cursor: pointer !important;
+  line-height: 1.2 !important;
+  font-family: inherit !important;
+  transition: background 0.15s, color 0.15s !important;
+}
+
+.__wpm_btn:hover {
+  background: #2979ff !important;
+  color: #fff !important;
+}
+
+.__wpm_btn_close {
+  border-color: #ff4b5c !important;
+  color: #ff4b5c !important;
+}
+.__wpm_btn_close:hover {
+  background: #ff4b5c !important;
+  color: #fff !important;
+}
