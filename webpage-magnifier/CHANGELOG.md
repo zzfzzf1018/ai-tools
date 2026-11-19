@@ -4,6 +4,21 @@
 
 ---
 
+## [1.0.2] - 2026-11-19
+
+### 修复
+
+- Release workflow zip 目录结构：旧版 `Compress-Archive -Path $files` 只保留文件名，丢失 `icons/` 前缀，导致 Edge 加载扩展时报 `Couldn't load icon icons/icon16.png`。改用 staging 目录 + `Compress-Archive -Path staging/*`，完整保留 `manifest.json`、`content.js`、`icons/icon16.png` 等相对路径。
+
+### 新增
+
+- README.md 详细中文文档（安装/使用/开发指南/权限说明/已知限制）
+- .gitignore 排除 zip/IDE/temp 产物
+- CHANGELOG.md（本文件）
+- GitHub Actions Release workflow（monorepo 根 `.github/workflows/release-webpage-magnifier.yml`），push tag `webpage-magnifier-v*` 自动构建 zip + 创建 Release
+
+---
+
 ## [1.0.0] - 2026-11-19
 
 ### 新增

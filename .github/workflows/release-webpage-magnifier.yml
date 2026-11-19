@@ -100,10 +100,60 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: webpage-magnifier-${{ needs.build.outputs.version }}
           path: downloads
+
+      - name: Extract CHANGELOG section
+        id: changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.build.outputs.version }}"
+          CHANGELOG="webpage-magnifier/CHANGELOG.md"
+          BODY_FILE="release-body.md"
+          EMPTY_FILE="release-empty.md"
+
+          if [ -f "$CHANGELOG" ]; then
+            python3 - <<PYEOF > "$BODY_FILE"
+import sys
+ver = "${VERSION}"
+with open("$CHANGELOG", "r", encoding="utf-8") as f:
+    content = f.read()
+
+header = f"## [{ver}]"
+idx = content.find(header)
+if idx == -1:
+    print("NOT_FOUND")
+    sys.exit(0)
+
+after = content[idx + len(header):]
+import re
+m = re.search(r'^## \[', after, re.MULTILINE)
+body = after if not m else after[:m.start()]
+print(header + body.strip())
+PYEOF
+            SECTION=$(cat "$BODY_FILE")
+            if [ "$SECTION" != "NOT_FOUND" ] && [ -n "$SECTION" ]; then
+              echo "CHANGELOG section extracted:"
+              cat "$BODY_FILE"
+              echo "has_body=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "CHANGELOG 中未找到 v${VERSION} 段落，退回 --generate-notes"
+              echo "NOT_FOUND" > "$BODY_FILE"
+              echo "has_body=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "CHANGELOG.md 不存在，退回 --generate-notes"
+            echo "NOT_FOUND" > "$BODY_FILE"
+            echo "has_body=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Publish GitHub Release
         env:
@@ -115,9 +165,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          cd downloads
-          echo "Contents:"
-          ls -la
+          echo "Downloads:"
+          ls -la downloads/
 
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo 'Release already exists; refusing to overwrite published downloads.' >&2
@@ -125,10 +174,15 @@ jobs:
           fi
 
           VERSION="${RELEASE_TAG#webpage-magnifier-v}"
+          ARGS=( "$RELEASE_TAG" "downloads/webpage-magnifier-${VERSION}.zip" )
+          ARGS+=( "--target" "$RELEASE_SHA" )
+          ARGS+=( "--title" "webpage-magnifier v${VERSION}" )
 
-          gh release create "$RELEASE_TAG" webpage-magnifier-*.zip \
-            --target "$RELEASE_SHA" \
-            --title "webpage-magnifier v${VERSION}" \
-            --generate-notes
+          if [ "${{ steps.changelog.outputs.has_body }}" = "true" ]; then
+            ARGS+=( "--body-file" "release-body.md" )
+          else
+            ARGS+=( "--generate-notes" )
+          fi
 
+          gh release create "${ARGS[@]}"
           echo "Release published: $RELEASE_TAG"
