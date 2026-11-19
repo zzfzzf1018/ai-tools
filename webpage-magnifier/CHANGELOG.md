@@ -4,6 +4,31 @@
 
 ---
 
+## [1.0.5] - 2026-11-19
+
+### 修复
+
+- 补齐 CHANGELOG 缺失的版本条目（v1.0.3 / v1.0.4），Release body 现在能正确读取对应版本段落
+- Release workflow 中 `gh release create` 的 `--body-file` 输入文件路径对齐，ubuntu-latest runner 能正确解析
+
+---
+
+## [1.0.4] - 2026-11-19
+
+### 修复
+
+- Release workflow YAML 语法错误：旧版在 `run: |` 里嵌套 bash here-document，内部 Python 代码缩进丢失（0 空格），GitHub Actions 解析阶段直接失败。修复：将 Python here-doc 抽为独立脚本 `webpage-magnifier/scripts/changelog-section.py`，workflow 里一行 `python3 脚本` 调用，彻底绕开 YAML here-doc 缩进问题。
+
+---
+
+## [1.0.3] - 2026-11-19
+
+### 修复
+
+- Release body 读取 CHANGELOG 详细段落：旧版 `gh release create --generate-notes` 自动生成的 release notes 过于简略，不包含具体改动条目。新增 workflow step（`Extract CHANGELOG section`）用 Python 脚本从 `CHANGELOG.md` 切出对应版本段落，通过 `--body-file` 传给 `gh release create`。找不到版本段落时自动退回 `--generate-notes` 兜底。
+
+---
+
 ## [1.0.2] - 2026-11-19
 
 ### 修复
