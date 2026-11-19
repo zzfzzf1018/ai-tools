@@ -149,21 +149,32 @@ jobs:
           echo "Downloads:"
           ls -la downloads/
 
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo 'Release already exists; refusing to overwrite published downloads.' >&2
-            exit 1
-          fi
-
           VERSION="${RELEASE_TAG#webpage-magnifier-v}"
           ARGS=( "$RELEASE_TAG" "downloads/webpage-magnifier-${VERSION}.zip" )
           ARGS+=( "--target" "$RELEASE_SHA" )
           ARGS+=( "--title" "webpage-magnifier v${VERSION}" )
 
           if [ "${{ steps.changelog.outputs.has_body }}" = "true" ]; then
+            echo "=== Using CHANGELOG body from release-body.md ==="
+            echo "--- File contents ---"
+            cat release-body.md
+            echo "--- End of file ---"
             ARGS+=( "--body-file" "release-body.md" )
           else
+            echo "=== Falling back to --generate-notes ==="
             ARGS+=( "--generate-notes" )
           fi
 
-          gh release create "${ARGS[@]}"
+          echo "=== gh release create args ==="
+          printf '  %s\n' "${ARGS[@]}"
+
+          if ! gh release create "${ARGS[@]}" 2>&1 | tee gh-output.txt; then
+            echo "gh release create FAILED with exit code ${PIPESTATUS[0]}" >&2
+            echo "=== gh output ===" >&2
+            cat gh-output.txt >&2
+            echo "=== release-body.md if exists ===" >&2
+            ls -la release-body.md 2>&1 || true
+            exit 1
+          fi
+
           echo "Release published: $RELEASE_TAG"

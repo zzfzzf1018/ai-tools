@@ -4,6 +4,14 @@
 
 ---
 
+## [1.0.6] - 2026-11-19
+
+### 修复
+
+- Release workflow Publish step 加详细调试输出（body 内容 / gh args / gh stderr），定位 v1.0.5 `--body-file` 调用失败根因
+
+---
+
 ## [1.0.5] - 2026-11-19
 
 ### 修复
