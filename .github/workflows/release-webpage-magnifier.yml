@@ -147,9 +147,17 @@ jobs:
 
           echo "Downloads:"
           ls -la downloads/
+          find downloads -type f -name "*.zip" | while read f; do echo "  artifact file: $f"; done
 
           VERSION="${RELEASE_TAG#webpage-magnifier-v}"
-          ARGS=( "$RELEASE_TAG" "downloads/webpage-magnifier-${VERSION}.zip" )
+          # download-artifact v4 默认把 artifact 解压到 path/<artifact-name>/ 子目录
+          ZIP_PATH=$(find downloads -type f -name "*.zip" | head -1)
+          if [ -z "$ZIP_PATH" ] || [ ! -f "$ZIP_PATH" ]; then
+            echo "ERROR: 找不到下载的 zip 文件" >&2
+            exit 1
+          fi
+          echo "Using ZIP: $ZIP_PATH"
+          ARGS=( "$RELEASE_TAG" "$ZIP_PATH" )
           ARGS+=( "--title" "webpage-magnifier v${VERSION}" )
 
           # 注意：不能用 --target "$RELEASE_SHA"，因为 annotated tag push 事件中
