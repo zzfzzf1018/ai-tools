@@ -1,11 +1,18 @@
 /* global chrome */
-'use strict';
+(function () {
+  'use strict';
+
+  // 幂等守卫：chrome.scripting.executeScript 重复注入同一文件时，
+  // 顶层 const/let 会抛 "Identifier has already been declared"，
+  // 导致扩展重载后的旧标签页永远「不支持当前页面」。
+  if (window.__wpm_loaded) return;
+  window.__wpm_loaded = true;
 
 /**
  * 网页区域放大器 - Content Script
  *
  * 核心流程：
- *  1. 用户激活「选区模式」(快捷键 Ctrl+Shift+M 或 popup 按钮)
+ *  1. 用户激活「选区模式」(快捷键 Ctrl+Shift+Y 或 popup 按钮)
  *  2. 在页面上拖拽矩形区域
  *  3. 松开鼠标后创建放大镜覆盖层，内含该区域 DOM 的克隆
  *  4. 覆盖层可拖动、可调节缩放比例、可切换层级
@@ -34,29 +41,11 @@ let selectMode = false;
 let selectOverlay = null;
 let selectStart = null;
 const MOVE_LISTENERS = { move: null, up: null, key: null };
+// 最近一次处理的 URL，用于判定 SPA 导航是否真正改变地址
+let lastHref = window.location.href;
 
-// ===== 键盘监听器管理 =====
-const KEYBOARD_LISTENERS = [];
-
-function installKeyboardShortcut() {
-  // 先清理已有的（防御重复注册）
-  cleanupKeyboardListeners();
-  const handler = (e) => {
-    if (e.ctrlKey && e.shiftKey && (e.key === 'm' || e.key === 'M')) {
-      e.preventDefault();
-      toggleSelectMode();
-    }
-  };
-  KEYBOARD_LISTENERS.push(handler);
-  document.addEventListener('keydown', handler, true);
-}
-
-function cleanupKeyboardListeners() {
-  while (KEYBOARD_LISTENERS.length) {
-    const h = KEYBOARD_LISTENERS.pop();
-    document.removeEventListener('keydown', h, true);
-  }
-}
+// 快捷键只保留 chrome.commands 单一路径（background → TOGGLE_SELECT_MODE），
+// 不在 content 内监听组合键，避免与 commands 各触发一次导致「开了又关」。
 
 // ===== URL 工具 =====
 // 基址：当前文档最终 URL 的目录部分（用于相对路径解析）
@@ -123,6 +112,17 @@ function absolutizeElementAttrs(el, attrs) {
   }
 }
 
+// 统一 runtime 通知：无接收方时 chrome.runtime.sendMessage 返回的 Promise 会 reject，
+// try/catch 兜不住 Promise 拒绝，这里统一吞掉，避免控制台未处理 rejection。
+function notifyRuntime(msg) {
+  try {
+    const p = chrome.runtime.sendMessage(msg);
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  } catch (_) {
+    // 扩展上下文已失效（例如扩展被重载）时忽略
+  }
+}
+
 // ===== SPA 导航检测（必须在 content script 顶层立即执行，早于 DOMContentLoaded）=====
 (function hookHistory() {
   try {
@@ -162,10 +162,8 @@ function init() {
     return;
   }
 
-  // 防御：清理可能在上次 init 残留的监听器
-  cleanupKeyboardListeners();
-
-  installKeyboardShortcut();
+  // 记录当前 URL，作为 SPA 导航判定基线
+  lastHref = window.location.href;
   chrome.runtime.onMessage.addListener(onMessage);
 
   // SPA 导航响应（history hook 已在顶层执行，这里只注册处理函数）
@@ -176,6 +174,11 @@ function init() {
 
 function handleSpaNav() {
   if (window.top !== window.self) return;
+  // 只有 URL 真正变化才处理：部分站点滚动或同 URL replaceState 会误触发，
+  // 不能因为一次伪导航就把放大镜销毁。
+  const href = window.location.href;
+  if (href === lastHref) return;
+  lastHref = href;
   // 先刷新 URL_BASE，后续创建放大镜时资源绝对化需要用新的 base
   refreshUrlBase();
   // 销毁放大镜
@@ -189,9 +192,7 @@ function handleSpaNav() {
     exitSelectMode();
   }
   // 通知 popup
-  try {
-    chrome.runtime.sendMessage({ type: 'SPA_NAVIGATED' });
-  } catch (_) {}
+  notifyRuntime({ type: 'SPA_NAVIGATED' });
 }
 
 // ===== 消息处理 =====
@@ -259,8 +260,8 @@ function onMessage(msg, sender, sendResponse) {
   return true;
 }
 
-// ===== 快捷键（兜底，比 service_worker 更实时）=====
-// installKeyboardShortcut() 已在 init() 中调用
+// ===== 快捷键 =====
+// 仅由 chrome.commands（background）驱动，content 内不再监听组合键
 
 // ===== 选区模式 =====
 function toggleSelectMode() {
@@ -270,8 +271,13 @@ function toggleSelectMode() {
   } else {
     exitSelectMode();
   }
-  chrome.runtime.sendMessage({ type: 'SELECT_MODE_CHANGED', selectMode }).catch(() => {});
+  notifyRuntime({ type: 'SELECT_MODE_CHANGED', selectMode });
   return selectMode;
+}
+
+// 选区 UI 挂载宿主：某些早期文档可能还没有 body
+function selectHost() {
+  return document.body || document.documentElement;
 }
 
 function enterSelectMode() {
@@ -280,10 +286,14 @@ function enterSelectMode() {
   createSelectOverlay();
   selectOverlay.addEventListener('mousedown', onSelectMouseDown);
   selectOverlay.addEventListener('contextmenu', (e) => e.preventDefault());
-  document.body.style.cursor = 'crosshair';
+  // Esc 在进入选区模式时注册，由 cleanupSelectListeners 统一清理
+  MOVE_LISTENERS.key = onSelectKeyDown;
+  document.addEventListener('keydown', MOVE_LISTENERS.key, true);
+  const host = selectHost();
+  host.style.cursor = 'crosshair';
   // 禁止整个页面文本选择，避免拖拽选区时意外选中文字
-  document.body.style.userSelect = 'none';
-  document.body.style.webkitUserSelect = 'none';
+  host.style.userSelect = 'none';
+  host.style.webkitUserSelect = 'none';
 }
 
 function exitSelectMode() {
@@ -293,9 +303,10 @@ function exitSelectMode() {
     selectOverlay = null;
   }
   selectStart = null;
-  document.body.style.cursor = '';
-  document.body.style.userSelect = '';
-  document.body.style.webkitUserSelect = '';
+  const host = selectHost();
+  host.style.cursor = '';
+  host.style.userSelect = '';
+  host.style.webkitUserSelect = '';
 }
 
 function cleanupSelectListeners() {
@@ -322,7 +333,9 @@ function createSelectOverlay() {
   selectOverlay.innerHTML =
     '<div class="__wpm_select_box"></div>' +
     '<div class="__wpm_select_hint">按住鼠标拖拽选择区域 · Esc 取消</div>';
-  document.body.appendChild(selectOverlay);
+  // 显隐由 inline style 控制：初始隐藏，拖拽开始后才显示
+  selectOverlay.querySelector('.__wpm_select_box').style.display = 'none';
+  selectHost().appendChild(selectOverlay);
 }
 
 function onSelectMouseDown(e) {
@@ -334,11 +347,9 @@ function onSelectMouseDown(e) {
 
   MOVE_LISTENERS.move = onSelectMouseMove;
   MOVE_LISTENERS.up = onSelectMouseUp;
-  MOVE_LISTENERS.key = onSelectKeyDown;
 
   document.addEventListener('mousemove', MOVE_LISTENERS.move, true);
   document.addEventListener('mouseup', MOVE_LISTENERS.up, true);
-  document.addEventListener('keydown', MOVE_LISTENERS.key, true);
   e.preventDefault();
   e.stopPropagation();
 }
@@ -380,7 +391,7 @@ function onSelectMouseUp(e) {
   // 无论选区多小都退出选区模式（但太小则不创建放大镜）
   selectMode = false;
   exitSelectMode();
-  chrome.runtime.sendMessage({ type: 'SELECT_MODE_CHANGED', selectMode }).catch(() => {});
+  notifyRuntime({ type: 'SELECT_MODE_CHANGED', selectMode });
 
   if (rect.width < 4 || rect.height < 4) {
     return;
@@ -391,9 +402,10 @@ function onSelectMouseUp(e) {
 
 function onSelectKeyDown(e) {
   if (e.key === 'Escape') {
+    e.preventDefault();
     selectMode = false;
     exitSelectMode();
-    chrome.runtime.sendMessage({ type: 'SELECT_MODE_CHANGED', selectMode }).catch(() => {});
+    notifyRuntime({ type: 'SELECT_MODE_CHANGED', selectMode });
   }
 }
 
@@ -408,7 +420,13 @@ function createMagnifier(rect, options) {
   if (rect.width <= 0 || rect.height <= 0) return null;
 
   options = options || {};
-  const scale = clamp(typeof options.scale === 'number' ? options.scale : DEFAULT_SCALE, MIN_SCALE, MAX_SCALE);
+  let scale = clamp(typeof options.scale === 'number' ? options.scale : DEFAULT_SCALE, MIN_SCALE, MAX_SCALE);
+  // 初始倍率自适应：放大后若超出视口（四周各留 16px），先下调到能放下的最大值，
+  // 但不得低于 MIN_SCALE；用户仍可通过面板滑杆调整。
+  const maxViewportW = Math.max(0, window.innerWidth - 32);
+  const maxViewportH = Math.max(0, window.innerHeight - 32);
+  const fitScale = Math.min(scale, maxViewportW / rect.width, maxViewportH / rect.height);
+  scale = clamp(fitScale, MIN_SCALE, MAX_SCALE);
   if (magnifier) magnifier.destroy();
   magnifier = new Magnifier(rect, scale);
   return magnifier;
@@ -497,9 +515,7 @@ class Magnifier {
     this.keepInViewport();
 
     // 通知 popup 放大镜已创建
-    try {
-      chrome.runtime.sendMessage({ type: 'MAGNIFIER_CREATED', scale: this.scale });
-    } catch (_) {}
+    notifyRuntime({ type: 'MAGNIFIER_CREATED', scale: this.scale });
   }
 
   sourceRectToPage(rect) {
@@ -568,7 +584,9 @@ class Magnifier {
     clone.style.left = (absLeft - pageRect.left) + 'px';
     clone.style.top = (absTop - pageRect.top) + 'px';
     clone.style.margin = '0';
-    clone.style.padding = '0';
+    // 不要重置 padding：容器自身的内边距会影响内容位置，清零会造成偏移。
+    // 宽度/高度来自 getBoundingClientRect（边框盒口径），必须用 border-box 对齐。
+    clone.style.boxSizing = 'border-box';
     clone.style.width = origBR.width + 'px';
     clone.style.height = origBR.height + 'px';
 
@@ -628,7 +646,11 @@ class Magnifier {
     });
 
     // 6. 修复 id，防止与原页面冲突
+    // 注意：querySelectorAll('[id]') 不包含克隆根节点自身，需单独改写
     let idCounter = 0;
+    if (clone.hasAttribute('id')) {
+      clone.setAttribute('id', '__wpm_cloned_' + idCounter++);
+    }
     clone.querySelectorAll('[id]').forEach((n) => {
       n.setAttribute('id', '__wpm_cloned_' + idCounter++);
     });
@@ -677,7 +699,16 @@ class Magnifier {
     // 阻止面板事件穿透到下面的克隆内容
     this._addListener(this.panel, 'mousedown', (e) => e.stopPropagation());
     this._addListener(this.panel, 'click', (e) => e.stopPropagation());
-    this._addListener(this.el, 'mousedown', (e) => e.stopPropagation());
+    // 放大镜本体任意位置可拖；面板区域（滑杆/按钮）不触发拖动
+    this._addListener(this.el, 'mousedown', (e) => {
+      if (this.panel && this.panel.contains(e.target)) return;
+      this.startDrag(e);
+    });
+
+    // 视口尺寸变化后重新收敛位置，避免面板跑出屏幕
+    this._addListener(window, 'resize', () => {
+      if (!this.destroyed) this.keepInViewport();
+    });
   }
 
   startDrag(e) {
@@ -697,6 +728,7 @@ class Magnifier {
 
   _onDragMove(e) {
     if (!this.dragState) return;
+    e.preventDefault();
     const x = e.clientX - this.dragState.offsetX;
     const y = e.clientY - this.dragState.offsetY;
     this.el.style.left = x + 'px';
@@ -719,8 +751,6 @@ class Magnifier {
 
   setScale(scale) {
     if (this.destroyed) return;
-    const prevW = this.sourceRect.width * this.scale;
-    const prevH = this.sourceRect.height * this.scale;
     this.scale = clamp(scale, MIN_SCALE, MAX_SCALE);
     const nextW = this.sourceRect.width * this.scale;
     const nextH = this.sourceRect.height * this.scale;
@@ -783,6 +813,35 @@ class Magnifier {
 
     this.el.style.left = x + 'px';
     this.el.style.top = y + 'px';
+    this.positionPanel();
+  }
+
+  /**
+   * 让控制面板始终留在视口内：
+   *  - 放大镜超出视口时，面板不能被推到屏幕外导致关不掉
+   *  - 面板默认贴放大镜右上角，越界后向视口内收敛
+   * 注意：CSS 里面板的 top/right 带 !important，必须用 important 覆盖 inline 样式。
+   */
+  positionPanel() {
+    if (!this.panel || this.destroyed) return;
+    const elRect = this.el.getBoundingClientRect();
+    const pw = this.panel.offsetWidth;
+    const ph = this.panel.offsetHeight;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const MARGIN = 8;
+
+    let vpLeft = elRect.right - pw;
+    vpLeft = Math.min(vpLeft, vw - MARGIN - pw);
+    vpLeft = Math.max(vpLeft, MARGIN);
+
+    let vpTop = elRect.top;
+    vpTop = Math.min(vpTop, vh - MARGIN - ph);
+    vpTop = Math.max(vpTop, MARGIN);
+
+    this.panel.style.setProperty('left', (vpLeft - elRect.left) + 'px', 'important');
+    this.panel.style.setProperty('top', (vpTop - elRect.top) + 'px', 'important');
+    this.panel.style.setProperty('right', 'auto', 'important');
   }
 
   destroy() {
@@ -818,9 +877,7 @@ class Magnifier {
     if (magnifier === this) magnifier = null;
 
     // 5. 通知 popup
-    try {
-      chrome.runtime.sendMessage({ type: 'MAGNIFIER_DESTROYED' });
-    } catch (_) {}
+    notifyRuntime({ type: 'MAGNIFIER_DESTROYED' });
   }
 }
 
@@ -830,3 +887,4 @@ if (document.readyState === 'loading') {
 } else {
   init();
 }
+})();

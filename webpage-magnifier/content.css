@@ -29,7 +29,8 @@
   background: rgba(41, 121, 255, 0.10) !important;
   box-sizing: border-box !important;
   pointer-events: none !important; /* 选框本身不拦截事件，事件由 overlay 处理 */
-  display: none !important;
+  /* 显隐完全由 JS 的 inline style 控制；此处不要声明 display，
+     否则 !important 会压过 element.style.display 导致选框永远不可见 */
   box-shadow: 0 0 0 9999px rgba(20, 40, 90, 0.18) !important;
 }
 
@@ -57,7 +58,8 @@
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.30) !important;
   background: #fff !important;
   box-sizing: border-box !important;
-  overflow: hidden !important;
+  /* 不要在此处设置 overflow 裁切，否则选区较小时会把控制面板（含关闭按钮）裁掉。
+     克隆内容的裁切职责由 .__wpm_scale_wrap 承担。 */
   /* 外层尺寸已在 JS 中按 scale 计算，不要再用 max-* 覆盖 */
   max-width: none !important;
   max-height: none !important;
@@ -67,6 +69,9 @@
 .__wpm_scale_wrap {
   position: relative !important;
   overflow: hidden !important;
+  border-radius: 5px !important;
+  /* 放大镜是只读透镜：克隆内容不接收鼠标事件，避免误点链接/表单 */
+  pointer-events: none !important;
   transform-origin: top left !important;
   transition: transform 0.08s ease-out !important;
 }
@@ -90,13 +95,13 @@
   background: rgba(255, 255, 255, 0.96) !important;
   backdrop-filter: blur(8px) !important;
   -webkit-backdrop-filter: blur(8px) !important;
-  border-left: 1px solid rgba(41, 121, 255, 0.35) !important;
-  border-bottom: 1px solid rgba(41, 121, 255, 0.35) !important;
-  border-bottom-left-radius: 6px !important;
+  /* 外层不再裁切，面板用完整边框 + 圆角自行闭环 */
+  border: 1px solid rgba(41, 121, 255, 0.35) !important;
+  border-radius: 6px !important;
   padding: 6px 8px !important;
   font-family: -apple-system, Segoe UI, "Microsoft YaHei", sans-serif !important;
   font-size: 12px !important;
-  z-index: 2 !important; /* 必须在 scaleWrap 之上，且不超出外层 magnifier 的 overflow:hidden */
+  z-index: 2 !important; /* 必须在 scaleWrap 之上 */
   user-select: none !important;
   box-shadow: -1px 1px 4px rgba(0, 0, 0, 0.08) !important;
   pointer-events: auto !important;

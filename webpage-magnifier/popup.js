@@ -111,7 +111,7 @@ function updateUI() {
   } else {
     $toggleSelect.classList.remove('active');
     $selectIcon.textContent = '🎯';
-    $selectText.textContent = '开始选区 (Ctrl+Shift+M)';
+    $selectText.textContent = '开始选区 (Ctrl+Shift+Y)';
   }
 
   if (hasMagnifier) {

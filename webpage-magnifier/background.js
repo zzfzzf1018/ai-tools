@@ -5,7 +5,7 @@
  * Background Service Worker
  *
  * 职责：
- *  1. 处理 chrome.commands 快捷键（作为兜底，content script 内部也监听了同一快捷键）
+ *  1. 处理 chrome.commands 快捷键（快捷键的唯一来源，content 内不再监听组合键）
  *  2. content script 未就绪时主动注入
  *  3. 注入后等待 content script 就绪（PING 轮询）再发送指令，避免竞态
  *
@@ -17,7 +17,16 @@ const FILES = {
   css: 'content.css',
 };
 
-const BLOCKED_PROTOCOLS = ['chrome://', 'chrome-extension://', 'edge://', 'about:', 'view-source:'];
+const BLOCKED_PROTOCOLS = [
+  'chrome://',
+  'chrome-extension://',
+  'edge://',
+  'devtools://',
+  'about:',
+  'view-source:',
+  'https://chromewebstore.google.com',
+  'https://microsoftedge.microsoft.com/addons',
+];
 
 function isInjectable(url) {
   if (!url) return false;
@@ -30,13 +39,19 @@ async function ensureInjected(tabId) {
       target: { tabId },
       files: [FILES.js],
     });
+  } catch (err) {
+    console.warn('[WPM] 后台注入 JS 失败：', err);
+    throw err;
+  }
+
+  // CSS 注入单独容错：样式失败不应判定整体注入失败（功能仍可用）
+  try {
     await chrome.scripting.insertCSS({
       target: { tabId },
       files: [FILES.css],
     });
   } catch (err) {
-    console.warn('[WPM] 后台注入失败：', err);
-    throw err;
+    console.warn('[WPM] 后台注入 CSS 失败（忽略）：', err);
   }
 }
 

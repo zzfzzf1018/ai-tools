@@ -1,6 +1,6 @@
 # 网页区域放大器（Edge 浏览器扩展）
 
-> 版本 **v1.0.0** — 选中网页任意区域，创建可拖拽、可缩放、可切换层级的放大镜覆盖层。
+> 版本 **v1.0.9** — 选中网页任意区域，创建可拖拽、可缩放、可切换层级的放大镜覆盖层。
 
 ---
 
@@ -28,9 +28,9 @@
 |---|------|------|
 | 1 | **选区放大** | 激活选区模式后在页面上拖拽矩形，松开自动为该区域创建放大镜覆盖层 |
 | 2 | **缩放调节** | 放大镜面板内置滑块，支持 1.0x ~ 5.0x 步长 0.1 的缩放，保持右上角锚点 |
-| 3 | **拖拽移动** | 放大镜面板顶部手柄（⋮⋮）可拖动放大镜到页面任意位置 |
+| 3 | **拖拽移动** | 按住放大镜任意位置（面板区域除外）即可拖动到页面任意位置 |
 | 4 | **层级切换** | "置顶"按钮在 `z-index: 2147483647` 和 `z-index: 1` 之间切换 |
-| 5 | **快捷键** | `Ctrl+Shift+M` 一键开启/关闭选区模式，`Esc` 在选区模式中取消 |
+| 5 | **快捷键** | `Ctrl+Shift+Y` 一键开启/关闭选区模式，`Esc` 在选区模式中取消 |
 
 ---
 
@@ -59,7 +59,7 @@
 
 ### 启动选区模式
 
-- **快捷键**：`Ctrl+Shift+M`（默认）
+- **快捷键**：`Ctrl+Shift+Y`（默认，可在 `edge://extensions/shortcuts` 中修改）
 - **Popup 按钮**：点击工具栏扩展图标，在弹窗中点击"开始选区"按钮
 
 进入选区模式后，页面上会出现半透明蓝色遮罩，鼠标指针变为十字线。
@@ -73,7 +73,7 @@
 ### 调整放大镜
 
 - **缩放**：拖动面板上的滑块，或在 Popup 中用 + / - / 重置按钮
-- **拖拽**：按住放大镜右上角的 `⋮⋮` 手柄移动到任意位置
+- **拖拽**：按住放大镜任意位置（面板区域除外）移动到任意位置
 - **层级**：点击"置顶/置底"按钮切换 z-index
 - **关闭**：点击放大镜上的 ✕ 按钮，或 Popup 中的"关闭放大镜"按钮
 
@@ -81,8 +81,10 @@
 
 | 快捷键 | 作用 |
 |--------|------|
-| `Ctrl+Shift+M` | 开启/关闭选区模式 |
+| `Ctrl+Shift+Y` | 开启/关闭选区模式 |
 | `Esc` | 取消选区（仅在选区模式中生效） |
+
+> 快捷键可在 `edge://extensions/shortcuts` 中修改。
 
 ---
 
@@ -117,7 +119,7 @@ icons/icon16.png / icon48.png / icon128.png  ← 图标
 
 `background.js` 是 service worker，负责：
 
-1. **快捷键兜底**：处理 `chrome.commands.onCommand`，content script 未就绪时主动注入
+1. **快捷键处理**：处理 `chrome.commands.onCommand`（快捷键唯一来源），content script 未就绪时主动注入
 2. **主动注入**：调用 `chrome.scripting.executeScript` + `insertCSS`，解决 service worker 与 manifest content_scripts 的注入时序差
 3. **等待就绪**：注入后通过 PING 轮询等待 content script 初始化完成，避免竞态
 
@@ -154,7 +156,7 @@ icons/icon16.png / icon48.png / icon128.png  ← 图标
 | `MAGNIFIER_DESTROYED` | 放大镜销毁 |
 | `SPA_NAVIGATED` | SPA 路由变化后自动销毁，popup 同步 UI |
 
-**Background → Content：** 仅 `TOGGLE_SELECT_MODE`（快捷键兜底路径，经 tabs.sendMessage 发送）。
+**Background → Content：** 仅 `TOGGLE_SELECT_MODE`（快捷键路径，经 tabs.sendMessage 发送）。
 
 ### SPA / iframe 兼容策略
 
@@ -178,9 +180,9 @@ icons/icon16.png / icon48.png / icon128.png  ← 图标
 ```
 webpage-magnifier/
 ├── manifest.json              # 扩展清单（manifest v3）
-├── content.js                 # Content Script 核心（832 行）
+├── content.js                 # Content Script 核心
 ├── content.css                # Content Script 样式（.__wpm_ 前缀）
-├── background.js              # Service Worker（快捷键兜底 + 主动注入）
+├── background.js              # Service Worker（快捷键处理 + 主动注入）
 ├── popup.html                 # 工具栏弹窗 HTML
 ├── popup.js                   # 工具栏弹窗逻辑
 ├── popup.css                  # 工具栏弹窗样式
@@ -213,9 +215,9 @@ webpage-magnifier/
 
 ## 权限说明
 
-### `storage`
+### `storage`（v1.0.9 起已移除）
 
-声明了但当前版本未实际调用。预留用于未来的设置持久化（如默认缩放比例偏好）。
+v1.0.9 移除了未实际使用的 `storage` 权限，当前 manifest 仅声明 `activeTab`、`scripting` 与 `host_permissions`。
 
 ### `activeTab`
 

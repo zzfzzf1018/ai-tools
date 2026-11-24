@@ -4,6 +4,24 @@
 
 ---
 
+## [1.0.9] - 2026-11-24
+
+### 修复
+
+- **打包结构**：`scripts/pack.ps1` 改用 staging 目录 + 目录级打包，zip 内保留 `icons/` 前缀；打包后用 `System.IO.Compression` 校验必需条目，缺失即以退出码 1 结束；同时把条目分隔符统一重建为正斜杠，修复 Windows PowerShell 5.1 下 `Compress-Archive` 写出反斜杠条目导致浏览器无法定位 `icons/` 的问题
+- **选框不可见**：删除 `.__wpm_select_box` 的 `display: none !important`，显隐交由 JS inline style 控制
+- **快捷键保留冲突与双触发**：默认快捷键由 `Ctrl+Shift+M`（浏览器保留键）改为 `Ctrl+Shift+Y`；删除 content script 内重复的组合键监听，快捷键只保留 `chrome.commands` 单一路径
+- **重复注入崩溃**：`content.js` 包裹 IIFE 并增加 `window.__wpm_loaded` 幂等守卫，避免顶层声明重复导致的 `Identifier has already been declared`
+- **面板裁切**：移除 `.__wpm_magnifier` 的 `overflow: hidden !important`，控制面板（含关闭按钮）不再被裁掉
+- **克隆内容误点击**：放大镜内容区改为只读透镜（`pointer-events: none`），拖动改由放大镜本体任意位置触发
+- **Esc 失效**：Esc 监听改为进入选区模式时注册、退出时统一清理，未拖拽也可取消
+- **SPA 误销毁**：`handleSpaNav` 增加 URL 变化判定，滚动或同 URL `replaceState` 不再误清放大镜
+- **克隆内边距错位**：克隆根节点不再强制 `padding: 0`，增加 `box-sizing: border-box`，并改写根节点自身 id
+- **面板跑出屏幕**：新增 `positionPanel()`，放大镜超出视口（如 3x/5x）时控制面板向视口内收敛，关闭按钮始终可点；窗口 resize 时重新收敛
+- 统一 `notifyRuntime` 发送 runtime 消息，消除无接收方时的未处理 Promise rejection；补充 background 受限协议与 `insertCSS` 独立容错
+
+---
+
 ## [1.0.7] - 2026-11-19
 
 ### 修复
