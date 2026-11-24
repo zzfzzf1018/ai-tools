@@ -4,6 +4,12 @@
 
 ---
 
+## [1.0.10] - 2026-11-24
+
+### 修复
+
+- **Release CI 修复**：删除 `release-webpage-magnifier.yml` 中 `gh release create --target` 参数。annotated tag push 事件中 `github.sha` 返回 tag 对象 SHA 而非 commit SHA，gh 文档明确禁止传入 tag SHA（"(not tag SHA)"），导致 release job 1 秒即 exit code 1。tag 已存在时 gh 本身不需要 `--target`，该参数同时是冗余且有害的
+
 ## [1.0.9] - 2026-11-24
 
 ### 修复
