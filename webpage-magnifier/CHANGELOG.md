@@ -4,6 +4,12 @@
 
 ---
 
+## [1.0.11] - 2026-11-24
+
+### 修复
+
+- **Release CI（续）**：`download-artifact` v4 默认把 artifact 解压到 `path/<artifact-name>/` 子目录，release 步骤原先假设 zip 直接在 `downloads/` 下导致找不到文件。改为 `find downloads -type f -name "*.zip"` 动态定位，消除路径假设
+
 ## [1.0.10] - 2026-11-24
 
 ### 修复
