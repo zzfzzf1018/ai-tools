@@ -141,7 +141,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
-          RELEASE_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -151,8 +150,11 @@ jobs:
 
           VERSION="${RELEASE_TAG#webpage-magnifier-v}"
           ARGS=( "$RELEASE_TAG" "downloads/webpage-magnifier-${VERSION}.zip" )
-          ARGS+=( "--target" "$RELEASE_SHA" )
           ARGS+=( "--title" "webpage-magnifier v${VERSION}" )
+
+          # 注意：不能用 --target "$RELEASE_SHA"，因为 annotated tag push 事件中
+          # github.sha 是 tag 对象 SHA 而非 commit SHA，gh 文档明确 "(not tag SHA)"。
+          # tag 已存在时 gh release create 会直接以该 tag 为基准创建 release，无需 --target。
 
           if [ "${{ steps.changelog.outputs.has_body }}" = "true" ]; then
             echo "=== Inline body from release-body.md ==="
